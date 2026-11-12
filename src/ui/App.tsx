@@ -4,6 +4,7 @@ import { takeContactReturn } from '../contact.ts';
 import { buildPlayerLookup, isStale, loadDataset, type DataStatus } from '../data/load.ts';
 import { dayCount, eachDate, formatRange, formatShort, isValidISODate, easternToday, nextWeek } from '../domain/dates.ts';
 import { optimizeDates, summarize, type DayResult, type LineupPlayer } from '../domain/optimizer.ts';
+import { activeSlotCount } from '../domain/league.ts';
 import { toLineupPlayers } from '../domain/roster.ts';
 import type { ISODate, Player } from '../domain/types.ts';
 import { loadFromStorage, reducer, saveToStorage } from '../state/appState.ts';
@@ -17,8 +18,8 @@ import { SettingsModal } from './Settings.tsx';
 import { TradesView } from './Trades.tsx';
 
 const TABS = [
-  { id: 'roster', label: 'Roster' },
   { id: 'rankings', label: 'Team Schedules', short: 'Schedules' },
+  { id: 'roster', label: 'Roster' },
   { id: 'lineup', label: 'Lineup' },
   { id: 'trades', label: 'Trade Lab' },
 ] as const;
@@ -28,7 +29,7 @@ const isAboutHash = () => globalThis.location?.hash === '#about';
 
 function tabFromHash(): TabId {
   const h = globalThis.location?.hash.replace('#', '');
-  return (TABS.find((t) => t.id === h)?.id ?? 'roster') as TabId;
+  return (TABS.find((t) => t.id === h)?.id ?? 'rankings') as TabId;
 }
 
 export function App() {
@@ -89,29 +90,17 @@ export function App() {
     <>
       <header className="topbar">
         <div className="topbar-inner">
-          <div className="brand-row">
-            <div className="brand-block">
-              <div className="brand">
-                Playoff <span>Planner</span>
-              </div>
-              <p className="tagline">Plan your next week — and your playoff run. Add your roster to see which pickups are worth it.</p>
-            </div>
-            <button className="settings-btn" onClick={() => setSettingsOpen(true)} aria-label="League Settings" title="Review and adjust your league settings">
-              <span aria-hidden="true">⚙︎</span> <span className="label-full">League Settings</span>
-            </button>
+          <div className="brand">
+            Playoff <span>Planner</span>
           </div>
-          <ol className="how-strip" aria-label="How it works">
-            <li>Add your roster: Roster tab — paste it from your league site, or search players.</li>
-            <li>Set your league: League Settings (gear icon) — roster size, IR slots, daily lineup slots.</li>
-            <li>
-              Check Lineup for the nights your players' games fit, and Trade Lab before you make a move. Switch to Playoffs for your league's rounds, or Custom for your
-              own dates.
-            </li>
-          </ol>
+          <p className="tagline">Plan your next week — and your playoff run. Add your roster to see which pickups are worth it.</p>
         </div>
       </header>
       <div className="tabbar">
-        <div className="topbar-inner">
+        <div className="topbar-inner tabbar-row">
+          <button className="settings-btn" onClick={() => setSettingsOpen(true)} title="Review and adjust your league settings">
+            <span aria-hidden="true">⚙︎</span> League Settings
+          </button>
           <nav className="tabs" role="tablist">
             {TABS.map((t) => (
               <button key={t.id} role="tab" className="tab" aria-selected={!about && tab === t.id} aria-label={'short' in t ? t.label : undefined} onClick={() => go(t.id)}>
@@ -147,10 +136,12 @@ export function App() {
             data={status.data}
             toast={toast}
             periodBar={!about}
+            showModes={tab !== 'roster'}
+            onOpenSettings={() => setSettingsOpen(true)}
             overlay={settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
           >
             {about && <AboutView />}
-            {!about && tab === 'rankings' && <RankingsView />}
+            {!about && tab === 'rankings' && <RankingsView onGoRoster={() => go('roster')} />}
             {!about && tab === 'roster' && <RosterView onGoLineup={() => go('lineup')} />}
             {!about && tab === 'lineup' && <LineupView onGoRoster={() => go('roster')} />}
             {!about && tab === 'trades' && <TradesView onGoRoster={() => go('roster')} />}
@@ -243,6 +234,9 @@ function Ready(props: {
   data: AppCtx['data'];
   toast: AppCtx['toast'];
   periodBar: boolean;
+  /** False on Roster: no period toggle there (its Games column always shows next week). */
+  showModes: boolean;
+  onOpenSettings: () => void;
   overlay: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -324,6 +318,7 @@ function Ready(props: {
     teams,
     windows,
     playoffWindows,
+    weekWindow,
     selected: selected ?? placeholder,
     lineupPlayers,
     days,
@@ -333,10 +328,23 @@ function Ready(props: {
   const controls: PeriodControls = { mode, setMode, customPeriods, setCustomPeriods, customTotal, setCustomTotal };
   return (
     <Ctx.Provider value={ctx}>
-      {props.periodBar && <PeriodBar {...controls} hasWindow={!!selected} />}
-      {props.periodBar && !selected ? <div className="empty">Enter a start and end date for your period above.</div> : props.children}
+      {props.periodBar && props.showModes && <PeriodBar {...controls} hasWindow={!!selected} />}
+      {props.periodBar && <SetupLine mode={mode} hasWindow={!!selected} onOpen={props.onOpenSettings} />}
+      {props.periodBar && props.showModes && !selected ? <div className="empty">Enter a start and end date for your period above.</div> : props.children}
       {props.overlay}
     </Ctx.Provider>
+  );
+}
+
+/** Quiet summary of the league setup; opens League Settings. */
+function SetupLine({ mode, hasWindow, onOpen }: { mode: Mode; hasWindow: boolean; onOpen: () => void }) {
+  const { state, selected } = useApp();
+  const parts = [`${state.league.rosterSize} roster`, `${state.league.irSlots} IR`, `${activeSlotCount(state.league)} starters`];
+  if (mode === 'playoffs' && hasWindow) parts.push(`${selected.name}: ${formatRange(selected.start, selected.end)}`);
+  return (
+    <button type="button" className="setup-line" onClick={onOpen} title="Open League Settings">
+      {parts.join(' · ')}
+    </button>
   );
 }
 

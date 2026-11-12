@@ -8,10 +8,10 @@ import { useApp, type Window } from './context.ts';
 import { PosBadges } from './common.tsx';
 
 /** Team Schedules page: Games per Night, NHL Team Schedules and the Schedule Grid, all governed by the selected date range. */
-export function RankingsView() {
+export function RankingsView({ onGoRoster }: { onGoRoster: () => void }) {
   return (
     <div className="stack">
-      <TeamRankings />
+      <TeamRankings onGoRoster={onGoRoster} />
       <ScheduleGrid />
     </div>
   );
@@ -37,7 +37,7 @@ interface Column {
   title: string;
 }
 
-function TeamRankings() {
+function TeamRankings({ onGoRoster }: { onGoRoster: () => void }) {
   const { data, playoffWindows, selected, state } = useApp();
   const teamIds = useMemo(() => data.teams.map((t) => t.id), [data.teams]);
   const gamesIn = useGamesInWindow();
@@ -103,6 +103,7 @@ function TeamRankings() {
   return (
     <>
       <GamesPerNight />
+      <RosterPill onGoRoster={onGoRoster} />
       <section className="panel">
         <div className="panel-head">
           <h2>NHL Team Schedules</h2>
@@ -178,6 +179,27 @@ function TeamRankings() {
         </div>
       </section>
     </>
+  );
+}
+
+/** Shortcut to the Roster tab: an invitation before a roster exists, its size after. */
+function RosterPill({ onGoRoster }: { onGoRoster: () => void }) {
+  const { state } = useApp();
+  const n = state.roster.length;
+  if (n === 0) {
+    return (
+      <button type="button" className="roster-pill" onClick={onGoRoster}>
+        + Add your roster
+      </button>
+    );
+  }
+  return (
+    <span className="roster-pill has">
+      Roster: {n} {n === 1 ? 'player' : 'players'}
+      <button type="button" className="link-btn" onClick={onGoRoster}>
+        Edit
+      </button>
+    </span>
   );
 }
 

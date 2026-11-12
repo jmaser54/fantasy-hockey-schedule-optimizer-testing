@@ -2,16 +2,17 @@ import { useMemo } from 'react';
 import { optimizeDates } from '../domain/optimizer.ts';
 import { describeIssue, toLineupPlayers, validateRoster } from '../domain/roster.ts';
 import type { Player } from '../domain/types.ts';
-import { hasScenario, proposedRoster } from '../state/appState.ts';
+import { proposedRoster } from '../state/appState.ts';
 import { useApp } from './context.ts';
 import { Delta, InfoTip, PlayerSearch, PosBadges } from './common.tsx';
 
 /**
  * Before/after comparison of games that fit optimal lineups. Both sides use the
  * optimizer's best daily lineups, so manual lineup edits don't skew it.
+ * "Current" is always the saved roster; the tested moves never change it.
  */
 export function TradesView({ onGoRoster }: { onGoRoster: () => void }) {
-  const { state, dispatch, resolve, data, windows, selected, summarizeWindow, toast } = useApp();
+  const { state, dispatch, resolve, data, windows, selected, summarizeWindow } = useApp();
   const scenario = state.scenario;
   const proposed = useMemo(() => proposedRoster(state), [state]);
 
@@ -64,18 +65,6 @@ export function TradesView({ onGoRoster }: { onGoRoster: () => void }) {
       <section className="panel">
         <div className="panel-head">
           <h2>Games in Your Lineup: Current vs Proposed</h2>
-          <button
-            className="btn small primary"
-            disabled={!hasScenario(scenario)}
-            onClick={() => {
-              if (confirm('Replace your saved roster with the proposed one?')) {
-                dispatch({ type: 'scenarioApply' });
-                toast('Roster saved.');
-              }
-            }}
-          >
-            Update Roster
-          </button>
         </div>
         <div className="table-wrap">
           <table>
@@ -103,6 +92,8 @@ export function TradesView({ onGoRoster }: { onGoRoster: () => void }) {
         </div>
         <div className="panel-body small muted" style={{ borderTop: '1px solid var(--border)' }}>
           Test any move before you make it — a trade, a waiver pickup, a drop — and see how it changes your lineup.
+          <br />
+          Both columns use optimal daily lineups. This compares schedule opportunity only, not player quality.
         </div>
       </section>
 

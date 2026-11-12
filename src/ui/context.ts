@@ -22,6 +22,8 @@ export interface AppCtx {
   windows: Window[]; // the current period mode's windows: next week; rounds…, all; or custom periods (+ total)
   /** Playoff rounds and "Full Playoffs", whatever the mode. */
   playoffWindows: Window[];
+  /** Next Monday–Sunday, whatever the mode (the Roster tab's Games column). */
+  weekWindow: Window;
   selected: Window;
   lineupPlayers: LineupPlayer[];
   /** Results for every date in any window, with manual lineups applied. */

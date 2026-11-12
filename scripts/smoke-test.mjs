@@ -72,7 +72,7 @@ const isAnalytics = (url = '') => /googletagmanager\.com|google-analytics\.com/.
 page.on('console', (m) => m.type() === 'error' && !isAnalytics(m.location().url) && errors.push(m.text()));
 try {
   // Not network idle (gtag can keep a request open): wait for the loaded data instead.
-  // The site opens on Roster; the team counts are on Team Schedules (its first table; the Schedule Grid follows).
+  // Team counts are in the first table on Team Schedules (the Schedule Grid follows).
   await page.goto(`${base}#rankings`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.table-wrap table tbody tr', { timeout: 30_000 });
   await page.locator('.data-status', { hasText: 'NHL data' }).waitFor({ timeout: 30_000 });
