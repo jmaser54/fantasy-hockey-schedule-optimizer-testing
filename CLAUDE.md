@@ -21,8 +21,8 @@ Vite + React + TypeScript single-page app, deployed to GitHub Pages. The canonic
 - Copy in the Lineup heading, the Roster tab and the paste label is asserted by `scripts/smoke-test.mjs`. Update it if you change that copy.
 
 ## Git and deployment
-- Work on the default branch `claude/practical-faraday-ti8p02` unless told otherwise.
-- **Every push to the default branch redeploys the live site** (`.github/workflows/deploy-pages.yml`), and CI runs on every push.
+- This is the **testing repo** (`jmaser54/fantasy-hockey-schedule-optimizer-testing`). Work on its default branch `main` unless told otherwise; the live repo uses `claude/practical-faraday-ti8p02`.
+- **Every push to the default branch redeploys that repo's site** (here, the testing site) (`.github/workflows/deploy-pages.yml`), and CI runs on every push.
 - A bot commits daily data refreshes to this branch, so `git pull --rebase` before pushing.
 - Commit only the files the task touched.
 

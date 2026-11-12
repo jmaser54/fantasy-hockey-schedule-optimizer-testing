@@ -102,7 +102,7 @@ export function TradesView({ onGoRoster }: { onGoRoster: () => void }) {
           </table>
         </div>
         <div className="panel-body small muted" style={{ borderTop: '1px solid var(--border)' }}>
-          Both columns use optimal daily lineups. This compares schedule opportunity only, not player quality.
+          Test any move before you make it — a trade, a waiver pickup, a drop — and see how it changes your lineup.
         </div>
       </section>
 

@@ -7,22 +7,12 @@ import type { ISODate, TeamId } from '../domain/types.ts';
 import { useApp, type Window } from './context.ts';
 import { PosBadges } from './common.tsx';
 
-type View = 'rankings' | 'grid';
-
-/** Team Schedules page: Team Rankings (default) and Schedule Grid, both governed by the selected date range. */
+/** Team Schedules page: Games per Night, NHL Team Schedules and the Schedule Grid, all governed by the selected date range. */
 export function RankingsView() {
-  const [view, setView] = useState<View>('rankings');
   return (
     <div className="stack">
-      <div className="segmented view-toggle" role="group" aria-label="Team schedules view">
-        <button aria-pressed={view === 'rankings'} onClick={() => setView('rankings')}>
-          Team Rankings
-        </button>
-        <button aria-pressed={view === 'grid'} onClick={() => setView('grid')}>
-          Schedule Grid
-        </button>
-      </div>
-      {view === 'rankings' ? <TeamRankings /> : <ScheduleGrid />}
+      <TeamRankings />
+      <ScheduleGrid />
     </div>
   );
 }
@@ -48,14 +38,14 @@ interface Column {
 }
 
 function TeamRankings() {
-  const { data, windows, selected, state } = useApp();
+  const { data, playoffWindows, selected, state } = useApp();
   const teamIds = useMemo(() => data.teams.map((t) => t.id), [data.teams]);
   const gamesIn = useGamesInWindow();
   const byTeam = useRosterByTeam();
   const [expanded, setExpanded] = useState<{ team: TeamId; kind: 'games' | 'players' } | null>(null);
   const isAll = selected.id === 'all';
-  const rounds = windows.filter((w) => w.id !== 'all' && w.id !== 'custom');
-  const allWindow = windows.find((w) => w.id === 'all');
+  const rounds = playoffWindows.filter((w) => w.id !== 'all');
+  const allWindow = playoffWindows.find((w) => w.id === 'all');
 
   // Columns follow the selected range. "Full playoffs" shows its rounds as a breakdown of the same
   // dates; a single round or custom range shows its own games, plus a labeled all-rounds summary.
@@ -369,7 +359,7 @@ function ScheduleGrid() {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.team}>
+              <tr key={r.team} className={byTeam.get(r.team)?.length ? 'mine-row' : undefined}>
                 <th className="sticky" scope="row" title={data.teams.find((t) => t.id === r.team)?.name}>
                   {r.team} {byTeam.get(r.team)?.length ? <span className="mine-dot" title="You have players on this team" /> : null}
                 </th>
