@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { formatShort, weekday } from '../domain/dates.ts';
-import { canStartTogether, expandSeats, optimizeDay, type DayResult, type LineupPlayer, type UnusedReason } from '../domain/optimizer.ts';
+import { canPlaySeat, expandSeats, optimizeDay, type DayResult, type LineupPlayer, type UnusedReason } from '../domain/optimizer.ts';
 import { opponent } from '../domain/schedule.ts';
 import type { ISODate } from '../domain/types.ts';
 import { dailyGroupCounts, lineupGroupTotals } from '../domain/capacity.ts';
@@ -320,56 +320,85 @@ function DayDetail({ day, onNav, dates, sectionRef }: { day: DayResult; onNav: (
   const byId = new Map(lineupPlayers.map((p) => [p.id, p]));
   const idx = dates.indexOf(day.date);
   const nhlGames = data.schedule.gamesOn(day.date);
-  const override = state.manual[day.date];
-  // Tap a player, then the player to swap them with. Only position eligibility can stop a swap.
+  // Tap a player, then pick a destination in the panel that opens under them. Only the players involved move.
   const [picked, setPicked] = useState<string | null>(null);
   useEffect(() => setPicked(null), [day.date]);
+  // Keep the destinations on screen: the user never scrolls to finish a move.
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    panelRef.current?.scrollIntoView?.({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+  }, [picked]);
 
-  const starters = day.seats.flatMap((s) => (s.playerId ? [s.playerId] : []));
-  const inLineup = new Set(starters);
-  const bench = lineupPlayers.filter((p) => !p.onIr && !inLineup.has(p.id));
+  const current: Record<string, string | null> = Object.fromEntries(day.seats.map((x) => [x.seat.key, x.playerId ?? null]));
+  const seatOf = new Map(day.seats.flatMap((x) => (x.playerId ? [[x.playerId, x.seat] as const] : [])));
+  const bench = lineupPlayers.filter((p) => !p.onIr && !seatOf.has(p.id));
   const ir = lineupPlayers.filter((p) => p.onIr && status.get(p.id)?.game);
-  /** The lineup after swapping a and b, or null if it isn't position-legal (or both are on the same side). */
-  const swapped = (a: string, b: string): string[] | null => {
-    if (inLineup.has(a) === inLineup.has(b)) return null;
-    const [out, into] = inLineup.has(a) ? [a, b] : [b, a];
-    const next = [...starters.filter((x) => x !== out), into];
-    return canStartTogether(next.map((id) => byId.get(id)!), seats) ? next : null;
-  };
-  const tap = (id: string) => {
-    if (!picked || picked === id) return setPicked(picked === id ? null : id);
-    const next = swapped(picked, id);
-    if (!next) return setPicked(id); // same side: pick this one instead
-    const out = inLineup.has(picked) ? picked : id;
-    // The day's lineup is exactly the swapped one. Back to the automatic lineup clears the day's changes.
-    const auto = new Set(optimizeDay(day.date, lineupPlayers, seats, data.schedule).seats.flatMap((s) => (s.playerId ? [s.playerId] : [])));
-    const isAuto = next.length === auto.size && next.every((x) => auto.has(x));
-    const sit = [...new Set([...(override?.sit ?? []).filter((x) => !next.includes(x)), out])];
-    dispatch({ type: 'setManual', date: day.date, override: isAuto ? null : { start: next, sit } });
+  /** Save the day's exact lineup. Back to the automatic lineup clears the day's changes. */
+  const apply = (next: Record<string, string | null>) => {
+    const auto = optimizeDay(day.date, lineupPlayers, seats, data.schedule);
+    const isAuto = auto.seats.every((x) => (x.playerId ?? null) === next[x.seat.key]);
+    const start = Object.values(next).filter((x): x is string => !!x);
+    dispatch({ type: 'setManual', date: day.date, override: isAuto ? null : { start, sit: [], lineup: next } });
     setPicked(null);
   };
   const matchup = (id: string) => {
     const st = status.get(id);
-    if (!st?.game) return '';
+    if (!st?.game) return 'No game';
     const o = opponent(st.game, st.team);
     return `${o.home ? 'vs' : '@'} ${o.team}`;
   };
-  const playerButton = (p: LineupPlayer) => {
-    const isPicked = picked === p.id;
-    const canSwap = !picked || isPicked || inLineup.has(picked) === inLineup.has(p.id) || !!swapped(picked, p.id);
-    const st = status.get(p.id);
+  const who = (p: LineupPlayer) => (
+    <>
+      <b>{p.name}</b> <PosBadges positions={p.positions} /> <span className={`small ${status.get(p.id)?.game ? '' : 'muted'}`}>{matchup(p.id)}</span>
+    </>
+  );
+  const playerButton = (p: LineupPlayer) => (
+    <button type="button" className={`swap-player ${picked === p.id ? 'picked' : ''}`} aria-expanded={picked === p.id} onClick={() => setPicked(picked === p.id ? null : p.id)}>
+      {who(p)}
+    </button>
+  );
+  /** Destinations for the picked player, opened right under their row. */
+  const movePanel = (p: LineupPlayer) => {
+    const seat = seatOf.get(p.id);
+    const options: { key: string; label: React.ReactNode; next: Record<string, string | null> }[] = [];
+    if (seat) {
+      for (const b of bench.filter((b) => canPlaySeat(b, seat))) options.push({ key: b.id, label: <>Swap with {who(b)}</>, next: { ...current, [seat.key]: b.id } });
+      options.push({ key: 'bench', label: 'Move to bench', next: { ...current, [seat.key]: null } });
+    } else {
+      const emptyLabels = new Set<string>();
+      for (const x of day.seats.filter((x) => canPlaySeat(p, x.seat))) {
+        const occupant = x.playerId ? byId.get(x.playerId) : undefined;
+        if (!occupant && emptyLabels.has(x.seat.label)) continue; // one option per kind of empty slot
+        if (!occupant) emptyLabels.add(x.seat.label);
+        options.push({
+          key: x.seat.key,
+          label: occupant ? (
+            <>
+              Swap with {who(occupant)} <span className="small muted">({x.seat.label})</span>
+            </>
+          ) : (
+            <>
+              Move into empty <b>{x.seat.label}</b> slot
+            </>
+          ),
+          next: { ...current, [x.seat.key]: p.id },
+        });
+      }
+    }
     return (
-      <button
-        type="button"
-        className={`swap-player ${isPicked ? 'picked' : ''} ${picked && !isPicked && canSwap && inLineup.has(picked) !== inLineup.has(p.id) ? 'target' : ''}`}
-        aria-pressed={isPicked}
-        disabled={!canSwap}
-        title={canSwap ? undefined : `${p.name} can’t play that spot`}
-        onClick={() => tap(p.id)}
-      >
-        <b>{p.name}</b> <PosBadges positions={p.positions} /> <span className="small">{st?.game ? matchup(p.id) : <span className="muted">No game</span>}</span>
-        {!inLineup.has(p.id) && st?.reason?.kind === 'no-slot' && <span className="small muted"> · {reasonText(st.reason)}</span>}
-      </button>
+      <div className="move-panel" role="group" aria-label={`Move ${p.name}`} ref={panelRef}>
+        <div className="small muted">{seat ? `Move ${p.name} (${seat.label}) to:` : `Move ${p.name} to:`}</div>
+        {options.length === 0 && <div className="small">No lineup slot {p.name} can play on this day.</div>}
+        {options.map((o) => (
+          <button key={o.key} type="button" className="move-option" onClick={() => apply(o.next)}>
+            {o.label}
+          </button>
+        ))}
+        <button type="button" className="link-btn small" onClick={() => setPicked(null)}>
+          Cancel
+        </button>
+      </div>
     );
   };
 
@@ -407,26 +436,19 @@ function DayDetail({ day, onNav, dates, sectionRef }: { day: DayResult; onNav: (
             Some of your changes for this day no longer apply and are being ignored: {day.manualIssues.join(' ')}
           </div>
         )}
-        <p className="section-hint swap-hint">
-          Tap a player, then tap the player to swap them with.
-          {picked && (
-            <>
-              {' '}
-              <button className="link-btn" onClick={() => setPicked(null)}>
-                Cancel
-              </button>
-            </>
-          )}
-        </p>
+        <p className="section-hint swap-hint">Tap a player, then choose where to move them.</p>
         <div className="day-grid">
           <div>
             <h3 style={{ marginTop: 0 }}>In Lineup</h3>
             {day.seats.map(({ seat, playerId }) => {
               const p = playerId ? byId.get(playerId) : undefined;
               return (
-                <div className="seat" key={seat.key}>
-                  <span className="slot">{seat.label}</span>
-                  {p ? playerButton(p) : <span className="empty-seat">Empty</span>}
+                <div key={seat.key}>
+                  <div className="seat">
+                    <span className="slot">{seat.label}</span>
+                    {p ? playerButton(p) : <span className="empty-seat">Empty</span>}
+                  </div>
+                  {p && picked === p.id && movePanel(p)}
                 </div>
               );
             })}
@@ -437,6 +459,7 @@ function DayDetail({ day, onNav, dates, sectionRef }: { day: DayResult; onNav: (
             {bench.map((p) => (
               <div className="bench-item" key={p.id}>
                 {playerButton(p)}
+                {picked === p.id && movePanel(p)}
               </div>
             ))}
             {ir.length > 0 && (

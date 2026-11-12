@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { maxBipartiteMatching } from './matching.ts';
-import { canStartTogether, expandSeats, optimizeDates, optimizeDay, optimizeRange, sitPlayer, startPlayer, type DayOverride, type LineupPlayer } from './optimizer.ts';
+import { canPlaySeat, canStartTogether, expandSeats, isEmptyOverride, optimizeDates, optimizeDay, optimizeRange, sitPlayer, startPlayer, type DayOverride, type LineupPlayer } from './optimizer.ts';
 import { player, sched, slots } from './testUtils.ts';
 
 describe('optimizer — hand-checkable cases', () => {
@@ -356,5 +356,49 @@ describe('player priorities and daily choices', () => {
     expect(r.players.find((p) => p.playerId === 'irC')!.usable).toBe(0);
     expect(r.usable).toBe(r.days.reduce((n, d) => n + d.seats.filter((x) => x.playerId).length, 0));
     expect(r.goalieUsable).toBe(3);
+  });
+});
+
+describe('exact daily lineups (day editor moves)', () => {
+  const s = sched([['2027-03-01', 'AAA', 'BBB']]);
+  const roster = [player('C1', 'AAA', ['C']), player('C2', 'BBB', ['C']), player('C3', 'CCC', ['C']), player('G1', 'AAA', ['G']), player('G2', 'BBB', ['G'])];
+  const seats = expandSeats(slots({ C: ['C'], UTIL: ['C', 'LW', 'RW', 'D'], G: [2, ['G']] }));
+  const auto = optimizeDay('2027-03-01', roster, seats, s);
+  const lineupOf = (d: ReturnType<typeof optimizeDay>) => Object.fromEntries(d.seats.map((x) => [x.seat.key, x.playerId ?? null]));
+
+  it('is used exactly: only the moved players change, nothing refills', () => {
+    const before = lineupOf(auto);
+    expect(Object.values(before).sort()).toEqual(['C1', 'C2', 'G1', 'G2']);
+    // Swap the C-slot player with C3 (no game), and move the goalie in G#1 to the bench.
+    const lineup = { ...before, 'C#0': 'C3', 'G#1': null };
+    const day = optimizeDay('2027-03-01', roster, seats, s, { start: [], sit: [], lineup });
+    expect(lineupOf(day)).toEqual(lineup);
+    expect(day.usable).toBe(2); // C2 and G1; C3 has no game, G2's seat stays empty
+    expect(day.optimalUsable).toBe(4);
+    expect(day.manual).toBe(true);
+    expect(day.manualIssues).toEqual([]);
+  });
+
+  it('keeps goalies and skaters apart, strictly per slot', () => {
+    const [c, , , g] = roster;
+    const seat = (key: string) => seats.find((x) => x.key === key)!;
+    expect(canPlaySeat(g!, seat('UTIL#0'))).toBe(false);
+    expect(canPlaySeat(g!, seat('C#0'))).toBe(false);
+    expect(canPlaySeat(c!, seat('G#0'))).toBe(false);
+    expect(canPlaySeat(c!, seat('UTIL#0'))).toBe(true);
+    expect(canPlaySeat({ positions: ['G'] }, { accepts: ['C', 'G'] })).toBe(false); // a slot that takes skaters never takes a goalie
+    const day = optimizeDay('2027-03-01', roster, seats, s, { start: [], sit: [], lineup: { 'C#0': 'C1', 'UTIL#0': 'G2', 'G#0': 'C2', 'G#1': 'G1' } });
+    expect(lineupOf(day)).toEqual({ 'C#0': 'C1', 'UTIL#0': null, 'G#0': null, 'G#1': 'G1' });
+    expect(day.manualIssues).toHaveLength(2);
+  });
+
+  it('is ignored, visibly, when the league’s slots changed', () => {
+    const day = optimizeDay('2027-03-01', roster, seats, s, { start: [], sit: [], lineup: { 'C#0': 'C3', 'G#0': null } });
+    expect(lineupOf(day)).toEqual(lineupOf(auto));
+    expect(day.manualIssues.join(' ')).toMatch(/slots changed/);
+  });
+
+  it('counts as a manual change even with every seat empty', () => {
+    expect(isEmptyOverride({ start: [], sit: [], lineup: { 'C#0': null } })).toBe(false);
   });
 });

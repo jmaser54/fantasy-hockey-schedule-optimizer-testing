@@ -25,7 +25,7 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
 1. **Team Schedules** (`src/ui/Rankings.tsx`, short label "Schedules" on phones): which NHL teams play the most, and on light nights, in the selected window.
 2. **Roster** (`src/ui/Roster.tsx`): paste or search players. Set position eligibility, Active/IR and ★ Preferred, then remove or clear. No period toggle here; its Games column is always next week.
 3. **Lineup** (`src/ui/Lineup.tsx`): the optimizer's results.
-   - Summary cards, a player × date grid, and a day editor with tap-to-swap.
+   - Summary cards, a player × date grid, and a day editor where you tap a player and choose where to move them.
    - This page *is* "the optimizer"; there's no separate optimizer page.
 4. **Trade Lab** (`src/ui/Trades.tsx`): try drops and adds and compare games in the lineup, current vs proposed. "Current" is always the saved roster. "Update Roster" applies the tested moves after a confirmation.
 5. **League Settings** (modal, `src/ui/Settings.tsx`): roster size, IR slots, lineup slots and playoff rounds. Cancel and Save (`.modal-actions`) sit in normal flow below "Add Round" / "Restore 2027 Defaults" at the bottom of the form, and scroll with it (not sticky; owner decision). There's no Contact link in it any more.
@@ -94,11 +94,14 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
 - **Player priorities:** a single ★ Preferred flag per roster player. Default is not preferred.
   - Preferred players win contested spots across the whole selected period.
   - Priorities must never break position eligibility, overfill slots, or leave a fillable spot empty.
-- **Daily manual overrides (round 4, owner decision):** per date, the user swaps players directly, like ESPN: tap a player (starter or bench), then tap the player to swap them with. It works in both directions.
-  - **Only position eligibility can stop a swap** (the resulting lineup must fit the slots; `canStartTogether`). Players who can't make a legal swap with the picked player are disabled. A swap is never blocked, warned about or confirmed because it loses games: the day's counts just update. That includes swapping in a bench player with no game that day (it counts zero).
-  - Tapping another player on the same side moves the selection. Starter-to-starter slot moves aren't offered; they wouldn't change any count.
-  - A swap saves that day's exact lineup: `start` = all starters after the swap, `sit` = the swapped-out player (plus earlier sits). If a swap returns the day to its automatic lineup, the override is cleared.
-  - The automatic optimal lineup stays the default for every day. A choice on one date never changes other dates, the roster, league settings or rounds.
+- **Daily manual overrides (round 5, owner decision; ESPN-style):** tap a player in the day view and a panel of destinations opens right under that player's row (scrolled fully into view, so the user never scrolls to finish). Tapping another player switches to theirs.
+  - **Starter:** every bench player who can play that exact slot ("Swap with …"), plus "Move to bench" (the slot shows "Empty").
+  - **Bench player:** every starter whose slot they can play ("Swap with … (slot)"), plus each kind of empty slot they can play ("Move into empty <slot> slot", one option per slot type).
+  - **Strict per-slot eligibility** (`canPlaySeat` in `optimizer.ts`): a slot that takes any skater position (C, LW, RW, D, UTIL) never takes a goalie, and a goalie slot takes goalies only. Only eligible destinations are listed; with none, the panel says "No lineup slot <name> can play on this day."
+  - **Only the players involved move.** The day saves an exact lineup (`DayOverride.lineup`: every seat key → player id or null). The optimizer uses it as is: no re-optimizing, no refilling, nobody else moves. (Round 4's start/sit swap re-ran the optimizer, which could move other players and even leave goalie slots empty.)
+  - A move is never warned about, confirmed or blocked because it loses games; that includes moving in a bench player with no game (counts zero). The day's count just updates.
+  - If a move returns the day to its automatic lineup (same player in every seat), the override is cleared and the dash goes away.
+  - The automatic optimal lineup stays the default for every day. A move on one date never changes other dates, the roster, league settings or rounds.
   - Changing a priority updates automatically optimized dates but keeps manual choices.
   - Reset Day, or Reset <period>, removes choices and returns to the priority-aware optimum.
   - Choices that become invalid (IR, no room, roster change) are ignored *visibly*, never forced into an invalid lineup.
@@ -106,7 +109,7 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
 - **Day editor:**
   - Selecting a date in the grid scrolls its editor into view below the sticky header. The ← → day arrows don't scroll.
   - The date headers are buttons (`.day-btn`). The hint above the grid reads "Tap a day to change that day's lineup."
-  - The editor title is "Lineup for <date>", with In Lineup and Bench sections and the instruction "Tap a player, then tap the player to swap them with." The Bench lists every non-IR player not in the lineup, including those with no game ("No game").
+  - The editor title is "Lineup for <date>", with In Lineup and Bench sections and the instruction "Tap a player, then choose where to move them." The Bench lists every non-IR player not in the lineup, including those with no game ("No game").
   - The day view shows no priority or competition logic: no ★ toggles, no "lowest-priority" line, no "<slots> full (…)" lists, no Sit/Start buttons. (The week grid's hover tooltips still give unused-game reasons.)
 
 ### Counts and summary metrics (Confirmed, commit `bfbc1a7` plus the priorities work)
@@ -215,7 +218,9 @@ Each rule below is enforced by the code or tests named; keep them true.
 3. **Eligibility and capacity.**
    - A player fills at most one seat, and only a seat whose `accepts` includes one of their effective positions.
    - Seats come from `expandSeats(league.slots)`; no seat holds two players; IR players never get seats.
-4. **Daily choices** (`DayOverride {start[], sit[]}`, keyed by date in `state.manual`):
+4. **Daily choices** (`DayOverride {start[], sit[], lineup?}`, keyed by date in `state.manual`):
+   - **Exact lineup** (`lineup`, written by the day editor): used seat by seat with no re-optimizing or refilling. Entries for players who left the roster, went on IR or can't play that seat (`canPlaySeat`) are dropped and reported in `manualIssues`. If the league's seats no longer match (slots changed), the whole lineup is ignored with an issue and the day is automatic. `removePlayer`/`replacePlayer` empty or rename the seat. `isEmptyOverride` treats any `lineup` as a change. The loader keeps `lineup`; older saves without it work as before.
+   - Without `lineup` (older saves), the start/sit rules below apply:
    - Starts are placed first, then everyone else not sat, by priority.
    - A start is honored if the player is on the roster, not on IR, and fits among the other starts. Otherwise it's skipped and reported in `DayResult.manualIssues`. Started players with a game are placed before started players without one.
    - Sat players get the reason `{kind: 'sat'}`.
