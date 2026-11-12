@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { formatShort, weekday } from '../domain/dates.ts';
-import { canPlaySeat, expandSeats, optimizeDay, type DayResult, type LineupPlayer, type UnusedReason } from '../domain/optimizer.ts';
+import { expandSeats, moveInLineup, optimizeDay, type DayResult, type LineupPlayer, type UnusedReason } from '../domain/optimizer.ts';
 import { opponent } from '../domain/schedule.ts';
 import type { ISODate } from '../domain/types.ts';
 import { dailyGroupCounts, lineupGroupTotals } from '../domain/capacity.ts';
@@ -314,21 +314,16 @@ export function reasonText(r: UnusedReason): string {
 }
 
 function DayDetail({ day, onNav, dates, sectionRef }: { day: DayResult; onNav: (d: ISODate) => void; dates: ISODate[]; sectionRef: RefObject<HTMLElement> }) {
-  const { state, dispatch, lineupPlayers, data, teams } = useApp();
+  const { state, dispatch, lineupPlayers, data, teams, toast } = useApp();
   const seats = useMemo(() => expandSeats(state.league.slots), [state.league.slots]);
   const status = new Map(day.players.map((s) => [s.playerId, s]));
   const byId = new Map(lineupPlayers.map((p) => [p.id, p]));
   const idx = dates.indexOf(day.date);
   const nhlGames = data.schedule.gamesOn(day.date);
-  // Tap a player, then pick a destination in the panel that opens under them. Only the players involved move.
+  // ESPN-style: tap a player's position button to move them; the positions they can take light up; tap one.
+  // Only the players involved move.
   const [picked, setPicked] = useState<string | null>(null);
   useEffect(() => setPicked(null), [day.date]);
-  // Keep the destinations on screen: the user never scrolls to finish a move.
-  const panelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    panelRef.current?.scrollIntoView?.({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
-  }, [picked]);
 
   const current: Record<string, string | null> = Object.fromEntries(day.seats.map((x) => [x.seat.key, x.playerId ?? null]));
   const seatOf = new Map(day.seats.flatMap((x) => (x.playerId ? [[x.playerId, x.seat] as const] : [])));
@@ -341,6 +336,40 @@ function DayDetail({ day, onNav, dates, sectionRef }: { day: DayResult; onNav: (
     const start = Object.values(next).filter((x): x is string => !!x);
     dispatch({ type: 'setManual', date: day.date, override: isAuto ? null : { start, sit: [], lineup: next } });
     setPicked(null);
+    toast('Lineup saved.');
+  };
+  const pickedPlayer = picked ? byId.get(picked) : undefined;
+  const pickedSeat = picked ? seatOf.get(picked) : undefined;
+  const moveTo = (seatKey: string | undefined, occupantId: string | undefined) =>
+    picked ? moveInLineup(current, seats, byId, picked, seatKey, occupantId) : null;
+  /** The position button beside a player (or an empty spot), as in ESPN's lineup editor. */
+  const posButton = (label: string, seatKey: string | undefined, occupant: LineupPlayer | undefined) => {
+    const isPicked = !!occupant && occupant.id === picked;
+    const next = picked && !isPicked ? moveTo(seatKey, occupant?.id) : null;
+    const where = seatKey ? label : 'the bench';
+    if (isPicked)
+      return (
+        <button type="button" className="pos-btn picked" aria-pressed="true" aria-label={`Cancel moving ${occupant.name}`} onClick={() => setPicked(null)}>
+          {label}
+        </button>
+      );
+    if (next)
+      return (
+        <button type="button" className="pos-btn target" aria-label={occupant ? `Swap with ${occupant.name} (${label})` : `Move to empty ${where}`} onClick={() => apply(next)}>
+          {label}
+        </button>
+      );
+    return (
+      <button
+        type="button"
+        className={`pos-btn ${picked ? 'off' : occupant ? '' : 'idle'}`}
+        disabled={!!picked || !occupant}
+        aria-label={occupant ? `Move ${occupant.name} (${label})` : `Empty ${label}`}
+        onClick={() => occupant && setPicked(occupant.id)}
+      >
+        {label}
+      </button>
+    );
   };
   const matchup = (id: string) => {
     const st = status.get(id);
@@ -353,55 +382,6 @@ function DayDetail({ day, onNav, dates, sectionRef }: { day: DayResult; onNav: (
       <b>{p.name}</b> <PosBadges positions={p.positions} /> <span className={`small ${status.get(p.id)?.game ? '' : 'muted'}`}>{matchup(p.id)}</span>
     </>
   );
-  const playerButton = (p: LineupPlayer) => (
-    <button type="button" className={`swap-player ${picked === p.id ? 'picked' : ''}`} aria-expanded={picked === p.id} onClick={() => setPicked(picked === p.id ? null : p.id)}>
-      {who(p)}
-    </button>
-  );
-  /** Destinations for the picked player, opened right under their row. */
-  const movePanel = (p: LineupPlayer) => {
-    const seat = seatOf.get(p.id);
-    const options: { key: string; label: React.ReactNode; next: Record<string, string | null> }[] = [];
-    if (seat) {
-      for (const b of bench.filter((b) => canPlaySeat(b, seat))) options.push({ key: b.id, label: <>Swap with {who(b)}</>, next: { ...current, [seat.key]: b.id } });
-      options.push({ key: 'bench', label: 'Move to bench', next: { ...current, [seat.key]: null } });
-    } else {
-      const emptyLabels = new Set<string>();
-      for (const x of day.seats.filter((x) => canPlaySeat(p, x.seat))) {
-        const occupant = x.playerId ? byId.get(x.playerId) : undefined;
-        if (!occupant && emptyLabels.has(x.seat.label)) continue; // one option per kind of empty slot
-        if (!occupant) emptyLabels.add(x.seat.label);
-        options.push({
-          key: x.seat.key,
-          label: occupant ? (
-            <>
-              Swap with {who(occupant)} <span className="small muted">({x.seat.label})</span>
-            </>
-          ) : (
-            <>
-              Move into empty <b>{x.seat.label}</b> slot
-            </>
-          ),
-          next: { ...current, [x.seat.key]: p.id },
-        });
-      }
-    }
-    return (
-      <div className="move-panel" role="group" aria-label={`Move ${p.name}`} ref={panelRef}>
-        <div className="small muted">{seat ? `Move ${p.name} (${seat.label}) to:` : `Move ${p.name} to:`}</div>
-        {options.length === 0 && <div className="small">No lineup slot {p.name} can play on this day.</div>}
-        {options.map((o) => (
-          <button key={o.key} type="button" className="move-option" onClick={() => apply(o.next)}>
-            {o.label}
-          </button>
-        ))}
-        <button type="button" className="link-btn small" onClick={() => setPicked(null)}>
-          Cancel
-        </button>
-      </div>
-    );
-  };
-
   return (
     <section className="panel day-editor" ref={sectionRef} aria-label={`Lineup editor for ${weekday(day.date)} ${formatShort(day.date)}`}>
       <div className="panel-head">
@@ -436,32 +416,48 @@ function DayDetail({ day, onNav, dates, sectionRef }: { day: DayResult; onNav: (
             Some of your changes for this day no longer apply and are being ignored: {day.manualIssues.join(' ')}
           </div>
         )}
-        <p className="section-hint swap-hint">Tap a player, then choose where to move them.</p>
+        <p className="section-hint swap-hint" aria-live="polite">
+          {pickedPlayer ? (
+            <>
+              Moving <b>{pickedPlayer.name}</b>: tap a highlighted position.{' '}
+              <button className="link-btn" onClick={() => setPicked(null)}>
+                Cancel
+              </button>
+            </>
+          ) : (
+            'Tap a player’s position to move them.'
+          )}
+        </p>
         <div className="day-grid">
           <div>
             <h3 style={{ marginTop: 0 }}>In Lineup</h3>
             {day.seats.map(({ seat, playerId }) => {
               const p = playerId ? byId.get(playerId) : undefined;
               return (
-                <div key={seat.key}>
-                  <div className="seat">
-                    <span className="slot">{seat.label}</span>
-                    {p ? playerButton(p) : <span className="empty-seat">Empty</span>}
-                  </div>
-                  {p && picked === p.id && movePanel(p)}
+                <div className={`seat ${p && p.id === picked ? 'picking' : ''}`} key={seat.key}>
+                  {posButton(seat.label, seat.key, p)}
+                  <span className="who">{p ? who(p) : <span className="empty-seat">Empty</span>}</span>
                 </div>
               );
             })}
           </div>
           <div>
             <h3 style={{ marginTop: 0 }}>Bench</h3>
-            {bench.length === 0 && <div className="muted small">Everyone is in the lineup.</div>}
+            {bench.length === 0 && !pickedSeat && <div className="muted small">Everyone is in the lineup.</div>}
             {bench.map((p) => (
-              <div className="bench-item" key={p.id}>
-                {playerButton(p)}
-                {picked === p.id && movePanel(p)}
+              <div className={`seat ${p.id === picked ? 'picking' : ''}`} key={p.id}>
+                {posButton('BN', undefined, p)}
+                <span className="who">{who(p)}</span>
               </div>
             ))}
+            {pickedSeat && (
+              <div className="seat">
+                {posButton('BN', undefined, undefined)}
+                <span className="who">
+                  <span className="empty-seat">Empty</span>
+                </span>
+              </div>
+            )}
             {ir.length > 0 && (
               <div className="small muted" style={{ marginTop: 8 }}>
                 On IR: {ir.map((p) => p.name).join(', ')}

@@ -54,9 +54,14 @@ export interface Seat {
   accepts: Position[];
 }
 
+/**
+ * One seat per slot place, in the league's slot order except that goalie-only slots
+ * always come last (an added F slot shows above G). Seat keys don't depend on order.
+ */
 export function expandSeats(slots: readonly LineupSlot[]): Seat[] {
   const seats: Seat[] = [];
-  for (const s of slots) {
+  const isGoalieSlot = (s: LineupSlot) => s.accepts.length > 0 && s.accepts.every((x) => x === 'G');
+  for (const s of [...slots.filter((x) => !isGoalieSlot(x)), ...slots.filter(isGoalieSlot)]) {
     for (let i = 0; i < s.count; i++) {
       seats.push({ key: `${s.id}#${i}`, slotId: s.id, label: s.label, accepts: s.accepts });
     }
@@ -155,6 +160,36 @@ export function priorityOrder<T extends Pick<LineupPlayer, 'preferred'>>(players
 function assignInOrder(ordered: readonly LineupPlayer[], seats: readonly Seat[]): (number | -1)[] {
   const adjacency = ordered.map((p) => eligibleSeatIndices(p, seats));
   return maxBipartiteMatching(ordered.length, seats.length, adjacency).leftToRight;
+}
+
+/**
+ * The day editor's move: player `id` goes to a seat (or the bench when `seatKey` is undefined),
+ * swapping with whoever is there. Only those two players move. Returns the new lineup
+ * (seat key → player id or null), or null when the move isn't legal for the slots involved.
+ */
+export function moveInLineup(
+  lineup: Readonly<Record<string, string | null>>,
+  seats: readonly Seat[],
+  players: ReadonlyMap<string, Pick<LineupPlayer, 'positions'>>,
+  id: string,
+  seatKey: string | undefined,
+  occupantId: string | undefined,
+): Record<string, string | null> | null {
+  const mover = players.get(id);
+  if (!mover || occupantId === id) return null;
+  const fromSeat = seats.find((x) => lineup[x.key] === id);
+  const target = seatKey ? seats.find((x) => x.key === seatKey) : undefined;
+  if (seatKey && (!target || (lineup[seatKey] ?? undefined) !== occupantId)) return null;
+  const occupant = occupantId ? players.get(occupantId) : undefined;
+  if (occupantId && !occupant) return null;
+  if (fromSeat) {
+    if (occupant && !canPlaySeat(occupant, fromSeat)) return null; // they take the mover's slot
+    if (!target) return { ...lineup, [fromSeat.key]: occupantId ?? null }; // to the bench
+    if (!canPlaySeat(mover, target)) return null;
+    return { ...lineup, [target.key]: id, [fromSeat.key]: occupantId ?? null };
+  }
+  if (!target || !canPlaySeat(mover, target)) return null; // bench to bench changes nothing
+  return { ...lineup, [target.key]: id };
 }
 
 /** The automatic lineup: seat index → player id. */

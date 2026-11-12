@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { Position } from './types.ts';
 import { maxBipartiteMatching } from './matching.ts';
-import { canPlaySeat, canStartTogether, expandSeats, isEmptyOverride, optimizeDates, optimizeDay, optimizeRange, sitPlayer, startPlayer, type DayOverride, type LineupPlayer } from './optimizer.ts';
+import { canPlaySeat, canStartTogether, expandSeats, isEmptyOverride, moveInLineup, optimizeDates, optimizeDay, optimizeRange, sitPlayer, startPlayer, type DayOverride, type LineupPlayer } from './optimizer.ts';
 import { player, sched, slots } from './testUtils.ts';
 
 describe('optimizer — hand-checkable cases', () => {
@@ -400,5 +401,63 @@ describe('exact daily lineups (day editor moves)', () => {
 
   it('counts as a manual change even with every seat empty', () => {
     expect(isEmptyOverride({ start: [], sit: [], lineup: { 'C#0': null } })).toBe(false);
+  });
+});
+
+describe('lineup slot order', () => {
+  it('puts goalie slots last, keeping every other slot in league order', () => {
+    const order = expandSeats([...slots({ C: ['C'], D: ['D'], G: [2, ['G']] }), { id: 'F', label: 'F', count: 1, accepts: ['C', 'LW', 'RW'] }]).map((x) => x.label);
+    expect(order).toEqual(['C', 'D', 'F', 'G', 'G']);
+  });
+});
+
+describe('day editor moves (moveInLineup)', () => {
+  const seats = expandSeats(slots({ C: ['C'], LW: ['LW'], UTIL: ['C', 'LW', 'RW', 'D'], G: [2, ['G']] }));
+  const ps = new Map([
+    ['c1', { positions: ['C'] as Position[] }],
+    ['c2', { positions: ['C'] as Position[] }],
+    ['lw', { positions: ['LW'] as Position[] }],
+    ['d', { positions: ['D'] as Position[] }],
+    ['g1', { positions: ['G'] as Position[] }],
+    ['g2', { positions: ['G'] as Position[] }],
+  ]);
+  const base = { 'C#0': 'c1', 'LW#0': 'lw', 'UTIL#0': 'd', 'G#0': 'g1', 'G#1': null };
+
+  it('swaps a starter with a bench player: only those two change', () => {
+    expect(moveInLineup(base, seats, ps, 'c1', undefined, 'c2')).toEqual({ ...base, 'C#0': 'c2' });
+    expect(moveInLineup(base, seats, ps, 'c2', 'C#0', 'c1')).toEqual({ ...base, 'C#0': 'c2' }); // from the bench side
+  });
+
+  it('swaps two starters only when each can play the other’s slot', () => {
+    expect(moveInLineup(base, seats, ps, 'c1', 'UTIL#0', 'd')).toBeNull(); // d can't play C
+    expect(moveInLineup({ ...base, 'UTIL#0': 'c2' }, seats, ps, 'c1', 'UTIL#0', 'c2')).toEqual({ ...base, 'C#0': 'c2', 'UTIL#0': 'c1' });
+  });
+
+  it('moves into an empty slot and leaves the old one empty', () => {
+    expect(moveInLineup(base, seats, ps, 'g1', 'G#1', undefined)).toEqual({ ...base, 'G#0': null, 'G#1': 'g1' });
+    expect(moveInLineup(base, seats, ps, 'g2', 'G#1', undefined)).toEqual({ ...base, 'G#1': 'g2' });
+    expect(moveInLineup(base, seats, ps, 'lw', undefined, undefined)).toEqual({ ...base, 'LW#0': null }); // to the bench
+  });
+
+  it('never moves a goalie into a skater slot or a skater into a goalie slot', () => {
+    expect(moveInLineup(base, seats, ps, 'g2', 'UTIL#0', 'd')).toBeNull();
+    expect(moveInLineup(base, seats, ps, 'g1', 'C#0', 'c1')).toBeNull();
+    expect(moveInLineup(base, seats, ps, 'c2', 'G#1', undefined)).toBeNull();
+    expect(moveInLineup(base, seats, ps, 'g1', undefined, 'c2')).toBeNull(); // c2 can't take g1's G slot
+  });
+
+  it('rejects a stale target and bench-to-bench moves', () => {
+    expect(moveInLineup(base, seats, ps, 'c2', 'C#0', 'lw')).toBeNull(); // C#0 holds c1, not lw
+    expect(moveInLineup(base, seats, ps, 'c2', undefined, 'g2')).toBeNull();
+  });
+
+  it('result is honored exactly by the optimizer', () => {
+    const s = sched([['2027-03-01', 'AAA', 'BBB']]);
+    const roster = [player('c1', 'AAA', ['C']), player('c2', 'CCC', ['C']), player('g1', 'BBB', ['G'])];
+    const seats2 = expandSeats(slots({ C: ['C'], G: ['G'] }));
+    const lineup = moveInLineup({ 'C#0': 'c1', 'G#0': 'g1' }, seats2, new Map(roster.map((p) => [p.id, p])), 'c1', undefined, 'c2')!;
+    const day = optimizeDay('2027-03-01', roster, seats2, s, { start: [], sit: [], lineup });
+    expect(day.seats.map((x) => x.playerId)).toEqual(['c2', 'g1']);
+    expect(day.usable).toBe(1); // c2 has no game: the user's call
   });
 });
