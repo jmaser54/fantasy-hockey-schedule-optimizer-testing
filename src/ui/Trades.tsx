@@ -9,10 +9,11 @@ import { Delta, InfoTip, PlayerSearch, PosBadges } from './common.tsx';
 /**
  * Before/after comparison of games that fit optimal lineups. Both sides use the
  * optimizer's best daily lineups, so manual lineup edits don't skew it.
- * "Current" is always the saved roster; the tested moves never change it.
+ * "Current" is always the saved roster. Tested moves change it only through
+ * "Update Roster", after the user confirms the listed changes.
  */
 export function TradesView({ onGoRoster }: { onGoRoster: () => void }) {
-  const { state, dispatch, resolve, data, windows, selected, summarizeWindow } = useApp();
+  const { state, dispatch, resolve, data, windows, selected, summarizeWindow, toast } = useApp();
   const scenario = state.scenario;
   const proposed = useMemo(() => proposedRoster(state), [state]);
 
@@ -57,6 +58,22 @@ export function TradesView({ onGoRoster }: { onGoRoster: () => void }) {
   const toggleDrop = (id: string) =>
     set({ ...scenario, drops: scenario.drops.includes(id) ? scenario.drops.filter((d) => d !== id) : [...scenario.drops, id] });
 
+  // What "Update Roster" would change: the proposed roster vs the saved one.
+  const proposedIds = new Set(proposed.map((e) => e.playerId));
+  const added = proposed.filter((e) => !onRoster.has(e.playerId)).map((e) => e.playerId);
+  const dropped = state.roster.filter((e) => !proposedIds.has(e.playerId)).map((e) => e.playerId);
+  const nameOf = (id: string) => resolve(id)?.name ?? id;
+  const applyProposal = () => {
+    const lines = [
+      'Update your saved roster?',
+      ...(added.length ? ['', `Add: ${added.map(nameOf).join(', ')}`] : []),
+      ...(dropped.length ? ['', `Drop: ${dropped.map(nameOf).join(', ')}`] : []),
+    ];
+    if (!confirm(lines.join('\n'))) return;
+    dispatch({ type: 'scenarioApply' });
+    toast('Roster updated.');
+  };
+
   const selRow = rows.find((r) => r.w.id === selected.id) ?? rows[0]!;
   const perPlayer = (id: string, which: 'before' | 'after') => (which === 'before' ? selRow.before : selRow.after).players.find((p) => p.playerId === id);
 
@@ -65,6 +82,14 @@ export function TradesView({ onGoRoster }: { onGoRoster: () => void }) {
       <section className="panel">
         <div className="panel-head">
           <h2>Games in Your Lineup: Current vs Proposed</h2>
+          <button
+            className="btn small primary"
+            disabled={added.length === 0 && dropped.length === 0}
+            title="Apply the tested adds and drops to your saved roster"
+            onClick={applyProposal}
+          >
+            Update Roster
+          </button>
         </div>
         <div className="table-wrap">
           <table>

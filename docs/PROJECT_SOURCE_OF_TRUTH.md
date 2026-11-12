@@ -27,7 +27,7 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
 3. **Lineup** (`src/ui/Lineup.tsx`): the optimizer's results.
    - Summary cards, a player × date grid, and a day editor with Start/Sit.
    - This page *is* "the optimizer"; there's no separate optimizer page.
-4. **Trade Lab** (`src/ui/Trades.tsx`): try drops and adds and compare games in the lineup, current vs proposed. "Current" is always the saved roster; the tested moves never change it.
+4. **Trade Lab** (`src/ui/Trades.tsx`): try drops and adds and compare games in the lineup, current vs proposed. "Current" is always the saved roster. "Update Roster" applies the tested moves after a confirmation.
 5. **League Settings** (modal, `src/ui/Settings.tsx`): roster size, IR slots, lineup slots and playoff rounds. Cancel and Save (`.modal-actions`) sit in normal flow below "Add Round" / "Restore 2027 Defaults" at the bottom of the form, and scroll with it (not sticky; owner decision). There's no Contact link in it any more.
 6. **About** (`src/ui/About.tsx`): opened only from the footer link; not a tab.
 7. **Contact** (`src/ui/Contact.tsx`): opened from the footer's Contact link, in its own dialog (`ContactModal` in `App.tsx`).
@@ -130,7 +130,12 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
   - The Schedule Grid shows daily NHL game counts, with dates larger than the counts, and has no mouse-following hover lines.
 
 ### Trade Lab (Confirmed)
-- **One-way (owner decision, round 2):** the baseline ("Current") is always the saved roster, so roster changes show up in Trade Lab automatically. Tested drops and adds (`state.scenario`) never change the saved roster. The "Update Roster" button was removed; real changes are made on the Roster tab. The reducer's `scenarioApply` action remains but nothing in the UI dispatches it.
+- **Baseline follows the roster (owner decision, round 2):** "Current" is always the saved roster, so roster changes on the Roster tab show up in Trade Lab automatically. Nothing copies the roster into Trade Lab; there's no separate Trade Lab roster.
+- **"Update Roster" (owner decision, round 3)** sits in the Current vs Proposed panel header and pushes the tested moves into the saved roster:
+  - It's enabled only when the proposed roster differs from the saved one (some tested add or drop would change it); otherwise it's disabled.
+  - It first shows a confirmation listing the players to add and drop ("Update your saved roster? / Add: … / Drop: …"). Cancel applies nothing.
+  - On OK it dispatches `scenarioApply`: the roster becomes the proposed roster (kept players keep their IR and ★ settings), dropped players' daily choices are removed, and the scenario is cleared. Current then equals Proposed, and Roster, Lineup and the rest update immediately. Toast: "Roster updated."
+  - Tested drops and adds (`state.scenario`) never change the saved roster any other way.
 - No Undo button, no "Back to current roster" button, and no Scheduled Games column. Zero change shows "+0".
 - The label "In Lineup / Scheduled" sits above the period name, with an info tip.
 - **Implemented:** both columns use *optimal* daily lineups. Priorities apply; manual daily choices are ignored (§H).
