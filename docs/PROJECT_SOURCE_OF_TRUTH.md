@@ -137,6 +137,7 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
 - Team Schedules:
   - The tab always shows, in order: "Games per Night", "NHL Team Schedules", then "Schedule Grid". The old "Team Rankings / Schedule Grid" toggle is gone (owner decision, 2026-11-12). Rankings are consistent with the selected window; columns sort ascending and descending.
   - The Schedule Grid covers the selected window: 7 days in Next Week, the full window in Playoffs or Custom.
+  - NHL Team Schedules shows a "Full Playoffs" context column for a single round or a Custom period, but **not in Next Week** (owner decision, round 8). In Next Week the table (`table.next-week`) lets its headers wrap on phones so every column, Your Players included, fits at 360px. The Full Playoffs view itself (rounds + Total) is unchanged.
   - **Roster highlight:** grid rows for teams with at least one roster player get `tr.mine-row`: light-blue row header with a blue left edge, and light-blue off-day cells, also on hover. Game cells keep their grey (`--surface-2`) background. The existing `mine-dot` stays. No highlight with an empty roster.
   - Games-per-night bars show that night's matchups; "Your Players" counts are clickable.
   - The Schedule Grid shows daily NHL game counts, with dates larger than the counts, and has no mouse-following hover lines.

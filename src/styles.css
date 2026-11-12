@@ -360,6 +360,7 @@ h3 { font-size: 13px; margin: 16px 0 6px; }
   main { padding: 12px; }
   .brand { font-size: 14px; }
   .team-cell .muted { display: none; }
+  .table-wrap table.next-week th.sortable { white-space: normal; } /* Next Week's Team Schedules headers wrap so the table fits a phone */
   .lgrid .sticky { min-width: 128px; max-width: 150px; white-space: normal; }
   th, td { padding: 6px 8px; }
   .icon-btn .small { display: none; }
