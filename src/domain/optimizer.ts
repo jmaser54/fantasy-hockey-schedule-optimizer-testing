@@ -359,6 +359,18 @@ export interface RangeResult {
   players: PlayerTotals[];
 }
 
+/**
+ * Turn a start/sit day (saved by the old Start/Sit buttons) into the exact lineup it
+ * produces now. Manually edited days then stay as they are when stars change later:
+ * older start/sit days only pinned the chosen players and re-sorted the rest by stars.
+ */
+export function freezeOverride(date: ISODate, roster: readonly LineupPlayer[], seats: readonly Seat[], schedule: ScheduleIndex, override: DayOverride): DayOverride {
+  if (override.lineup) return override;
+  const day = optimizeDay(date, roster, seats, schedule, override);
+  const lineup = Object.fromEntries(day.seats.map((x) => [x.seat.key, x.playerId ?? null]));
+  return { start: Object.values(lineup).filter((x): x is string => !!x), sit: override.sit, lineup };
+}
+
 export function optimizeRange(
   start: ISODate,
   end: ISODate,
