@@ -149,9 +149,6 @@ function Legend() {
         <span className="star" aria-hidden="true" style={{ color: 'var(--warn)' }}>★</span> Preferred: gets lineup spots first
       </span>
       <span>
-        <span className="legend-mark" /> Your changes that day
-      </span>
-      <span>
         <b className="count-key">Skaters, Goalies</b> rows: players with a game / active lineup slots
       </span>
     </div>

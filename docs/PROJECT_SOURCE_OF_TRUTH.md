@@ -58,7 +58,8 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
 - League Settings button: gear icon plus the words "League Settings", at every width (`.tabbar .settings-btn`).
 - Setup line under the period bar: "<roster size> roster · <IR slots> IR · <starters> starters", e.g. "22 roster · 2 IR · 13 starters" (starters = the sum of lineup slot counts, `activeSlotCount`). In Playoffs mode it adds the selected round, e.g. "· Round 1: Feb 22 – Mar 7, 2027". Clicking it opens League Settings (`SetupLine` in `App.tsx`). It also shows on Roster, where there's no period bar.
 - Roster Games column header: "Games next week" (on phones, rows read "N games next week").
-- Trade Lab, under the comparison table, two lines: "Test any move before you make it — a trade, a waiver pickup, a drop — and see how it changes your lineup." then the original note, restored word for word: "Both columns use optimal daily lineups. This compares schedule opportunity only, not player quality."
+- Trade Lab, under the comparison table, two lines (owner's exact wording, round 7): "Test a trade or pickup before you make it and see how it changes your lineup." then "Compares the number of games players can start in your lineup based on your league’s roster positions and eligibility." Don't reintroduce "optimal daily lineups". It measures schedule opportunity, not player quality.
+- Trade Lab panel order: Add first, then Drop (round 7). On phones Add sits above Drop; on desktop the two sit side by side, Add on the left.
 - Link previews (`index.html`): meta description and `og:description` "Add your roster and see which NHL teams give you the most games that fit your lineup in your fantasy playoffs — plus which pickups are worth it." (reworded in round 2 to drop "usable games"), `og:title` "Fantasy Hockey Playoff Planner", `og:type` "website", `og:url` the **live** URL, `twitter:card` "summary". No `og:image`: the repo has no suitable image, and the owner said not to create one.
 
 ### Visual and UX (Confirmed)
@@ -108,12 +109,13 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
   - Changing a priority updates automatically optimized dates but keeps manual choices.
   - Reset Day, or Reset <period>, removes choices and returns to the priority-aware optimum.
   - Choices that become invalid (IR, no room, roster change) are ignored *visibly*, never forced into an invalid lineup.
-  - Manually adjusted days are marked: a "Your Changes" badge, an underline on the date in the grid, and an "edited" tag on summary cards.
+  - Manually adjusted days are marked: a "Your Changes" badge, a blue dash under the date in the grid, and an "edited" tag on summary cards. The legend has no entry for the dash (removed in round 7, owner decision).
 - **Day editor:**
   - Selecting a date in the grid scrolls its editor into view below the sticky header. The ← → day arrows don't scroll.
   - The date headers are buttons (`.day-btn`). The hint above the grid reads "Tap a day to change that day's lineup."
   - The editor title is "Lineup for <date>", with In Lineup and Bench sections and the instruction "Tap a player’s position to move them." The Bench lists every non-IR player not in the lineup, including those with no game ("No game").
-  - **Slot order:** `expandSeats` lists goalie-only slots last, keeping every other slot in the league's order. An F slot added in League Settings (which appends to the end) therefore shows above G. Seat keys don't depend on order, so saved lineups are unaffected.
+  - **Slot order (round 7, owner decision):** `expandSeats` lists F slots (two or more forward positions, no D or G) first, then every other slot in the league's order (UTIL stays where it is), then goalie-only slots last. This applies even when F was added after G in League Settings, whose own list order is unchanged. Seat keys don't depend on order, so saved lineups are unaffected.
+  - The automatic lineup tries each player's most specific slots first (`eligibleSeatIndices` sorts by how many positions a slot accepts), so showing F first doesn't put a LW in F while a LW slot stays empty.
   - The day view shows no priority or competition logic: no ★ toggles, no "lowest-priority" line, no "<slots> full (…)" lists, no Sit/Start buttons. (The week grid's hover tooltips still give unused-game reasons.)
 
 ### Counts and summary metrics (Confirmed, commit `bfbc1a7` plus the priorities work)
@@ -374,7 +376,7 @@ Each rule below is enforced by the code or tests named; keep them true.
 | 4 | Contact delivery | Reuse Letter Ladder's FormSubmit recipient and settings; the address is public. | Standard POST to `formsubmit.co/jmaser4@gmail.com`; simulated tests only. | Real delivery is unverified; FormSubmit may send a one-time activation email for the new site. | No (verify with a real message) |
 | 5 | ESPN-only / `inactive` players | Remove the UI badge and labels; keep the data flag. | About 808 ESPN-only players use ESPN's team; retired players (e.g. Toews) still count their old team's games. | Whether to filter or label stale players is undecided. | Yes |
 | 6 | Stale repo docs | — | `IMPLEMENTATION.md` still mentions "IR with eligibility rules", "IR slots and rule", Trade Lab "undo, back to current roster", "66/66 passing" and "usable player-games". `README.md` is titled "Playoff Schedule Optimizer" and says "usable player-games". | These describe removed or renamed behavior. This document is current. | No (update when authorized) |
-| 7 | Mobile Phases 2–3 | Do the mobile work in reviewed phases; desktop stays unchanged. | Phase 1 is done. | Not done: Lineup per-player totals hidden at the far right, legend and cards long; Team Schedules hidden columns and cut-off date chips, 14px bars; Trade Lab Add below the Drop list; period bar wraps to 2 lines. | Yes (the owner reviews each phase) |
+| 7 | Mobile Phases 2–3 | Do the mobile work in reviewed phases; desktop stays unchanged. | Phase 1 is done. | Not done: Lineup per-player totals hidden at the far right, legend and cards long; Team Schedules hidden columns and cut-off date chips, 14px bars; period bar wraps to 2 lines. | Yes (the owner reviews each phase) |
 | 8 | Touch target sizes | Aim for about 40–44px where practical. | Position toggles are 32×34 (space-limited); Lineup grid cells weren't enlarged. | — | No |
 | 9 | Missing-player roster rows on mobile | — | Rows with class `missing` keep the table layout at ≤600px. | Not exercised with real data. | No |
 | 10 | Priority granularity | ★ Preferred is binary. | Ties break by roster order. | No full ranking; the owner hasn't asked for one. | Yes, if requested |

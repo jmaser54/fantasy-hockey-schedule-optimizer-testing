@@ -55,13 +55,16 @@ export interface Seat {
 }
 
 /**
- * One seat per slot place, in the league's slot order except that goalie-only slots
- * always come last (an added F slot shows above G). Seat keys don't depend on order.
+ * One seat per slot place, for the daily lineup: F slots (two or more forward positions,
+ * no D or G) first, then every other slot in the league's order, then goalie-only slots.
+ * Seat keys don't depend on order.
  */
 export function expandSeats(slots: readonly LineupSlot[]): Seat[] {
   const seats: Seat[] = [];
   const isGoalieSlot = (s: LineupSlot) => s.accepts.length > 0 && s.accepts.every((x) => x === 'G');
-  for (const s of [...slots.filter((x) => !isGoalieSlot(x)), ...slots.filter(isGoalieSlot)]) {
+  const isForwardSlot = (s: LineupSlot) => s.accepts.length > 1 && s.accepts.every((x) => x === 'C' || x === 'LW' || x === 'RW');
+  const ordered = [...slots.filter(isForwardSlot), ...slots.filter((x) => !isForwardSlot(x) && !isGoalieSlot(x)), ...slots.filter(isGoalieSlot)];
+  for (const s of ordered) {
     for (let i = 0; i < s.count; i++) {
       seats.push({ key: `${s.id}#${i}`, slotId: s.id, label: s.label, accepts: s.accepts });
     }
@@ -143,12 +146,16 @@ function playsAsGoalie(p: LineupPlayer, seat: Seat): boolean {
   return !p.positions.some((pos) => pos !== 'G' && seat.accepts.includes(pos));
 }
 
+/**
+ * Seats a player can fill, most specific first (C before F before UTIL), so the automatic
+ * lineup fills a player's own slot before a flexible one whatever order the seats are shown in.
+ */
 function eligibleSeatIndices(p: LineupPlayer, seats: readonly Seat[]): number[] {
   const out: number[] = [];
   seats.forEach((s, i) => {
     if (p.positions.some((pos) => s.accepts.includes(pos))) out.push(i);
   });
-  return out;
+  return out.sort((a, b) => seats[a]!.accepts.length - seats[b]!.accepts.length);
 }
 
 /** Preferred players first, otherwise roster order (stable). */

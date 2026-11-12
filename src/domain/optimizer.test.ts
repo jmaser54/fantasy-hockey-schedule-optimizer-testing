@@ -405,9 +405,16 @@ describe('exact daily lineups (day editor moves)', () => {
 });
 
 describe('lineup slot order', () => {
-  it('puts goalie slots last, keeping every other slot in league order', () => {
-    const order = expandSeats([...slots({ C: ['C'], D: ['D'], G: [2, ['G']] }), { id: 'F', label: 'F', count: 1, accepts: ['C', 'LW', 'RW'] }]).map((x) => x.label);
-    expect(order).toEqual(['C', 'D', 'F', 'G', 'G']);
+  it('puts F slots first and goalie slots last, keeping every other slot (UTIL included) in league order', () => {
+    const order = expandSeats([
+      ...slots({ C: ['C'], LW: ['LW'], D: ['D'], UTIL: ['C', 'LW', 'RW', 'D'], G: [2, ['G']] }),
+      { id: 'F', label: 'F', count: 2, accepts: ['C', 'LW', 'RW'] }, // added after G, as League Settings' "Add Slot" does
+    ]).map((x) => x.label);
+    expect(order).toEqual(['F', 'F', 'C', 'LW', 'D', 'UTIL', 'G', 'G']);
+  });
+
+  it('leaves a league without F slots in its own order (goalies last)', () => {
+    expect(expandSeats(slots({ G: ['G'], C: ['C'], UTIL: ['C', 'LW', 'RW', 'D'] })).map((x) => x.label)).toEqual(['C', 'UTIL', 'G']);
   });
 });
 
@@ -459,5 +466,15 @@ describe('day editor moves (moveInLineup)', () => {
     const day = optimizeDay('2027-03-01', roster, seats2, s, { start: [], sit: [], lineup });
     expect(day.seats.map((x) => x.playerId)).toEqual(['c2', 'g1']);
     expect(day.usable).toBe(1); // c2 has no game: the user's call
+  });
+});
+
+describe('automatic lineup with an F slot shown first', () => {
+  it('fills a player’s own slot before a flexible one', () => {
+    const s = sched([['2027-03-01', 'AAA', 'BBB']]);
+    const seats = expandSeats([...slots({ C: ['C'], LW: ['LW'], G: ['G'] }), { id: 'F', label: 'F', count: 1, accepts: ['C', 'LW', 'RW'] }]);
+    expect(seats.map((x) => x.label)).toEqual(['F', 'C', 'LW', 'G']);
+    const day = optimizeDay('2027-03-01', [player('lw', 'AAA', ['LW']), player('c', 'BBB', ['C'])], seats, s);
+    expect(Object.fromEntries(day.seats.map((x) => [x.seat.label, x.playerId ?? null]))).toEqual({ F: null, C: 'c', LW: 'lw', G: null });
   });
 });
