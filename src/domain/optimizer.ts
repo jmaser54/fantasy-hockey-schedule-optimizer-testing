@@ -23,8 +23,9 @@
  *   seats as many Preferred players as possible (ties by roster order).
  * - A date can carry the user's choices: players to start and players to sit.
  *   Starts are placed first, sits are left out, and the remaining seats are
- *   filled automatically in priority order. Choices that can't be honored
- *   (IR, no game, no room) are ignored and reported, never forced through.
+ *   filled automatically in priority order. A started player without a game
+ *   still takes a seat (it just adds no game): the user's call. Choices that
+ *   can't be honored (IR, no room) are ignored and reported, never forced through.
  */
 import { eachDate } from './dates.ts';
 import { maxBipartiteMatching } from './matching.ts';
@@ -170,13 +171,12 @@ export function optimizeDay(
     const p = byId.get(id);
     if (!p) manualIssues.push('A player you chose to start is no longer on the roster.');
     else if (p.onIr) manualIssues.push(`${p.name} is on IR, so they can’t start.`);
-    else if (!statusById.get(id)!.game) manualIssues.push(`${p.name} has no game on this date.`);
     else started.add(id);
   }
   for (const id of sat) if (statusById.has(id)) statusById.get(id)!.choice = 'sit';
 
-  // Starts first (in priority order), then everyone else not sat, in priority order.
-  const startOrder = playing.filter((p) => started.has(p.id));
+  // Starts first (playing ones before ones without a game, each in priority order), then everyone else playing and not sat.
+  const startOrder = [...playing.filter((p) => started.has(p.id)), ...priorityOrder(roster.filter((p) => started.has(p.id) && !statusById.get(p.id)!.game))];
   const ordered = [...startOrder, ...playing.filter((p) => !started.has(p.id) && !sat.has(p.id))];
   const assignment = assignInOrder(ordered, seats);
   const seatPlayer: (string | undefined)[] = new Array(seats.length).fill(undefined);

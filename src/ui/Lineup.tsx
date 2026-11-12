@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { formatShort, weekday } from '../domain/dates.ts';
-import { canStartTogether, expandSeats, sitPlayer, startPlayer, type DayResult, type LineupPlayer, type UnusedReason } from '../domain/optimizer.ts';
+import { canStartTogether, expandSeats, optimizeDay, type DayResult, type LineupPlayer, type UnusedReason } from '../domain/optimizer.ts';
 import { opponent } from '../domain/schedule.ts';
 import type { ISODate } from '../domain/types.ts';
 import { dailyGroupCounts, lineupGroupTotals } from '../domain/capacity.ts';
@@ -60,7 +60,7 @@ export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
           </h2>
           {manualDates.length > 0 && (
             <>
-              <span className="badge manual" title="Days where you started or sat players. Other days are fully optimized.">
+              <span className="badge manual" title="Days where you swapped players. Other days are fully optimized.">
                 Your changes on {manualDates.length} day{manualDates.length === 1 ? '' : 's'}
                 {summary.usable < summary.optimalUsable ? ` · optimal ${summary.optimalUsable}` : ''}
               </span>
@@ -90,7 +90,7 @@ export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
               </button>
             </>
           ) : (
-            'Select a date to view and edit that day’s lineup.'
+            'Tap a day to change that day’s lineup.'
           )}
         </p>
         <LineupGrid window={selected} players={lineupPlayers} selectedDay={day} onSelectDay={pickDay} />
@@ -204,12 +204,19 @@ function LineupGrid(props: { window: Window; players: LineupPlayer[]; selectedDa
               <th
                 key={d}
                 className={`dh ${props.selectedDay === d ? 'sel' : ''} ${days.get(d)?.manualIssues.length ? 'issue' : days.get(d)?.manual ? 'man' : ''}`}
-                onClick={() => props.onSelectDay(d)}
-                title={`${weekday(d)} ${formatShort(d)} · ${data.schedule.gamesOn(d).length} NHL games${days.get(d)?.manual ? ' · your changes' : ''}`}
               >
-                {weekday(d)[0]}
-                <br />
-                {Number(d.slice(8))}
+                <button
+                  type="button"
+                  className="day-btn"
+                  aria-pressed={props.selectedDay === d}
+                  aria-label={`${weekday(d)} ${formatShort(d)}${days.get(d)?.manual ? ', your changes' : ''}`}
+                  onClick={() => props.onSelectDay(d)}
+                  title={`${weekday(d)} ${formatShort(d)} · ${data.schedule.gamesOn(d).length} NHL games${days.get(d)?.manual ? ' · your changes' : ''}`}
+                >
+                  {weekday(d)[0]}
+                  <br />
+                  {Number(d.slice(8))}
+                </button>
               </th>
             ))}
             <th className="tot" title="Games in your lineup / games scheduled for this player's team">
@@ -314,20 +321,57 @@ function DayDetail({ day, onNav, dates, sectionRef }: { day: DayResult; onNav: (
   const idx = dates.indexOf(day.date);
   const nhlGames = data.schedule.gamesOn(day.date);
   const override = state.manual[day.date];
-  const started = lineupPlayers.filter((p) => status.get(p.id)?.choice === 'start');
+  // Tap a player, then the player to swap them with. Only position eligibility can stop a swap.
+  const [picked, setPicked] = useState<string | null>(null);
+  useEffect(() => setPicked(null), [day.date]);
 
-  const start = (id: string) => dispatch({ type: 'setManual', date: day.date, override: startPlayer(override, id) });
-  const sit = (id: string) => dispatch({ type: 'setManual', date: day.date, override: sitPlayer(override, id) });
+  const starters = day.seats.flatMap((s) => (s.playerId ? [s.playerId] : []));
+  const inLineup = new Set(starters);
+  const bench = lineupPlayers.filter((p) => !p.onIr && !inLineup.has(p.id));
+  const ir = lineupPlayers.filter((p) => p.onIr && status.get(p.id)?.game);
+  /** The lineup after swapping a and b, or null if it isn't position-legal (or both are on the same side). */
+  const swapped = (a: string, b: string): string[] | null => {
+    if (inLineup.has(a) === inLineup.has(b)) return null;
+    const [out, into] = inLineup.has(a) ? [a, b] : [b, a];
+    const next = [...starters.filter((x) => x !== out), into];
+    return canStartTogether(next.map((id) => byId.get(id)!), seats) ? next : null;
+  };
+  const tap = (id: string) => {
+    if (!picked || picked === id) return setPicked(picked === id ? null : id);
+    const next = swapped(picked, id);
+    if (!next) return setPicked(id); // same side: pick this one instead
+    const out = inLineup.has(picked) ? picked : id;
+    // The day's lineup is exactly the swapped one. Back to the automatic lineup clears the day's changes.
+    const auto = new Set(optimizeDay(day.date, lineupPlayers, seats, data.schedule).seats.flatMap((s) => (s.playerId ? [s.playerId] : [])));
+    const isAuto = next.length === auto.size && next.every((x) => auto.has(x));
+    const sit = [...new Set([...(override?.sit ?? []).filter((x) => !next.includes(x)), out])];
+    dispatch({ type: 'setManual', date: day.date, override: isAuto ? null : { start: next, sit } });
+    setPicked(null);
+  };
   const matchup = (id: string) => {
     const st = status.get(id);
     if (!st?.game) return '';
     const o = opponent(st.game, st.team);
     return `${o.home ? 'vs' : '@'} ${o.team}`;
   };
-
-  const out = lineupPlayers.filter((p) => !p.onIr && status.get(p.id)?.game && !status.get(p.id)?.seatKey);
-  const ir = lineupPlayers.filter((p) => p.onIr && status.get(p.id)?.game);
-  const without = lineupPlayers.filter((p) => !p.onIr && !status.get(p.id)?.game);
+  const playerButton = (p: LineupPlayer) => {
+    const isPicked = picked === p.id;
+    const canSwap = !picked || isPicked || inLineup.has(picked) === inLineup.has(p.id) || !!swapped(picked, p.id);
+    const st = status.get(p.id);
+    return (
+      <button
+        type="button"
+        className={`swap-player ${isPicked ? 'picked' : ''} ${picked && !isPicked && canSwap && inLineup.has(picked) !== inLineup.has(p.id) ? 'target' : ''}`}
+        aria-pressed={isPicked}
+        disabled={!canSwap}
+        title={canSwap ? undefined : `${p.name} can’t play that spot`}
+        onClick={() => tap(p.id)}
+      >
+        <b>{p.name}</b> <PosBadges positions={p.positions} /> <span className="small">{st?.game ? matchup(p.id) : <span className="muted">No game</span>}</span>
+        {!inLineup.has(p.id) && st?.reason?.kind === 'no-slot' && <span className="small muted"> · {reasonText(st.reason)}</span>}
+      </button>
+    );
+  };
 
   return (
     <section className="panel day-editor" ref={sectionRef} aria-label={`Lineup editor for ${weekday(day.date)} ${formatShort(day.date)}`}>
@@ -348,7 +392,7 @@ function DayDetail({ day, onNav, dates, sectionRef }: { day: DayResult; onNav: (
         </h2>
         {day.manual ? (
           <>
-            <span className="badge manual">Your Changes{day.usable < day.optimalUsable ? ` · optimal ${day.optimalUsable}` : ''}</span>
+            <span className="badge manual">Your Changes</span>
             <button className="btn small" onClick={() => dispatch({ type: 'setManual', date: day.date, override: null })}>
               Reset Day to Optimal
             </button>
@@ -363,70 +407,41 @@ function DayDetail({ day, onNav, dates, sectionRef }: { day: DayResult; onNav: (
             Some of your changes for this day no longer apply and are being ignored: {day.manualIssues.join(' ')}
           </div>
         )}
+        <p className="section-hint swap-hint">
+          Tap a player, then tap the player to swap them with.
+          {picked && (
+            <>
+              {' '}
+              <button className="link-btn" onClick={() => setPicked(null)}>
+                Cancel
+              </button>
+            </>
+          )}
+        </p>
         <div className="day-grid">
           <div>
             <h3 style={{ marginTop: 0 }}>In Lineup</h3>
-            <p className="section-hint">Sit a player to take them out. The open spot refills automatically.</p>
             {day.seats.map(({ seat, playerId }) => {
               const p = playerId ? byId.get(playerId) : undefined;
-              const st = playerId ? status.get(playerId) : undefined;
               return (
                 <div className="seat" key={seat.key}>
                   <span className="slot">{seat.label}</span>
-                  {p ? (
-                    <>
-                      <span className="who">
-                        <PreferredToggle id={p.id} name={p.name} preferred={!!p.preferred} /> <b>{p.name}</b> <PosBadges positions={p.positions} />{' '}
-                        <span className="small">{matchup(p.id)}</span> {st?.choice === 'start' && <span className="badge manual">You started</span>}
-                      </span>
-                      <button className="btn small" onClick={() => sit(p.id)} title={`Sit ${p.name} on ${formatShort(day.date)}; the optimizer refills the spot`}>
-                        Sit
-                      </button>
-                    </>
-                  ) : (
-                    <span className="empty-seat">Empty</span>
-                  )}
+                  {p ? playerButton(p) : <span className="empty-seat">Empty</span>}
                 </div>
               );
             })}
           </div>
           <div>
-            <h3 style={{ marginTop: 0 }}>Sitting Out</h3>
-            <p className="section-hint">Start a player to put them in. The lowest-priority player competing for that spot sits.</p>
-            {out.length === 0 && <div className="muted small">Everyone with a game is in the lineup.</div>}
-            {out.map((p) => {
-              const st = status.get(p.id)!;
-              const fits = canStartTogether([...started, p], seats);
-              return (
-                <div className="bench-item" key={p.id}>
-                  <span>
-                    <PreferredToggle id={p.id} name={p.name} preferred={!!p.preferred} /> <b>{p.name}</b> <PosBadges positions={p.positions} />{' '}
-                    <span className="small">{matchup(p.id)}</span>
-                  </span>
-                  <div className="reason">{st.reason ? reasonText(st.reason) : ''}</div>
-                  <button
-                    className="btn small primary"
-                    disabled={!fits}
-                    onClick={() => start(p.id)}
-                    title={
-                      fits
-                        ? `Start ${p.name} on ${formatShort(day.date)}; the lowest-priority player who competes for the spot sits`
-                        : 'No room: every slot this player fits already holds a player you started. Sit one of them first.'
-                    }
-                  >
-                    Start
-                  </button>
-                </div>
-              );
-            })}
+            <h3 style={{ marginTop: 0 }}>Bench</h3>
+            {bench.length === 0 && <div className="muted small">Everyone is in the lineup.</div>}
+            {bench.map((p) => (
+              <div className="bench-item" key={p.id}>
+                {playerButton(p)}
+              </div>
+            ))}
             {ir.length > 0 && (
               <div className="small muted" style={{ marginTop: 8 }}>
                 On IR: {ir.map((p) => p.name).join(', ')}
-              </div>
-            )}
-            {without.length > 0 && (
-              <div className="small muted" style={{ marginTop: 8 }}>
-                No game: {without.map((p) => p.name).join(', ')}
               </div>
             )}
           </div>

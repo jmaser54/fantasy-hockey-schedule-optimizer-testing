@@ -223,8 +223,13 @@ th.col-selected { box-shadow: inset 0 -2px 0 var(--accent); }
 .lgrid th, .lgrid td { padding: 0; border-bottom: 1px solid var(--border); text-align: center; }
 .lgrid .sticky { position: sticky; left: 0; background: var(--surface); z-index: 1; text-align: left; padding: 5px 10px; min-width: 170px; border-right: 1px solid var(--border); }
 .lgrid .tot { padding: 5px 10px; text-align: right; font-variant-numeric: tabular-nums; }
-.lgrid .dh { min-width: 28px; padding: 4px 0; font-size: 10px; line-height: 1.2; cursor: pointer; }
-.lgrid .dh:hover, .lgrid .dh.sel { background: var(--accent-soft); color: var(--accent); }
+.lgrid .dh { min-width: 28px; padding: 3px 1px 5px; font-size: 10px; line-height: 1.2; }
+/* Day headers are buttons: tap one to open that day's lineup. */
+.lgrid .day-btn {
+  display: block; width: 100%; min-height: 28px; padding: 2px 0; border: 1px solid var(--border-strong); border-radius: 6px;
+  background: var(--surface); color: var(--text); font: inherit; font-weight: 700; line-height: 1.2; cursor: pointer;
+}
+.lgrid .day-btn:hover, .lgrid .day-btn[aria-pressed='true'] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .lgrid td.c { height: 30px; cursor: pointer; }
 /* Daily opportunity/capacity counts above each date column. */
 .lgrid .count-row th { padding: 3px 0; font-size: 10px; font-weight: 600; color: var(--muted); border-bottom: 0; }
@@ -245,14 +250,22 @@ th.col-selected { box-shadow: inset 0 -2px 0 var(--accent); }
 /* Day detail */
 .day-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
 @media (max-width: 760px) { .day-grid { grid-template-columns: 1fr; } }
-.seat { display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+.seat { display: grid; grid-template-columns: 48px minmax(0, 1fr); align-items: center; gap: 8px; padding: 3px 0; border-bottom: 1px dashed var(--border); }
 .seat:last-child { border-bottom: 0; }
 .seat .who { min-width: 0; }
 .seat .empty-seat { color: var(--muted); font-style: italic; }
 .seat .slot { font-weight: 700; font-size: 12px; color: var(--muted); }
-.bench-item { padding: 6px 0; border-bottom: 1px dashed var(--border); display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 8px; }
-.bench-item .reason { grid-column: 1; }
-.bench-item > button { grid-column: 2; grid-row: 1 / span 2; }
+.bench-item { padding: 4px 0; border-bottom: 1px dashed var(--border); }
+/* Tap-to-swap rows in the day editor. */
+.swap-player {
+  display: block; width: 100%; min-width: 0; text-align: left; padding: 5px 8px; border: 1px solid transparent; border-radius: 8px;
+  background: none; font: inherit; color: inherit; cursor: pointer;
+}
+.swap-player:hover { background: var(--surface-2); }
+.swap-player.picked { border-color: var(--accent); background: var(--accent-soft); }
+.swap-player.target { border-color: var(--accent); border-style: dashed; }
+.swap-player:disabled { opacity: 0.4; cursor: not-allowed; background: none; }
+.swap-hint { margin: 0 0 10px; }
 .star { border: 0; background: none; padding: 0 2px; font-size: 14px; line-height: 1; color: var(--muted); cursor: pointer; vertical-align: -1px; }
 .star[aria-pressed='true'] { color: var(--warn); }
 .star:hover { color: var(--warn); }

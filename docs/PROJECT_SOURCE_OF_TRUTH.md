@@ -25,7 +25,7 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
 1. **Team Schedules** (`src/ui/Rankings.tsx`, short label "Schedules" on phones): which NHL teams play the most, and on light nights, in the selected window.
 2. **Roster** (`src/ui/Roster.tsx`): paste or search players. Set position eligibility, Active/IR and ★ Preferred, then remove or clear. No period toggle here; its Games column is always next week.
 3. **Lineup** (`src/ui/Lineup.tsx`): the optimizer's results.
-   - Summary cards, a player × date grid, and a day editor with Start/Sit.
+   - Summary cards, a player × date grid, and a day editor with tap-to-swap.
    - This page *is* "the optimizer"; there's no separate optimizer page.
 4. **Trade Lab** (`src/ui/Trades.tsx`): try drops and adds and compare games in the lineup, current vs proposed. "Current" is always the saved roster. "Update Roster" applies the tested moves after a confirmation.
 5. **League Settings** (modal, `src/ui/Settings.tsx`): roster size, IR slots, lineup slots and playoff rounds. Cancel and Save (`.modal-actions`) sit in normal flow below "Add Round" / "Restore 2027 Defaults" at the bottom of the form, and scroll with it (not sticky; owner decision). There's no Contact link in it any more.
@@ -94,17 +94,20 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
 - **Player priorities:** a single ★ Preferred flag per roster player. Default is not preferred.
   - Preferred players win contested spots across the whole selected period.
   - Priorities must never break position eligibility, overfill slots, or leave a fillable spot empty.
-- **Daily manual overrides:** per date, the user can Start or Sit players.
-  - The rest of the lineup refills automatically around those choices, by priority.
-  - A choice on one date never changes other dates.
+- **Daily manual overrides (round 4, owner decision):** per date, the user swaps players directly, like ESPN: tap a player (starter or bench), then tap the player to swap them with. It works in both directions.
+  - **Only position eligibility can stop a swap** (the resulting lineup must fit the slots; `canStartTogether`). Players who can't make a legal swap with the picked player are disabled. A swap is never blocked, warned about or confirmed because it loses games: the day's counts just update. That includes swapping in a bench player with no game that day (it counts zero).
+  - Tapping another player on the same side moves the selection. Starter-to-starter slot moves aren't offered; they wouldn't change any count.
+  - A swap saves that day's exact lineup: `start` = all starters after the swap, `sit` = the swapped-out player (plus earlier sits). If a swap returns the day to its automatic lineup, the override is cleared.
+  - The automatic optimal lineup stays the default for every day. A choice on one date never changes other dates, the roster, league settings or rounds.
   - Changing a priority updates automatically optimized dates but keeps manual choices.
   - Reset Day, or Reset <period>, removes choices and returns to the priority-aware optimum.
-  - Choices that become invalid (IR, no game, no room, roster change) are ignored *visibly*, never forced into an invalid lineup.
+  - Choices that become invalid (IR, no room, roster change) are ignored *visibly*, never forced into an invalid lineup.
   - Manually adjusted days are marked: a "Your Changes" badge, an underline on the date in the grid, and an "edited" tag on summary cards.
 - **Day editor:**
   - Selecting a date in the grid scrolls its editor into view below the sticky header. The ← → day arrows don't scroll.
-  - A hint above the grid reads "Select a date to view and edit that day's lineup."
-  - The editor title is "Lineup for <date>", with In Lineup and Sitting Out sections.
+  - The date headers are buttons (`.day-btn`). The hint above the grid reads "Tap a day to change that day's lineup."
+  - The editor title is "Lineup for <date>", with In Lineup and Bench sections and the instruction "Tap a player, then tap the player to swap them with." The Bench lists every non-IR player not in the lineup, including those with no game ("No game").
+  - The day view shows no priority or competition logic: no ★ toggles, no "lowest-priority" line, no "<slots> full (…)" lists, no Sit/Start buttons. (The week grid's hover tooltips still give unused-game reasons.)
 
 ### Counts and summary metrics (Confirmed, commit `bfbc1a7` plus the priorities work)
 - A player's **In Lineup** count = games where the player is actually seated in the *final* lineup, including manual choices.
@@ -214,10 +217,10 @@ Each rule below is enforced by the code or tests named; keep them true.
    - Seats come from `expandSeats(league.slots)`; no seat holds two players; IR players never get seats.
 4. **Daily choices** (`DayOverride {start[], sit[]}`, keyed by date in `state.manual`):
    - Starts are placed first, then everyone else not sat, by priority.
-   - A start is honored only if the player is on the roster, not on IR, has a game, and fits among the other starts. Otherwise it's skipped and reported in `DayResult.manualIssues`.
+   - A start is honored if the player is on the roster, not on IR, and fits among the other starts. Otherwise it's skipped and reported in `DayResult.manualIssues`. Started players with a game are placed before started players without one.
    - Sat players get the reason `{kind: 'sat'}`.
    - An empty override deletes the date entry (`reducer` `setManual`).
-   - A player without a game can't be started; the old "Started with no game" state no longer exists.
+   - **A started player without a game takes a seat and counts zero** (round 4, owner decision). This reverses the earlier rule that such starts were ignored. It's needed so a swap that loses games always goes through.
 5. **Scheduled ≠ in lineup.**
    - `summarize` counts `scheduled` for every rostered player whose team plays, including IR players, and `usable` only when `seatKey` is set.
    - `DayResult.scheduled` excludes IR players.

@@ -165,13 +165,25 @@ describe('optimizer — hand-checkable cases', () => {
     const roster = [player('X', 'AAA', ['D']), player('Y', 'BBB', ['C'], true), player('Z', 'CCC', ['C']), player('V', 'AAA', ['C']), player('U', 'BBB', ['C'])];
     const seats = expandSeats(slots({ C: ['C'] }));
     const day = optimizeDay('2027-03-01', roster, seats, s, { start: ['X', 'Y', 'Z', 'V', 'U', 'gone'], sit: [] });
-    // X: no C slot. Y: on IR. Z: no game. gone: not on roster. U: the one C seat already holds V (started first).
+    // X: no C slot. Y: on IR. gone: not on roster. U and Z: the one C seat already holds V
+    // (started players with a game are seated before started players without one).
     expect(day.manualIssues).toHaveLength(5);
     expect(day.manualIssues.join(' ')).toMatch(/IR/);
-    expect(day.manualIssues.join(' ')).toMatch(/no game/);
     expect(day.seats.map((x) => x.playerId)).toEqual(['V']);
     expect(day.usable).toBe(1);
     expect(canStartTogether([roster[3]!, roster[4]!], seats)).toBe(false);
+  });
+
+  it('a started player without a game takes the seat: the user’s call, even though it loses a game', () => {
+    const s = sched([['2027-03-01', 'AAA', 'BBB']]);
+    const roster = [player('V', 'AAA', ['C']), player('Z', 'CCC', ['C'])];
+    const seats = expandSeats(slots({ C: ['C'] }));
+    expect(optimizeDay('2027-03-01', roster, seats, s).seats.map((x) => x.playerId)).toEqual(['V']);
+    const day = optimizeDay('2027-03-01', roster, seats, s, { start: ['Z'], sit: ['V'] });
+    expect(day.seats.map((x) => x.playerId)).toEqual(['Z']);
+    expect(day.usable).toBe(0);
+    expect(day.optimalUsable).toBe(1);
+    expect(day.manualIssues).toEqual([]);
   });
 
   it('reports players with no compatible slot', () => {
