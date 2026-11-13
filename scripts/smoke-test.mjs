@@ -74,13 +74,17 @@ await context.route(/google-analytics\.com\/(g|[a-z]\/)?collect/, (route) => {
   return route.fulfill({ status: 204, body: '' });
 });
 const errors = [];
+const dialogs = [];
 // Failed loads from Google's analytics hosts are expected on networks that block the tag;
 // they are not app errors.
 const isAnalytics = (url = '') => /googletagmanager\.com|google-analytics\.com/.test(url);
 const watch = (p) => {
   p.on('pageerror', (e) => errors.push(String(e)));
   p.on('console', (m) => m.type() === 'error' && !isAnalytics(m.location().url) && errors.push(m.text()));
-  p.on('dialog', (d) => d.accept()); // Reset <period> to Optimal asks for confirmation
+  p.on('dialog', (d) => {
+    dialogs.push(d.message());
+    d.accept();
+  }); // Reset <period> to Optimal asks for confirmation
 };
 watch(page);
 /** Poll until check() is true, or fail with msg. */
@@ -145,7 +149,8 @@ try {
     if ((await starters(page)).includes('Connor McDavid') || (await savedDays(page)) !== 1) fail('manual move to the bench was not applied');
     await resetPeriod(page);
     await until(async () => (await starters(page)).includes('Connor McDavid') && (await savedDays(page)) === 0, 'Reset to Optimal did not update the lineup on screen and in saved data');
-    console.log('reset OK: lineup and saved data updated at once');
+    if (dialogs.at(-1) !== 'Revert lineup changes?') fail(`reset confirmation wording: ${JSON.stringify(dialogs.at(-1))}`);
+    console.log('reset OK: lineup and saved data updated at once; confirmation "Revert lineup changes?"');
 
     const other = await context.newPage();
     watch(other);

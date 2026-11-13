@@ -110,7 +110,7 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
   - Phones (`pointer: coarse`): position buttons are 52×44px.
   - The automatic optimal lineup stays the default for every day. A move on one date never changes other dates, the roster, league settings or rounds.
   - Changing a priority updates automatically optimized dates and leaves manually edited dates exactly as saved.
-  - Reset Day, or Reset <period>, removes choices and returns to the priority-aware optimum.
+  - Reset Day, or Reset <period>, removes choices and returns to the priority-aware optimum. Reset <period> asks for confirmation with exactly "Revert lineup changes?" (round 13, owner's wording; no day count).
   - Choices that become invalid (IR, no room, roster change) are ignored *visibly*, never forced into an invalid lineup.
   - Manually adjusted days are marked: a "Your Changes" badge, a blue dash under the date in the grid, and an "edited" tag on summary cards. The legend has no entry for the dash (removed in round 7, owner decision).
 - **Day editor:**
