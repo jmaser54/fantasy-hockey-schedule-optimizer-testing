@@ -219,3 +219,14 @@ describe('exact daily lineups in saved state', () => {
     expect(s.manual['2027-03-01']!.lineup).toEqual({ 'C#0': null, 'G#0': null });
   });
 });
+
+describe('changes saved by another tab', () => {
+  it('load replaces this tab’s state with the saved one (e.g. a reset made in another tab)', () => {
+    let here = reducer(initialState(), { type: 'addPlayers', ids: ['a', 'b'] });
+    here = reducer(here, { type: 'setManual', date: '2027-03-01', override: { start: ['a'], sit: [], lineup: { 'C#0': 'a' } } });
+    const saved = deserialize(serialize(reducer(here, { type: 'clearManual', dates: ['2027-03-01'] }))).state;
+    const next = reducer(here, { type: 'load', state: saved });
+    expect(next.manual).toEqual({});
+    expect(next.roster).toEqual(here.roster);
+  });
+});

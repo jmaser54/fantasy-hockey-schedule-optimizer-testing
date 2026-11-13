@@ -58,7 +58,9 @@ export type Action =
   | { type: 'setManual'; date: ISODate; override: DayOverride | null }
   | { type: 'clearManual'; dates?: ISODate[] }
   | { type: 'scenario'; scenario: Scenario }
-  | { type: 'scenarioApply' };
+  | { type: 'scenarioApply' }
+  /** Saved data changed in another tab: show it here too. */
+  | { type: 'load'; state: AppState };
 
 /** Rewrite one player id in every date's choices (null removes it). Dates left without choices are dropped. */
 function mapPlayerInManual(manual: AppState['manual'], from: string, to: string | null): AppState['manual'] {
@@ -151,6 +153,8 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case 'scenario':
       return { ...state, scenario: action.scenario };
+    case 'load':
+      return action.state;
     case 'scenarioApply': {
       let manual = state.manual;
       for (const id of state.scenario.drops) manual = withoutPlayerInManual(manual, id);
