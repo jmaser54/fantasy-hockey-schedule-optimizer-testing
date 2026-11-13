@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { initialState, reducer, type AppState } from '../state/appState.ts';
+import { deserialize, initialState, reducer, serialize, type AppState } from '../state/appState.ts';
 import { expandSeats, freezeOverride, optimizeDates, optimizeDay, type DayOverride, type DayResult } from './optimizer.ts';
 import { toLineupPlayers } from './roster.ts';
 import { sched, slots } from './testUtils.ts';
@@ -148,5 +148,37 @@ describe('star changes, manual days and Reset Day to Optimal', () => {
     for (const st of [base(), star(base(), 'dStar'), star(star(base(), 'dStar'), 'd1')]) {
       for (const d of days(st).values()) expect(d.usable).toBe(d.optimalUsable);
     }
+  });
+});
+
+describe('older Start/Sit days keep their warnings when saved as exact lineups', () => {
+  const roster = (irId?: string) => toLineupPlayers(app(['d1', 'd2', 'd3', 'dStar']).roster.map((e) => (e.playerId === irId ? { ...e, onIr: true } : e)), directory);
+  const legacy: DayOverride = { start: ['dStar'], sit: [] }; // the user started dStar, who has since gone on IR
+
+  it('keeps the exact lineup and the "no longer applies" warning', () => {
+    const before = optimizeDay('2027-03-01', roster('dStar'), seats, s, legacy);
+    expect(before.manualIssues).toEqual(['dStar is on IR, so they can’t start.']);
+    const frozen = freezeOverride('2027-03-01', roster('dStar'), seats, s, legacy);
+    const after = optimizeDay('2027-03-01', roster('dStar'), seats, s, frozen);
+    expect(lineup(after)).toEqual(lineup(before));
+    expect(after.manualIssues).toEqual(before.manualIssues);
+    expect(after.manual).toBe(true);
+  });
+
+  it('adds no warning to a day that had none', () => {
+    const frozen = freezeOverride('2027-03-01', roster(), seats, s, { start: ['d3'], sit: [] });
+    expect(frozen.notes).toBeUndefined();
+    expect(optimizeDay('2027-03-01', roster(), seats, s, frozen).manualIssues).toEqual([]);
+  });
+
+  it('the warning survives a reload and a player id change, and goes away on Reset Day to Optimal', () => {
+    const frozen = freezeOverride('2027-03-01', roster('dStar'), seats, s, legacy);
+    let st = reducer(app(['d1', 'd2', 'd3', 'dStar']), { type: 'setManual', date: '2027-03-01', override: frozen });
+    st = deserialize(serialize(st)).state;
+    expect(st.manual['2027-03-01']!.notes).toEqual(frozen.notes);
+    st = reducer(st, { type: 'replacePlayer', from: 'd1', to: 'd1b' });
+    expect(st.manual['2027-03-01']!.notes).toEqual(frozen.notes);
+    st = reducer(st, { type: 'setManual', date: '2027-03-01', override: null });
+    expect(st.manual['2027-03-01']).toBeUndefined();
   });
 });
