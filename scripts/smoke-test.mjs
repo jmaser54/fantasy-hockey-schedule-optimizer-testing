@@ -49,6 +49,13 @@ const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 const page = await context.newPage();
 
+// Storage isolation: the live and testing sites share one domain, so each uses its own key. Seed
+// the other site's key with a different roster; this site must never read, sync from or change it.
+const siteKey = /\/fantasy-hockey-schedule-optimizer-testing\/$/.test(new URL(base).pathname) ? 'playoff-optimizer-testing:v1' : 'playoff-optimizer:v1';
+const otherKey = siteKey === 'playoff-optimizer:v1' ? 'playoff-optimizer-testing:v1' : 'playoff-optimizer:v1';
+const otherSiteData = JSON.stringify({ version: 1, roster: [{ playerId: 'nhl-8477492', onIr: false }, { playerId: 'nhl-8478483', onIr: false }] });
+await context.addInitScript(([k, v]) => localStorage.getItem(k) === null && localStorage.setItem(k, v), [otherKey, otherSiteData]);
+
 // Google Analytics: record each GA4 hit and answer it locally with an empty success, so
 // test runs never reach the real property (an aborted hit would be retried by gtag and
 // show up twice). Reported below for visibility; never fails the smoke test.
@@ -116,7 +123,7 @@ try {
   // another open tab (which must not keep showing, or later re-save, the old lineup).
   await page.getByRole('tab', { name: 'Lineup' }).click();
   const starters = (p) => p.locator('.day-editor .seat').evaluateAll((rs) => rs.filter((r) => r.querySelector('.pos-btn').textContent !== 'BN' && r.querySelector('.who b')).map((r) => r.querySelector('.who b').textContent));
-  const savedDays = (p) => p.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('playoff-optimizer:v1')).manual).length);
+  const savedDays = (p) => p.evaluate((k) => Object.keys(JSON.parse(localStorage.getItem(k)).manual).length, siteKey);
   const benchMcDavid = async (p) => {
     const ed = p.locator('.day-editor');
     await ed.locator('.seat', { hasText: 'Connor McDavid' }).locator('.pos-btn').click();
@@ -149,9 +156,17 @@ try {
     await until(async () => !(await starters(other)).includes('Connor McDavid'), 'a lineup change did not reach the other open tab');
     await resetPeriod(other);
     await until(async () => (await starters(page)).includes('Connor McDavid') && (await savedDays(page)) === 0, 'a reset in another tab did not update this tab');
+    // A write to the other site's storage (as its open tab would make) must not reach this page.
+    await other.evaluate(([k, v]) => localStorage.setItem(k, v), [otherKey, JSON.stringify({ version: 1, roster: [] })]);
+    await sleep(500);
+    if (!/^Roster\s*1$/.test((await page.locator('.tab', { hasText: 'Roster' }).innerText()).trim())) fail('a change to the other site\'s storage reached this page');
+    await other.evaluate(([k, v]) => localStorage.setItem(k, v), [otherKey, otherSiteData]);
     await other.close();
     console.log('two tabs OK: changes and resets show in every open tab at once');
   }
+  const otherNow = await page.evaluate((k) => localStorage.getItem(k), otherKey);
+  if (otherNow !== otherSiteData) fail(`this site changed the other site's saved data (${otherKey})`);
+  console.log(`storage isolation OK: ${siteKey} used; ${otherKey} untouched`);
 
   // Report GA4 page views for the initial load plus tab switches.
   // gtag keeps a connection busy, so wait for 'load' rather than network idle.

@@ -159,7 +159,7 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
 ### Persistence (Confirmed)
 - Priorities and per-date choices survive reloads via the app's `localStorage` persistence. Overrides are keyed by date, so they only affect windows containing that date.
 - **Open tabs stay in sync (round 11):** when saved data changes in another tab, each open page reloads it at once (`storage` event in `App.tsx`, reducer action `load`) and doesn't write it back. Before, another open tab kept showing, and could later re-save, an old lineup. That's what made Reset Next Week to Optimal look broken until a refresh.
-- The live site and the testing site are both on `jmaser54.github.io`, so they share one browser storage and the same key (`playoff-optimizer:v1`). See §H 17.
+- **Separate storage per site (round 12, owner decision):** the live and testing sites share one domain (`jmaser54.github.io`) and so one browser storage. `storageKeyFor(BASE_URL)` in `appState.ts` gives the testing build (base `/fantasy-hockey-schedule-optimizer-testing/`) the key `playoff-optimizer-testing:v1`; the live site and local runs keep `playoff-optimizer:v1`. Nothing is migrated or copied: the testing site starts empty. Tab sync only reacts to its own key, so it never crosses between the sites.
 
 ### About page (Confirmed)
 - A small "About" link sits at the far right of the footer, with the data note ("NHL data updated <date>") on the left and "Contact" just before About. Neither may appear in the main navigation or prominently on the main page.
@@ -319,6 +319,7 @@ Each rule below is enforced by the code or tests named; keep them true.
     - the Lineup heading matches `/of \d+ scheduled games fit your lineup/`;
     - the roster persists across a reload;
     - Reset <period> to Optimal updates the visible lineup and saved data at once, and a change or reset in one tab shows in another open tab without a reload (skipped if McDavid has no game that week);
+    - storage isolation: the other site's key is seeded with a different roster, which this site must never read, sync from or change;
     - GA hits are intercepted, not sent;
     - no browser errors.
 - `refresh-data.yml`: daily at 10:17 UTC, and on pushes that touch the pipeline. It tests, refreshes, commits `public/data` as `github-actions[bot]` if changed, then calls the deploy.
@@ -393,4 +394,3 @@ Each rule below is enforced by the code or tests named; keep them true.
 | 12 | Lineup slot rows on phones | — | At 390px and 360px, each Daily Lineup Slots row is wider than the dialog: the G toggle is cut off and the remove (×) button sits off-screen, reachable only by scrolling the dialog sideways. Found on 2026-10-21; the overflow was already there before the Cancel/Save move. | Not fixed; outside that change. | No (fix when authorized) |
 | 14 | Testing site identity | — | The testing site's `og:url` points to the live URL (as asked). Its GA tag was removed in round 2. | Previews of the testing URL claim the live URL. | Yes |
 | 15 | Custom periods aren't saved | The owner said not to add persistence. | Custom-mode periods and the Total last only for the visit. | Users may expect them to survive a reload. | Yes |
-| 17 | Live and testing share saved data | — | Both sites are on `jmaser54.github.io`; browser storage is per domain, so they read and write the same `playoff-optimizer:v1`. With round 11's tab sync, a change on one site's tab also shows on the other's. | Testing on the same browser can change the owner's live roster. A separate key for the testing site would fix it (needs a decision; the live key must not change). | Yes |

@@ -3,7 +3,15 @@ import { DEFAULT_LEAGUE, DEFAULT_PERIODS, validateLeague } from '../domain/leagu
 import { isEmptyOverride, type DayOverride } from '../domain/optimizer.ts';
 import { POSITIONS, type ISODate, type LeagueConfig, type Period, type Player, type Position, type RosterEntry } from '../domain/types.ts';
 
-export const STORAGE_KEY = 'playoff-optimizer:v1';
+/**
+ * Browser storage key. The live and testing sites share one domain (jmaser54.github.io) and so one
+ * browser storage; the testing build uses its own key so the two never read or overwrite each other's
+ * data. The live site (and local runs) keep 'playoff-optimizer:v1'.
+ */
+export function storageKeyFor(baseUrl: string): string {
+  return /\/fantasy-hockey-schedule-optimizer-testing\/$/.test(baseUrl) ? 'playoff-optimizer-testing:v1' : 'playoff-optimizer:v1';
+}
+export const STORAGE_KEY = storageKeyFor((import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/');
 export const STATE_VERSION = 1;
 
 /** Hypothetical roster change, applied on top of the saved roster. */

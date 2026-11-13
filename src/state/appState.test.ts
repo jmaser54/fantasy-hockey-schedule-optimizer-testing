@@ -4,7 +4,7 @@ import { toLineupPlayers, validateRoster } from '../domain/roster.ts';
 import { DEFAULT_LEAGUE } from '../domain/league.ts';
 import { player as lp, sched, slots } from '../domain/testUtils.ts';
 import type { Player } from '../domain/types.ts';
-import { deserialize, initialState, proposedRoster, reducer, serialize, type AppState } from './appState.ts';
+import { STORAGE_KEY, deserialize, initialState, proposedRoster, reducer, serialize, storageKeyFor, type AppState } from './appState.ts';
 
 const P = (id: string, team: string, positions: Player['positions'] = ['C']): Player => ({ id, name: id, team, positions, eligibilitySource: 'nhl' });
 
@@ -228,5 +228,14 @@ describe('changes saved by another tab', () => {
     const next = reducer(here, { type: 'load', state: saved });
     expect(next.manual).toEqual({});
     expect(next.roster).toEqual(here.roster);
+  });
+});
+
+describe('storage key per site', () => {
+  it('the live site and local runs keep the original key; the testing site has its own', () => {
+    expect(storageKeyFor('/fantasy-hockey-schedule-optimizer/')).toBe('playoff-optimizer:v1');
+    expect(storageKeyFor('/')).toBe('playoff-optimizer:v1');
+    expect(storageKeyFor('/fantasy-hockey-schedule-optimizer-testing/')).toBe('playoff-optimizer-testing:v1');
+    expect(STORAGE_KEY).toBe('playoff-optimizer:v1'); // tests run with the default base
   });
 });
