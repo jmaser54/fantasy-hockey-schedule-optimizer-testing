@@ -101,7 +101,7 @@ Do not assume every field belongs in a scaled or unchanged category without chec
 - Query: current season, `gameTypeId=2`, `isAggregate=false`.
 - Pagination: 100-row pages sorted by `playerId`.
 
-`faceoffpercentages` isn't needed for V1. Exact fields, pagination limits, join behavior, coverage gaps, the recommended V1 statistics and snapshot shape, and the proposed pipeline step are recorded in `docs/PROJECT_SOURCE_OF_TRUTH.md` §I under "Verified NHL statistics source". Reference documentation (partly inaccurate: `limit=-1` is capped at 100 rows): https://github.com/pseudo-r/Public-NHL-API/blob/main/docs/stats-rest/skaters.md
+`faceoffpercentages` isn't needed for V1. **Implemented (2026-11-20):** the daily refresh writes a validated `public/data/skater-stats.json` with the confirmed V1 statistics, and a stats failure keeps the last good file without blocking the schedule/player refresh. Exact fields, pagination limits, join behavior, coverage gaps, the recommended V1 statistics and snapshot shape, and the proposed pipeline step are recorded in `docs/PROJECT_SOURCE_OF_TRUTH.md` §I under "Verified NHL statistics source". Reference documentation (partly inaccurate: `limit=-1` is capped at 100 rows): https://github.com/pseudo-r/Public-NHL-API/blob/main/docs/stats-rest/skaters.md
 
 ## 4. User experience and visual direction
 

@@ -9,7 +9,7 @@ Labels used below:
 - **Implemented**: verified in the current code; not necessarily an explicit requirement.
 - **Open**: unresolved; ask before changing behavior.
 
-Last reviewed against commit `2430b9662da3bc7de067f465d79edbeb1feff43a` (2026-11-19); existing behavior reviewed against the testing repository, and Player Evaluator decisions recorded in §I. §I's NHL statistics findings were added on 2026-11-20 from the probe run at `67ea97e`.
+Last reviewed against commit `2430b9662da3bc7de067f465d79edbeb1feff43a` (2026-11-19); existing behavior reviewed against the testing repository, and Player Evaluator decisions recorded in §I. §I's NHL statistics findings were added on 2026-11-20 from the probe run at `67ea97e`, and the skater-stats pipeline step (§C, §F, §I) was reviewed against the code on 2026-11-20.
 
 **This copy lives in the testing repo** `jmaser54/fantasy-hockey-schedule-optimizer-testing` (default branch `main`, site https://jmaser54.github.io/fantasy-hockey-schedule-optimizer-testing/). The owner asked for changes to be tried here first; the live repo doesn't have them yet.
 
@@ -197,7 +197,7 @@ Vite 6 + React 18 + TypeScript (strict), Vitest. No runtime dependencies besides
 | State | `src/state/appState.ts` | `AppState`, `reducer` (actions: select, setCustom, setPeriods, setLeague, addPlayers, removePlayer, updateEntry, replacePlayer, addCustomPlayer, clearRoster, setManual, clearManual, scenario, scenarioApply), `proposedRoster`, tolerant `deserialize`/`serialize`, `loadFromStorage`/`saveToStorage`. |
 | Domain (pure, tested) | `src/domain/*` | `optimizer.ts` (daily lineup, priorities, overrides, totals), `matching.ts` (Kuhn bipartite matching), `capacity.ts` (daily group counts, `lineupGroupTotals`), `roster.ts` (`validateRoster`, `describeIssue`, `toLineupPlayers`, `effectivePositions`), `schedule.ts` (`ScheduleIndex`, `teamOnDate`, `playerGameOn`, `playerGames`, `opponent`), `league.ts`, `dates.ts`, `rankings.ts`, `teamSchedules.ts`, `rosterImport.ts`, `names.ts`, `types.ts`. |
 | Data load | `src/data/load.ts`, `src/data/format.ts`, `src/data/validate.ts` | Fetch `public/data/*.json`, validate, build `Dataset`; `isStale` (more than 3 days old); `buildPlayerLookup` (resolves `nhl-<id>`/`espn-<id>` aliases). |
-| Data pipeline (Node, CI only) | `scripts/refresh-data.ts`, `src/data/pipeline/{nhl,espn,reconcile}.ts` | Fetch NHL teams, schedules and rosters plus ESPN eligibility; strict parse; reconcile; validate; write `public/data/{schedule,players}.json`. |
+| Data pipeline (Node, CI only) | `scripts/refresh-data.ts`, `src/data/pipeline/{nhl,espn,reconcile,stats}.ts` | Fetch NHL teams, schedules and rosters plus ESPN eligibility; strict parse; reconcile; validate; write `public/data/{schedule,players}.json`. Then, as an independent step, fetch the NHL Stats REST skater reports, join them, validate, and write `public/data/skater-stats.json` (§I). The app doesn't load that file yet. |
 | UI pages | `src/ui/Rankings.tsx`, `Roster.tsx`, `Lineup.tsx`, `Trades.tsx`, `Settings.tsx`, `Contact.tsx`, `common.tsx` | `common.tsx`: `PosBadges`, `PosToggles`, `PlayerSearch`, `Delta`, `InfoTip`, `PreferredToggle`. |
 | Other | `src/analytics.ts`, `src/contact.ts`, `src/styles.css` | GA page views, contact config, all CSS (tokens on `:root`, phone and touch media queries at the end). |
 
@@ -295,7 +295,7 @@ Each rule below is enforced by the code or tests named; keep them true.
 ## F. Testing, builds and deployment
 
 **Commands** (`package.json`):
-- `npm test`: `vitest run`. On 2026-11-20 it ran **128 tests in 11 files**. The per-file list below predates that and is stale (Open: refresh it when this section is next reviewed):
+- `npm test`: `vitest run`. On 2026-11-20 it ran **144 tests in 12 files**, including `src/data/pipeline/stats.test.ts` (16: stats request URL, pagination, report join, `validateSkaterStats`). The rest of the per-file list below predates that and is stale (Open: refresh it when this section is next reviewed):
   - `src/domain/optimizer.test.ts` (20): spec cases 1–10, overrides, priorities, brute-force matching.
   - `capacity.test.ts` (7): summary reconciliation.
   - `domain.test.ts` (12): dates, league/IR validation, rankings.
@@ -305,7 +305,7 @@ Each rule below is enforced by the code or tests named; keep them true.
   - `src/analytics.test.ts` (3), `src/contact.test.ts` (2).
 - `npm run typecheck`: `tsc -b`.
 - `npm run build`: `tsc -b && vite build`, output in `dist/` (gitignored).
-- `node --experimental-strip-types --no-warnings scripts/check-data.ts`: validates the committed snapshot.
+- `node --experimental-strip-types --no-warnings scripts/check-data.ts`: validates the committed snapshot, plus `skater-stats.json` when present. It prints a warning instead of failing while that file doesn't exist yet.
 - `npm run data:refresh`: fetches NHL/ESPN data. **It can't run in the dev container**, which has no access to the NHL or ESPN APIs.
 
 **CI and deployment** (`.github/workflows/`):
@@ -323,7 +323,9 @@ Each rule below is enforced by the code or tests named; keep them true.
     - GA hits are intercepted, not sent;
     - no browser errors.
 - `probe-nhl-stats.yml`: Player Evaluator investigation only. It runs manually or on pushes to `scripts/probe-nhl-stats.mjs` or the workflow itself, prints an NHL Stats REST report to the job log, and uploads raw responses as the `nhl-stats-probe` artifact. It writes nothing to the repository or the site.
-- `refresh-data.yml`: daily at 10:17 UTC, and on pushes that touch the pipeline. It tests, refreshes, commits `public/data` as `github-actions[bot]` if changed, then calls the deploy.
+- `refresh-data.yml`: daily at 10:17 UTC, and on pushes that touch the pipeline. It tests, refreshes, commits `public/data` as `github-actions[bot]` if changed (message "data: refresh NHL schedule, player directory and skater stats"), then calls the deploy.
+  - A schedule or player failure still fails the job and writes nothing.
+  - A skater-stats failure (fetch, parse, join or validation) keeps the previous `skater-stats.json`, logs the failure to the report and as a job `::warning` annotation, and doesn't block the schedule and player files (**Confirmed** 2026-11-20).
 - **Pushing to the default branch redeploys the live site.** Commit messages containing `[skip ci]` skip push-triggered workflows.
 - **What's published:** only what Vite builds, i.e. `index.html`, bundled `src/` and `public/` (data). `docs/`, `README.md`, `IMPLEMENTATION.md`, `CLAUDE.md` and `scripts/` are never published.
 
@@ -406,7 +408,7 @@ Each rule below is enforced by the code or tests named; keep them true.
 - **Roster and privacy:** reuse the existing saved browser-local roster and player-ID lookup. No accounts, backend, ESPN/Yahoo authorization, or repeated roster upload requirement. Existing roster paste/manual entry remains available.
 - **Goalies:** deliberately excluded from V1 pending separate design. Preserve goalies in the existing roster and explain their exclusion in Player Evaluator.
 - **Injury adjustment:** excluded from V1.
-- **Data:** current bundled player directory contains identity/team/position/eligibility data, not season performance stats. A new validated skater-statistics data shape and refresh step are required. Prefer a validated snapshot refreshed through the existing daily GitHub Actions pipeline; preserve the last good snapshot on failure and show its update time. The source has been verified (below); the pipeline step is **not implemented yet**.
+- **Data:** current bundled player directory contains identity/team/position/eligibility data, not season performance stats. The skater-statistics snapshot and refresh step are **implemented** (below). The snapshot keeps the last good file on failure. The app doesn't load it yet: the update-time display and stale warning belong to the UI step.
 
 ### Verified NHL statistics source (data proof of concept, 2026-11-20)
 
@@ -453,10 +455,10 @@ Verified from GitHub Actions (`.github/workflows/probe-nhl-stats.yml` running `s
 - **Coverage against `players.json`** (snapshot fetched 2026-11-19):
   - 738 directory skaters have an `nhlId`. 713 of them have a stats row; 18 active-roster skaters have none, which is consistent with 0 GP.
   - **69 skaters with 2026–27 stats have no `nhlId` in the directory**, for example Dylan Larkin (DET, 10 GP), Danton Heinen and Samuel Blais. They exist only as ESPN-only `inactive` entries (`espn-<id>`) because the NHL `roster/<team>/current` endpoint the pipeline uses didn't list them, presumably because they're injured or in the minors.
-  - Matching strictly by NHL ID would show these players as unmatched in Player Evaluator. See the Open item below.
+  - **Confirmed (2026-11-20):** don't resolve these now, and don't change `players.json` for them. In Player Evaluator they are flagged transparently as unmatched/unavailable (spec §3.3), and individual players may be handled manually later. This must not delay V1.
   - One directory team differs from the stats team (Mike Reilly: directory COL, stats CAR).
 
-**Recommended V1 statistics** (Open until the owner confirms the final list):
+**V1 statistics** (**Confirmed** 2026-11-20 as listed):
 
 | Treatment | Statistic | Source field |
 |---|---|---|
@@ -471,32 +473,39 @@ Verified from GitHub Actions (`.github/workflows/probe-nhl-stats.yml` running `s
 | Unchanged | Shooting %, Faceoff % (`null` with 0 shots / 0 faceoffs) | `summary.shootingPct`, `.faceoffWinPct` |
 | Unchanged | TOI per game (seconds) | `summary.timeOnIcePerGame` |
 
-These are also available and verified, but not recommended for V1 unless asked: PPG, SHG, GWG, EV points, takeaways, giveaways, faceoff losses and totals, shot attempts.
+These are also available and verified, but not in V1: PPG, SHG, GWG, EV points, takeaways, giveaways, faceoff losses and totals, shot attempts.
 
-**Recommended snapshot** (proposal; not implemented):
-- **File:** `public/data/skater-stats.json`: `{ version, season, gameType: 2, fetchedAt, source, skaters: [{ nhlId, name, teams, position, gamesPlayed, goals, assists, points, plusMinus, penaltyMinutes, ppPoints, shPoints, shots, hits, blockedShots, faceoffWins, shootingPct|null, faceoffWinPct|null, toiPerGame }] }`, with one entry per `playerId`. It would be roughly 190 KB uncompressed (782 rows), loaded only by Player Evaluator.
-- **Validation before writing:**
-  - `season` and every row's `seasonId` match.
-  - Every report returned `rows === total`.
-  - IDs are unique, and the reports have identical ID sets.
-  - Integers are ≥ 0, except `plusMinus`.
-  - `gamesPlayed` ≥ 1.
-  - The identities above hold, and percentages are in [0, 1] or `null`.
-  - The row count is plausible against the previous snapshot.
-- **Smallest pipeline extension:**
-  - Add `src/data/pipeline/stats.ts` (fetch URL builder, strict per-report parsers, and a join on `playerId`) with fixture tests in the existing pipeline test style.
-  - Add `validateSkaterStats` in `src/data/validate.ts`.
-  - Add a step in `scripts/refresh-data.ts` that fetches 3 reports × 8 pages through the existing `getJson`, saves raw samples to `data-raw/`, and writes the file only when it validates.
-  - Add a check in `scripts/check-data.ts`.
-  - Widen the bot commit message.
-  - The workflow already commits all of `public/data` and needs no new dependency or secret.
+**Implemented snapshot and pipeline step** (2026-11-20):
+- **File:** `public/data/skater-stats.json` (`SkaterStatsFile` / `SkaterStatLine` in `src/data/format.ts`): `{ version: 1, season, gameType: 2, fetchedAt, source, skaters: [{ nhlId, name, teams, position, gamesPlayed, goals, assists, points, plusMinus, penaltyMinutes, ppPoints, shPoints, shots, hits, blockedShots, faceoffWins, shootingPct|null, faceoffWinPct|null, toiPerGame }] }`.
+  - One entry per `playerId`, sorted by `nhlId`.
+  - `teams` keeps the API order and isn't the current team.
+  - `toiPerGame` is in seconds.
+  - About 240 KB uncompressed for ~780 skaters (estimated from a simulated run).
+  - It's created by the first successful refresh after this change; until then `check-data.ts` warns that it is missing.
+- **`src/data/pipeline/stats.ts`:**
+  - `statsPageUrl` always sends `gameTypeId=2`, the season, `isAggregate=false`, a 100-row `limit` and a `playerId` sort.
+  - `fetchStatsReport` pages until `total`, and throws if the row count ≠ `total`, the total changes mid-fetch, or IDs repeat.
+  - `joinSkaterStats` strictly parses the fields above. It throws if the reports cover different players, disagree on `gamesPlayed`, include another season, or include a non-skater position. Reports used: `summary`, `realtime`, `faceoffwins`.
+- **`validateSkaterStats` (`src/data/validate.ts`) checks:**
+  - version, season and `gameType` 2, plus a valid `fetchedAt`;
+  - unique `nhlId`s, known positions, and team codes against the schedule's teams;
+  - integer counting stats ≥ 0, `gamesPlayed` ≥ 1, integer `plusMinus`;
+  - `goals + assists = points` and `ppPoints + shPoints ≤ points`;
+  - `shootingPct` is null exactly when shots = 0, otherwise equals `goals/shots`;
+  - `faceoffWinPct` is in [0, 1] or null, and present when there are faceoff wins;
+  - `0 < toiPerGame ≤ 3600`;
+  - against the previous same-season snapshot: an error below 90% of its count, a warning for any drop.
+- **`scripts/refresh-data.ts`:** after writing the schedule and players, runs `refreshSkaterStats` (3 reports, about 8 pages each, through the existing retrying `getJson`). It saves each report's first page to `data-raw/` and writes the file only when it validates. It is wrapped so a failure can't block the rest (see §F).
+- **Verified locally** with the whole refresh script against a mocked network:
+  - success writes the file;
+  - an HTTP 500 from the stats API keeps the previous file and still writes the schedule/players with exit 0;
+  - invalid stats rows behave the same way.
 
-**Open (data):**
-- Whether a stats failure should block the schedule/directory refresh. The recommendation is no: keep the previous stats file, warn in the job log, and let the snapshot's `fetchedAt` drive the stale warning.
-- How to cover the 69 directory-gap players. The recommendation is to let the pipeline attach `nhlId` to ESPN-only entries from the stats rows, using the existing reconcile name rules. That changes `players.json` and the Lineup Planner data, so the owner must approve it first.
-- How quickly the stats API reflects completed games has not been measured.
+  The live refresh runs in GitHub Actions.
+
+**Open (data):** How quickly the stats API reflects completed games hasn't been measured; the snapshot's `fetchedAt` is the fetch time, not a "games through" date.
 - **Visual/UX:** compact roster-wide table, actual and adjusted values side by side, grouped stat categories, mobile-first layout. Exact presentation and navigation remain open for prototype/review. Existing desktop Lineup Planner appearance must not regress.
 - **Seasonal priority:** deliver a useful V1 promptly while GP gaps are comparatively large. Avoid delaying core evaluation for optional features.
 - **Screenshot roster recognition is a separate high-priority workstream, not a Player Evaluator V1 dependency or release gate.** Investigate in parallel; it should improve roster entry for the whole site, especially mobile. Existing paste/manual entry and saved-roster reuse must remain sufficient to use Player Evaluator.
-- **Open:** persistence of external comparison selections/custom benchmark; final stat list and exact field treatment (recommendation above); final labels/navigation; final visual layout; the data items listed above.
+- **Open:** persistence of external comparison selections/custom benchmark; final labels/navigation; final visual layout; the data item listed above.
 - All implementation and experiments begin in `jmaser54/fantasy-hockey-schedule-optimizer-testing` (default branch `main`). Do not change the live repository until the owner reviews and approves the tested result.
