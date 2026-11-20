@@ -37,14 +37,14 @@ describe('evaluator preference keys', () => {
 
 describe('parseEvaluatorPrefs', () => {
   it('defaults to no comparisons and the dynamic roster-max benchmark', () => {
-    expect(parseEvaluatorPrefs(null)).toEqual({ version: 1, comparisons: [], benchmark: { kind: 'roster-max' } });
+    expect(parseEvaluatorPrefs(null)).toEqual({ version: 1, comparisons: [], benchmark: { kind: 'roster-max' }, minGamesPlayed: 10 });
     expect(parseEvaluatorPrefs('not json')).toEqual(defaultEvaluatorPrefs());
     expect(parseEvaluatorPrefs('[1,2]')).toEqual(defaultEvaluatorPrefs());
   });
 
   it('round-trips comparisons and each benchmark choice', () => {
     for (const benchmark of [{ kind: 'roster-max' as const }, { kind: 'player' as const, nhlId: 8478402 }, { kind: 'custom' as const, gamesPlayed: 60 }]) {
-      const prefs = { version: 1, comparisons: [8478402, 8471675], benchmark };
+      const prefs = { version: 1, comparisons: [8478402, 8471675], benchmark, minGamesPlayed: 5 };
       expect(parseEvaluatorPrefs(serializeEvaluatorPrefs(prefs))).toEqual(prefs);
     }
   });
@@ -55,7 +55,9 @@ describe('parseEvaluatorPrefs', () => {
 
   it('drops bad values field by field', () => {
     const p = parseEvaluatorPrefs(JSON.stringify({ comparisons: [5, 5, 'x', -1, 2.5, 7], benchmark: { kind: 'custom', gamesPlayed: 0 } }));
-    expect(p).toEqual({ version: 1, comparisons: [5, 7], benchmark: { kind: 'roster-max' } });
+    expect(p).toEqual({ version: 1, comparisons: [5, 7], benchmark: { kind: 'roster-max' }, minGamesPlayed: 10 });
+    for (const bad of [0, 85, 2.5, '5']) expect(parseEvaluatorPrefs(JSON.stringify({ minGamesPlayed: bad })).minGamesPlayed).toBe(10);
+    expect(parseEvaluatorPrefs(JSON.stringify({ minGamesPlayed: 1 })).minGamesPlayed).toBe(1);
     expect(parseEvaluatorPrefs(JSON.stringify({ comparisons: 'x', benchmark: { kind: 'player' } }))).toEqual(defaultEvaluatorPrefs());
   });
 });
@@ -76,7 +78,7 @@ describe('saving and loading evaluator preferences', () => {
     const rosterBefore = storage.getItem(STORAGE_KEY);
     expect(rosterBefore).toBe(serialize(state));
 
-    const prefs = { version: 1, comparisons: [7], benchmark: { kind: 'custom' as const, gamesPlayed: 40 } };
+    const prefs = { version: 1, comparisons: [7], benchmark: { kind: 'custom' as const, gamesPlayed: 40 }, minGamesPlayed: 3 };
     expect(saveEvaluatorPrefs(prefs)).toBe(true);
     expect(loadEvaluatorPrefs()).toEqual(prefs);
     expect(storage.getItem(STORAGE_KEY)).toBe(rosterBefore);

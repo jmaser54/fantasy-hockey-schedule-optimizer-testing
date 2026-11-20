@@ -10,7 +10,7 @@ import {
   evaluateSubject,
   rankPlayers,
   RANKING_STATS,
-  regularSeasonGames,
+  SEASON_GAMES,
   resolveBenchmark,
   rosterNhlIds,
   SCALED_STATS,
@@ -173,23 +173,13 @@ describe('resolveBenchmark', () => {
     expect(resolveBenchmark({ kind: 'player', nhlId: 404 }, skaters, stats)).toMatchObject({ available: false, reason: 'player-has-no-stats' });
   });
 
-  it('accepts a whole-number custom benchmark from 1 to the season’s games', () => {
-    expect(resolveBenchmark({ kind: 'custom', gamesPlayed: 84 }, skaters, stats, { season: '20262027' })).toMatchObject({ available: true, gamesPlayed: 84, basis: 'custom' });
-    expect(resolveBenchmark({ kind: 'custom', gamesPlayed: 84 }, skaters, stats)).toMatchObject({ available: true, gamesPlayed: 84 });
+  it('accepts a whole-number custom benchmark from 1 to the current season’s 84 games', () => {
+    expect(SEASON_GAMES).toBe(84);
+    expect(resolveBenchmark({ kind: 'custom', gamesPlayed: 84 }, skaters, stats)).toMatchObject({ available: true, gamesPlayed: 84, basis: 'custom' });
     expect(resolveBenchmark({ kind: 'custom', gamesPlayed: 1 }, skaters, stats)).toMatchObject({ available: true, gamesPlayed: 1 });
     for (const bad of [0, -5, 2.5, 85, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(resolveBenchmark({ kind: 'custom', gamesPlayed: bad }, skaters, stats, { season: '20262027' })).toMatchObject({ available: false, reason: 'invalid-custom' });
+      expect(resolveBenchmark({ kind: 'custom', gamesPlayed: bad }, skaters, stats)).toMatchObject({ available: false, reason: 'invalid-custom' });
     }
-    expect(resolveBenchmark({ kind: 'custom', gamesPlayed: 83 }, skaters, stats, { season: '20252026' })).toMatchObject({ available: false, reason: 'invalid-custom' });
-    expect(resolveBenchmark({ kind: 'custom', gamesPlayed: 82 }, skaters, stats, { season: '20252026' })).toMatchObject({ available: true });
-  });
-
-  it('knows the regular-season length by season', () => {
-    expect(regularSeasonGames('20262027')).toBe(84);
-    expect(regularSeasonGames('20272028')).toBe(84);
-    expect(regularSeasonGames('20252026')).toBe(82);
-    expect(regularSeasonGames(undefined)).toBe(84);
-    expect(regularSeasonGames('bad')).toBe(84);
   });
 });
 
@@ -249,9 +239,9 @@ describe('evaluateSubject / evaluatePlayers', () => {
     ]);
   });
 
-  it('passes the season through to the custom benchmark limit', () => {
-    expect(evaluatePlayers({ roster: [], resolve, stats, season: '20252026', benchmark: { kind: 'custom', gamesPlayed: 84 } }).benchmark).toMatchObject({ available: false, reason: 'invalid-custom' });
-    expect(evaluatePlayers({ roster: [], resolve, stats, season: '20262027', benchmark: { kind: 'custom', gamesPlayed: 84 } }).benchmark).toMatchObject({ available: true, gamesPlayed: 84 });
+  it('applies the custom benchmark limit', () => {
+    expect(evaluatePlayers({ roster: [], resolve, stats, benchmark: { kind: 'custom', gamesPlayed: 85 } }).benchmark).toMatchObject({ available: false, reason: 'invalid-custom' });
+    expect(evaluatePlayers({ roster: [], resolve, stats, benchmark: { kind: 'custom', gamesPlayed: 84 } }).benchmark).toMatchObject({ available: true, gamesPlayed: 84 });
   });
 });
 

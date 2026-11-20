@@ -10,6 +10,7 @@ import type { ISODate, Player } from '../domain/types.ts';
 import { STORAGE_KEY, deserialize, loadFromStorage, reducer, saveToStorage } from '../state/appState.ts';
 import { Ctx, useApp, type AppCtx, type Window } from './context.ts';
 import { AboutView } from './About.tsx';
+import { EvaluatorView } from './Evaluator.tsx';
 import { ContactForm } from './Contact.tsx';
 import { LineupView } from './Lineup.tsx';
 import { RankingsView } from './Rankings.tsx';
@@ -22,6 +23,8 @@ const TABS = [
   { id: 'roster', label: 'Roster' },
   { id: 'lineup', label: 'Lineup' },
   { id: 'trades', label: 'Trade Lab' },
+  // A separate tool from the Lineup Planner tabs above (it has no period bar).
+  { id: 'evaluator', label: 'Player Evaluator', short: 'Evaluator' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
@@ -121,7 +124,7 @@ export function App() {
           </button>
           <nav className="tabs" role="tablist">
             {TABS.map((t) => (
-              <button key={t.id} role="tab" className="tab" aria-selected={!about && tab === t.id} aria-label={'short' in t ? t.label : undefined} onClick={() => go(t.id)}>
+              <button key={t.id} role="tab" className={t.id === 'evaluator' ? 'tab tool-tab' : 'tab'} aria-selected={!about && tab === t.id} aria-label={'short' in t ? t.label : undefined} onClick={() => go(t.id)}>
                 {'short' in t ? (
                   <>
                     <span className="label-full">{t.label}</span>
@@ -153,7 +156,7 @@ export function App() {
             dispatch={dispatch}
             data={status.data}
             toast={toast}
-            periodBar={!about}
+            periodBar={!about && tab !== 'evaluator'}
             showModes={tab !== 'roster'}
             onOpenSettings={() => setSettingsOpen(true)}
             overlay={settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
@@ -163,6 +166,7 @@ export function App() {
             {!about && tab === 'roster' && <RosterView onGoLineup={() => go('lineup')} />}
             {!about && tab === 'lineup' && <LineupView onGoRoster={() => go('roster')} />}
             {!about && tab === 'trades' && <TradesView onGoRoster={() => go('roster')} />}
+            {!about && tab === 'evaluator' && <EvaluatorView onGoRoster={() => go('roster')} />}
           </Ready>
         )}
       </main>

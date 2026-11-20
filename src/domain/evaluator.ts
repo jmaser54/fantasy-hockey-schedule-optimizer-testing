@@ -181,24 +181,21 @@ export type Benchmark =
   | { available: false; choice: BenchmarkChoice; reason: 'no-stats' | 'player-has-no-stats' | 'invalid-custom' };
 
 /**
- * Regular-season games per team, by season ("20262027"): 84 from 2026–27 on, 82 before.
- * Unknown seasons use the current 84-game format. The upper limit for a custom benchmark.
+ * Regular-season games per team in the current NHL season (84 in 2026–27): the upper limit for a
+ * custom benchmark. Player Evaluator only covers the current season; update this if the format changes.
  */
-export function regularSeasonGames(season?: string): number {
-  const start = season && /^\d{8}$/.test(season) ? Number(season.slice(0, 4)) : NaN;
-  return Number.isNaN(start) || start >= 2026 ? 84 : 82;
-}
+export const SEASON_GAMES = 84;
 
 /**
  * Default: highest GP among roster skaters with stats, IR players included (ties: first in
  * roster order). With no rostered skater stats it falls back to the highest GP in the whole
- * snapshot (basis 'league-max'). Player: that skater's GP. Custom: a whole number from 1 to the
- * season's regular-season games.
+ * snapshot (basis 'league-max'). Player: that skater's GP. Custom: a whole number from 1 to
+ * SEASON_GAMES.
  */
-export function resolveBenchmark(choice: BenchmarkChoice, rosterSkaters: readonly Subject[], stats: StatsIndex, opts: { season?: string } = {}): Benchmark {
+export function resolveBenchmark(choice: BenchmarkChoice, rosterSkaters: readonly Subject[], stats: StatsIndex): Benchmark {
   if (choice.kind === 'custom') {
     const gp = choice.gamesPlayed;
-    return Number.isInteger(gp) && gp >= 1 && gp <= regularSeasonGames(opts.season)
+    return Number.isInteger(gp) && gp >= 1 && gp <= SEASON_GAMES
       ? { available: true, gamesPlayed: gp, choice, basis: 'custom' }
       : { available: false, choice, reason: 'invalid-custom' };
   }
@@ -240,8 +237,6 @@ export interface EvaluationInput {
   stats: StatsIndex;
   comparisons?: readonly number[];
   benchmark?: BenchmarkChoice;
-  /** Snapshot season ("20262027"); sets the custom benchmark's upper limit. */
-  season?: string;
 }
 
 export interface Evaluation {
@@ -256,7 +251,7 @@ export interface Evaluation {
 export function evaluatePlayers(input: EvaluationInput): Evaluation {
   const { skaters, goalies } = classifyRoster(input.roster, input.resolve, input.stats);
   const { subjects, alreadyOnRoster } = comparisonSubjects(input.comparisons ?? [], input.stats, rosterNhlIds(skaters));
-  const benchmark = resolveBenchmark(input.benchmark ?? { kind: 'roster-max' }, skaters, input.stats, { season: input.season });
+  const benchmark = resolveBenchmark(input.benchmark ?? { kind: 'roster-max' }, skaters, input.stats);
   return {
     benchmark,
     roster: skaters.map((s) => evaluateSubject(s, benchmark)),

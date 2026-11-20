@@ -123,6 +123,16 @@ try {
   if (!/Roster\s+1\//.test(counts)) fail(`roster not restored after reload: ${counts}`);
   console.log('persistence OK');
 
+  // Player Evaluator: loads the published skater stats on opening, reads the saved roster and
+  // never changes it.
+  const rosterSaved = await page.evaluate((k) => localStorage.getItem(k), siteKey);
+  await page.getByRole('tab', { name: 'Player Evaluator' }).click();
+  await page.locator('.eval-table tbody tr', { hasText: 'Connor McDavid' }).waitFor({ timeout: 30_000 });
+  const bench = (await page.locator('.bench-main').innerText()).replace(/\s+/g, ' ');
+  if (!/Normalized to \d+ GP/.test(bench)) fail(`evaluator benchmark unexpected: ${bench}`);
+  if ((await page.evaluate((k) => localStorage.getItem(k), siteKey)) !== rosterSaved) fail('Player Evaluator changed the saved roster');
+  console.log(`evaluator OK: "${bench.trim()}"`);
+
   // 3. Reset <period> to Optimal: the screen and saved data update at once, in this tab and in
   // another open tab (which must not keep showing, or later re-save, the old lineup).
   await page.getByRole('tab', { name: 'Lineup' }).click();

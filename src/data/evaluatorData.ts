@@ -48,6 +48,6 @@ export function evaluateSavedRoster(
 ): SavedRosterEvaluation {
   const { resolve } = buildPlayerLookup(players, saved.customPlayers);
   const stats = buildStatsIndex(statsFile.skaters);
-  const evaluation = evaluatePlayers({ roster: saved.roster, resolve, stats, comparisons: prefs.comparisons, benchmark: prefs.benchmark, season: statsFile.season });
+  const evaluation = evaluatePlayers({ roster: saved.roster, resolve, stats, comparisons: prefs.comparisons, benchmark: prefs.benchmark });
   return { evaluation, stats, rosterNhlIds: rosterNhlIds(evaluation.roster), season: statsFile.season, statsFetchedAt: statsFile.fetchedAt };
 }

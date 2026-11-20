@@ -1,7 +1,8 @@
-import type { BenchmarkChoice } from '../domain/evaluator.ts';
+import { DEFAULT_RANKING_MIN_GP, SEASON_GAMES, type BenchmarkChoice } from '../domain/evaluator.ts';
 
 /**
- * Player Evaluator preferences: comparison players and the selected benchmark. Kept in their own
+ * Player Evaluator preferences: comparison players, the selected benchmark and the rankings'
+ * minimum games played. Kept in their own
  * browser-storage key, separate from the saved fantasy roster (`playoff-optimizer:v1`), so changing
  * them never touches the roster and the roster's persistence model is unchanged. The live and testing
  * sites share one browser storage, so the testing build uses its own key, as for the app state.
@@ -21,10 +22,12 @@ export interface EvaluatorPrefs {
   /** NHL ids of comparison players, in the order added. Not part of the fantasy roster. */
   comparisons: number[];
   benchmark: BenchmarkChoice;
+  /** League-wide rankings leave out skaters below this many games. */
+  minGamesPlayed: number;
 }
 
 export function defaultEvaluatorPrefs(): EvaluatorPrefs {
-  return { version: EVALUATOR_PREFS_VERSION, comparisons: [], benchmark: { kind: 'roster-max' } };
+  return { version: EVALUATOR_PREFS_VERSION, comparisons: [], benchmark: { kind: 'roster-max' }, minGamesPlayed: DEFAULT_RANKING_MIN_GP };
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -50,11 +53,13 @@ export function parseEvaluatorPrefs(raw: string | null): EvaluatorPrefs {
   }
   if (!isObj(data)) return base;
   const comparisons = Array.isArray(data.comparisons) ? [...new Set(data.comparisons.filter(isId))] : base.comparisons;
-  return { ...base, comparisons, benchmark: loadBenchmark(data.benchmark) ?? base.benchmark };
+  const minGp = data.minGamesPlayed;
+  const minGamesPlayed = Number.isInteger(minGp) && (minGp as number) >= 1 && (minGp as number) <= SEASON_GAMES ? (minGp as number) : base.minGamesPlayed;
+  return { ...base, comparisons, benchmark: loadBenchmark(data.benchmark) ?? base.benchmark, minGamesPlayed };
 }
 
 export function serializeEvaluatorPrefs(prefs: EvaluatorPrefs): string {
-  return JSON.stringify({ version: EVALUATOR_PREFS_VERSION, comparisons: prefs.comparisons, benchmark: prefs.benchmark });
+  return JSON.stringify({ version: EVALUATOR_PREFS_VERSION, comparisons: prefs.comparisons, benchmark: prefs.benchmark, minGamesPlayed: prefs.minGamesPlayed });
 }
 
 export function loadEvaluatorPrefs(key = EVALUATOR_PREFS_KEY): EvaluatorPrefs {
