@@ -79,15 +79,16 @@ Plus/minus is intentionally static in V1. Although it can be mathematically mult
 Do not assume every field belongs in a scaled or unchanged category without checking its definition. Document the treatment of every displayed statistic.
 
 ### 3.5 Benchmark controls and external comparisons
-- Default benchmark: the highest GP among the user's rostered skaters.
+- Default benchmark: the highest GP among the user's rostered skaters, **including skaters on IR** (Confirmed 2026-11-20).
+- **No usable roster benchmark** (no roster, or no rostered skater with stats): use the highest GP among skaters in the league-wide stats dataset, and clearly identify which benchmark is in use (Confirmed 2026-11-20).
 - Allow the user to search for and add one or more NHL skaters who are not on their fantasy roster to the analysis. These are comparison players, not additions to the saved fantasy roster.
 - Allow the user to choose a comparison player as the benchmark. In that mode, normalize the analysis to that player's current-season GP.
-- Allow a custom benchmark GP value.
+- Allow a custom benchmark GP value: a whole number from 1 to the season's regular-season games (84 for 2026–27). Avoid hardcoding the season length where a simple season-aware approach works (Confirmed 2026-11-20).
 - The roster's maximum-GP benchmark remains the default.
 - Adding/removing comparison players or changing the benchmark must not alter the user's actual saved roster.
 - External-player comparison is intended to support acquisition and trade evaluation without requiring the user to manage another fantasy team's full roster.
 
-**Open:** Whether comparison-player selections and custom benchmark settings persist between visits, or are session-only for V1.
+**Confirmed (2026-11-20): persistence.** Comparison-player selections and explicitly selected benchmark settings are remembered between visits in browser local storage, separate from the saved fantasy roster. The default roster-based benchmark stays dynamic (it is stored as a choice, never as a fixed GP number). Implemented in `src/state/evaluatorPrefs.ts`; see `docs/PROJECT_SOURCE_OF_TRUTH.md` §E and §I.
 
 ### 3.6 Data freshness
 - Retrieve season statistics from a trustworthy NHL data source and refresh them on a regular schedule.
@@ -113,9 +114,14 @@ Player Evaluator must include league-wide player rankings based on statistics no
 - Keep actual games played visible alongside normalized statistics.
 - Respect the selected normalization benchmark, including the default and custom options.
 
+**Confirmed ranking decisions (2026-11-20):**
+- **Minimum GP:** rankings default to a 10-game minimum, adjustable by the user. The minimum applies to rankings only; rostered players appear in roster evaluation whatever their GP.
+- **Categories:** PIM and +/- are available ranking categories. Every category can be sorted ascending or descending: a ranking is a statistical ordering, not a claim that higher is better.
+- **Position filter:** NHL position (C/L/R/D) for V1. Fantasy eligibility may be considered later.
+
 **Product position:** rankings are an important, required capability, but they are **not assumed to be the primary focus, landing view or defining feature**. Normalized rankings exist elsewhere; the value here is convenient packaging that highlights the user's own players. Roster evaluation (§1) remains central.
 
-**Open:** navigation, prominence and presentation of rankings; the open data and ranking decisions listed in `docs/PROJECT_SOURCE_OF_TRUTH.md` §I.
+**Open:** navigation, prominence and presentation of rankings. The data and calculations exist (`rankPlayers`, `RANKING_STATS`, `DEFAULT_RANKING_MIN_GP`); there is no UI.
 
 ## 4. User experience and visual direction
 
@@ -196,7 +202,7 @@ Relevant existing files to inspect before implementation:
 
 1. **Data proof of concept:** verify NHL stats endpoints and live 2026–27 responses; establish exact fields, report joins, pagination, player-ID coverage, and refresh behavior.
 2. **Domain model and tests:** define the normalized stats model and pure calculation functions; test zero GP, fractional values, benchmark changes, missing stats, and unchanged metrics. Include the ranking calculations (§3.7). *Implemented 2026-11-20 in `src/domain/evaluator.ts`.*
-3. **Saved-roster integration:** read the existing roster without duplicating or changing its persistence model.
+3. **Saved-roster integration:** read the existing roster without duplicating or changing its persistence model. *Implemented 2026-11-20: `evaluateSavedRoster` and `loadSkaterStats` in `src/data/evaluatorData.ts`, evaluator preferences in `src/state/evaluatorPrefs.ts`; not used by the UI yet.*
 4. **Minimal evaluator UI:** roster-wide results, actual/adjusted values, benchmark control, and external player search.
 5. **Visual/mobile refinement:** review at desktop, 390px, and 360px widths.
 6. **Testing and public V1:** validate with realistic data and existing users before promoting from the testing repository to the live repository.

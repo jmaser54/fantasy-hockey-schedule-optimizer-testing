@@ -5,9 +5,12 @@ import {
   buildStatsIndex,
   classifyRoster,
   comparisonSubjects,
+  DEFAULT_RANKING_MIN_GP,
   evaluatePlayers,
   evaluateSubject,
   rankPlayers,
+  RANKING_STATS,
+  regularSeasonGames,
   resolveBenchmark,
   rosterNhlIds,
   SCALED_STATS,
@@ -143,13 +146,21 @@ describe('resolveBenchmark', () => {
   const skaters = classifyRoster([entry('nhl-2'), entry('nhl-1'), entry('nhl-3'), entry('nhl-4')], resolve, stats).skaters;
 
   it('defaults to the highest GP among roster skaters with stats (first in roster order on ties)', () => {
-    expect(resolveBenchmark({ kind: 'roster-max' }, skaters, stats)).toMatchObject({ available: true, gamesPlayed: 20, nhlId: 1, name: 'Alpha' });
+    expect(resolveBenchmark({ kind: 'roster-max' }, skaters, stats)).toMatchObject({ available: true, gamesPlayed: 20, nhlId: 1, name: 'Alpha', basis: 'roster-max' });
   });
 
-  it('is unavailable when no roster skater has stats', () => {
+  it('includes rostered IR skaters in the default benchmark', () => {
+    const withIr = classifyRoster([entry('nhl-2'), entry('nhl-3', { onIr: true })], resolve, stats).skaters;
+    expect(resolveBenchmark({ kind: 'roster-max' }, withIr, stats)).toMatchObject({ gamesPlayed: 20, nhlId: 3, basis: 'roster-max' });
+  });
+
+  it('falls back to the league-wide highest GP when no roster skater has stats, and says so', () => {
     const none = classifyRoster([entry('nhl-4'), entry('espn-5'), entry('nhl-9')], resolve, stats).skaters;
-    expect(resolveBenchmark({ kind: 'roster-max' }, none, stats)).toMatchObject({ available: false, reason: 'no-roster-stats' });
-    expect(resolveBenchmark({ kind: 'roster-max' }, [], stats)).toMatchObject({ available: false });
+    const fallback = resolveBenchmark({ kind: 'roster-max' }, none, stats);
+    expect(fallback).toMatchObject({ available: true, gamesPlayed: 20, basis: 'league-max' });
+    expect(fallback).not.toHaveProperty('nhlId');
+    expect(resolveBenchmark({ kind: 'roster-max' }, [], stats)).toMatchObject({ available: true, gamesPlayed: 20, basis: 'league-max' });
+    expect(resolveBenchmark({ kind: 'roster-max' }, [], buildStatsIndex([]))).toMatchObject({ available: false, reason: 'no-stats' });
   });
 
   it('ignores comparison players for the default benchmark', () => {
@@ -158,23 +169,34 @@ describe('resolveBenchmark', () => {
   });
 
   it('uses a chosen player’s GP, or reports that they have no stats', () => {
-    expect(resolveBenchmark({ kind: 'player', nhlId: 7 }, skaters, stats)).toMatchObject({ available: true, gamesPlayed: 15, name: 'External' });
+    expect(resolveBenchmark({ kind: 'player', nhlId: 7 }, skaters, stats)).toMatchObject({ available: true, gamesPlayed: 15, name: 'External', basis: 'player' });
     expect(resolveBenchmark({ kind: 'player', nhlId: 404 }, skaters, stats)).toMatchObject({ available: false, reason: 'player-has-no-stats' });
   });
 
-  it('accepts a whole-number custom benchmark of at least 1', () => {
-    expect(resolveBenchmark({ kind: 'custom', gamesPlayed: 82 }, skaters, stats)).toMatchObject({ available: true, gamesPlayed: 82 });
+  it('accepts a whole-number custom benchmark from 1 to the season’s games', () => {
+    expect(resolveBenchmark({ kind: 'custom', gamesPlayed: 84 }, skaters, stats, { season: '20262027' })).toMatchObject({ available: true, gamesPlayed: 84, basis: 'custom' });
+    expect(resolveBenchmark({ kind: 'custom', gamesPlayed: 84 }, skaters, stats)).toMatchObject({ available: true, gamesPlayed: 84 });
     expect(resolveBenchmark({ kind: 'custom', gamesPlayed: 1 }, skaters, stats)).toMatchObject({ available: true, gamesPlayed: 1 });
-    for (const bad of [0, -5, 2.5, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(resolveBenchmark({ kind: 'custom', gamesPlayed: bad }, skaters, stats)).toMatchObject({ available: false, reason: 'invalid-custom' });
+    for (const bad of [0, -5, 2.5, 85, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(resolveBenchmark({ kind: 'custom', gamesPlayed: bad }, skaters, stats, { season: '20262027' })).toMatchObject({ available: false, reason: 'invalid-custom' });
     }
+    expect(resolveBenchmark({ kind: 'custom', gamesPlayed: 83 }, skaters, stats, { season: '20252026' })).toMatchObject({ available: false, reason: 'invalid-custom' });
+    expect(resolveBenchmark({ kind: 'custom', gamesPlayed: 82 }, skaters, stats, { season: '20252026' })).toMatchObject({ available: true });
+  });
+
+  it('knows the regular-season length by season', () => {
+    expect(regularSeasonGames('20262027')).toBe(84);
+    expect(regularSeasonGames('20272028')).toBe(84);
+    expect(regularSeasonGames('20252026')).toBe(82);
+    expect(regularSeasonGames(undefined)).toBe(84);
+    expect(regularSeasonGames('bad')).toBe(84);
   });
 });
 
 describe('evaluateSubject / evaluatePlayers', () => {
   it('adjusts every counting stat and leaves the source values untouched', () => {
     const s: Subject = { source: 'roster', nhlId: 2, name: 'Bravo', status: 'ok', stats: stats.get(2) };
-    const e = evaluateSubject(s, { available: true, gamesPlayed: 20, choice: { kind: 'roster-max' } });
+    const e = evaluateSubject(s, { available: true, gamesPlayed: 20, choice: { kind: 'roster-max' }, basis: 'roster-max' });
     expect(e.adjusted).toEqual({ goals: 10, assists: 18, points: 28, ppPoints: 10, shPoints: 2, shots: 80, penaltyMinutes: 8, hits: 24, blockedShots: 16, faceoffWins: 200 });
     expect(e.stats).toBe(stats.get(2)); // actual totals, GP, +/-, percentages and TOI stay as reported
     expect(e.stats).toMatchObject({ gamesPlayed: 10, goals: 5, plusMinus: 3, shootingPct: 0.15, faceoffWinPct: 0.52, toiPerGame: 1100 });
@@ -182,13 +204,13 @@ describe('evaluateSubject / evaluatePlayers', () => {
 
   it('keeps fractional adjusted values', () => {
     const s: Subject = { source: 'roster', nhlId: 8, name: 'x', status: 'ok', stats: line(8, 7, { goals: 3 }) };
-    expect(evaluateSubject(s, { available: true, gamesPlayed: 18, choice: { kind: 'roster-max' } }).adjusted!.goals).toBeCloseTo(7.7142857, 6);
+    expect(evaluateSubject(s, { available: true, gamesPlayed: 18, choice: { kind: 'roster-max' }, basis: 'roster-max' }).adjusted!.goals).toBeCloseTo(7.7142857, 6);
   });
 
   it('has no adjusted values for players without stats or without a benchmark', () => {
-    const none = { available: false as const, choice: { kind: 'roster-max' as const }, reason: 'no-roster-stats' as const };
+    const none = { available: false as const, choice: { kind: 'roster-max' as const }, reason: 'no-stats' as const };
     expect(evaluateSubject({ source: 'roster', nhlId: 1, name: 'a', status: 'ok', stats: stats.get(1) }, none).adjusted).toBeNull();
-    expect(evaluateSubject({ source: 'roster', nhlId: 4, name: 'd', status: 'no-games' }, { available: true, gamesPlayed: 20, choice: { kind: 'roster-max' } }).adjusted).toBeNull();
+    expect(evaluateSubject({ source: 'roster', nhlId: 4, name: 'd', status: 'no-games' }, { available: true, gamesPlayed: 20, choice: { kind: 'roster-max' }, basis: 'roster-max' }).adjusted).toBeNull();
   });
 
   it('evaluates the whole roster with comparisons, goalies and benchmark changes', () => {
@@ -211,9 +233,25 @@ describe('evaluateSubject / evaluatePlayers', () => {
     expect(roster).toHaveLength(4); // the saved roster is never changed
   });
 
-  it('handles an empty roster', () => {
-    const e = evaluatePlayers({ roster: [], resolve, stats });
-    expect(e).toMatchObject({ roster: [], comparisons: [], goalies: [], benchmark: { available: false, reason: 'no-roster-stats' } });
+  it('handles an empty roster (league-max benchmark) and no stats at all', () => {
+    const e = evaluatePlayers({ roster: [], resolve, stats, comparisons: [7] });
+    expect(e).toMatchObject({ roster: [], goalies: [], benchmark: { available: true, gamesPlayed: 20, basis: 'league-max' } });
+    expect(e.comparisons[0]!.adjusted!.goals).toBe(8);
+    expect(evaluatePlayers({ roster: [], resolve, stats: buildStatsIndex([]) })).toMatchObject({ roster: [], comparisons: [], benchmark: { available: false, reason: 'no-stats' } });
+  });
+
+  it('evaluates rostered players whatever their GP (the rankings minimum does not apply)', () => {
+    const few = buildStatsIndex([line(1, 2, { goals: 1 }), line(2, 1, { goals: 1 })]);
+    const e = evaluatePlayers({ roster: [entry('nhl-1'), entry('nhl-2')], resolve, stats: few });
+    expect(e.roster.map((r) => [r.nhlId, r.status, r.adjusted?.goals])).toEqual([
+      [1, 'ok', 1],
+      [2, 'ok', 2],
+    ]);
+  });
+
+  it('passes the season through to the custom benchmark limit', () => {
+    expect(evaluatePlayers({ roster: [], resolve, stats, season: '20252026', benchmark: { kind: 'custom', gamesPlayed: 84 } }).benchmark).toMatchObject({ available: false, reason: 'invalid-custom' });
+    expect(evaluatePlayers({ roster: [], resolve, stats, season: '20262027', benchmark: { kind: 'custom', gamesPlayed: 84 } }).benchmark).toMatchObject({ available: true, gamesPlayed: 84 });
   });
 });
 
@@ -227,7 +265,7 @@ describe('rankPlayers', () => {
   ];
 
   it('ranks league-wide by normalized value with actual GP alongside and roster flags', () => {
-    const r = rankPlayers(league, { stat: 'goals', benchmarkGp: 20, rosterNhlIds: new Set([12]) });
+    const r = rankPlayers(league, { stat: 'goals', benchmarkGp: 20, minGamesPlayed: 1, rosterNhlIds: new Set([12]) });
     expect(r.map((x) => [x.rank, x.name, x.gamesPlayed, x.actual, x.value, x.onRoster])).toEqual([
       [1, 'Fourteen', 1, 1, 20, false],
       [2, 'Eleven', 10, 6, 12, false],
@@ -238,20 +276,37 @@ describe('rankPlayers', () => {
   });
 
   it('keeps the order for any benchmark; only displayed values change', () => {
-    const at20 = rankPlayers(league, { stat: 'goals', benchmarkGp: 20 });
-    const at82 = rankPlayers(league, { stat: 'goals', benchmarkGp: 82 });
+    const at20 = rankPlayers(league, { stat: 'goals', benchmarkGp: 20, minGamesPlayed: 1 });
+    const at82 = rankPlayers(league, { stat: 'goals', benchmarkGp: 82, minGamesPlayed: 1 });
     expect(at82.map((x) => [x.nhlId, x.rank])).toEqual(at20.map((x) => [x.nhlId, x.rank]));
     expect(at82[0]!.value).toBe(82);
   });
 
-  it('supports a minimum-games filter, position filter and ascending order', () => {
+  it('defaults to a 10-game minimum, adjustable down to everyone', () => {
+    expect(DEFAULT_RANKING_MIN_GP).toBe(10);
+    expect(rankPlayers(league, { stat: 'goals', benchmarkGp: 20 }).map((x) => x.name)).toEqual(['Eleven', 'Ten']);
     expect(rankPlayers(league, { stat: 'goals', benchmarkGp: 20, minGamesPlayed: 5 }).map((x) => x.name)).toEqual(['Eleven', 'Ten', 'Twelve']);
-    expect(rankPlayers(league, { stat: 'goals', benchmarkGp: 20, positions: ['D'] }).map((x) => x.name)).toEqual(['Eleven']);
-    expect(rankPlayers(league, { stat: 'goals', benchmarkGp: 20, direction: 'asc' })[0]!.name).toBe('Twelve');
+    expect(rankPlayers(league, { stat: 'goals', benchmarkGp: 20, minGamesPlayed: 1 })).toHaveLength(5);
+  });
+
+  it('filters by NHL position and sorts either way', () => {
+    expect(rankPlayers(league, { stat: 'goals', benchmarkGp: 20, minGamesPlayed: 1, positions: ['D'] }).map((x) => x.name)).toEqual(['Eleven']);
+    expect(rankPlayers(league, { stat: 'goals', benchmarkGp: 20, minGamesPlayed: 1, direction: 'asc' })[0]!.name).toBe('Twelve');
+  });
+
+  it('offers PIM and +/- as ranking categories, sortable ascending and descending', () => {
+    expect(RANKING_STATS).toEqual(expect.arrayContaining(['penaltyMinutes', 'plusMinus', 'points', 'toiPerGame']));
+    expect(RANKING_STATS).not.toContain('gamesPlayed');
+    expect(new Set(RANKING_STATS).size).toBe(RANKING_STATS.length);
+    const pool = [line(20, 10, { name: 'A', plusMinus: 5, penaltyMinutes: 2 }), line(21, 20, { name: 'B', plusMinus: -3, penaltyMinutes: 30 }), line(22, 10, { name: 'C', plusMinus: 0, penaltyMinutes: 10 })];
+    expect(rankPlayers(pool, { stat: 'plusMinus' }).map((x) => x.name)).toEqual(['A', 'C', 'B']);
+    expect(rankPlayers(pool, { stat: 'plusMinus', direction: 'asc' }).map((x) => x.name)).toEqual(['B', 'C', 'A']);
+    expect(rankPlayers(pool, { stat: 'penaltyMinutes', benchmarkGp: 20 }).map((x) => [x.name, x.value])).toEqual([['B', 30], ['C', 20], ['A', 4]]);
+    expect(rankPlayers(pool, { stat: 'penaltyMinutes', benchmarkGp: 20, direction: 'asc' }).map((x) => x.name)).toEqual(['A', 'C', 'B']);
   });
 
   it('ranks unchanged stats on their reported values and lists unavailable values last, unranked', () => {
-    const r = rankPlayers(league, { stat: 'shootingPct' });
+    const r = rankPlayers(league, { stat: 'shootingPct', minGamesPlayed: 1 });
     expect(r.map((x) => [x.rank, x.name, x.value])).toEqual([
       [1, 'Fourteen', 0.5],
       [2, 'Ten', 0.2],

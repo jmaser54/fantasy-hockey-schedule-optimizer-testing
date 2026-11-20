@@ -169,28 +169,53 @@ export function rosterNhlIds(skaters: readonly Subject[]): Set<number> {
 
 export type BenchmarkChoice = { kind: 'roster-max' } | { kind: 'player'; nhlId: number } | { kind: 'custom'; gamesPlayed: number };
 
+/**
+ * What the benchmark GP came from, so it can be labelled: the roster's highest GP, the
+ * league-wide highest GP (the fallback when no rostered skater has stats), a chosen player,
+ * or a custom value.
+ */
+export type BenchmarkBasis = 'roster-max' | 'league-max' | 'player' | 'custom';
+
 export type Benchmark =
-  | { available: true; gamesPlayed: number; choice: BenchmarkChoice; /** Who set it (roster-max / player). */ nhlId?: number; name?: string }
-  | { available: false; choice: BenchmarkChoice; reason: 'no-roster-stats' | 'player-has-no-stats' | 'invalid-custom' };
+  | { available: true; gamesPlayed: number; choice: BenchmarkChoice; basis: BenchmarkBasis; /** Who set it (roster-max / player). */ nhlId?: number; name?: string }
+  | { available: false; choice: BenchmarkChoice; reason: 'no-stats' | 'player-has-no-stats' | 'invalid-custom' };
 
 /**
- * Default: highest GP among roster skaters with stats (ties: first in roster
- * order). Player: that skater's GP. Custom: a whole number of games ≥ 1.
+ * Regular-season games per team, by season ("20262027"): 84 from 2026–27 on, 82 before.
+ * Unknown seasons use the current 84-game format. The upper limit for a custom benchmark.
  */
-export function resolveBenchmark(choice: BenchmarkChoice, rosterSkaters: readonly Subject[], stats: StatsIndex): Benchmark {
+export function regularSeasonGames(season?: string): number {
+  const start = season && /^\d{8}$/.test(season) ? Number(season.slice(0, 4)) : NaN;
+  return Number.isNaN(start) || start >= 2026 ? 84 : 82;
+}
+
+/**
+ * Default: highest GP among roster skaters with stats, IR players included (ties: first in
+ * roster order). With no rostered skater stats it falls back to the highest GP in the whole
+ * snapshot (basis 'league-max'). Player: that skater's GP. Custom: a whole number from 1 to the
+ * season's regular-season games.
+ */
+export function resolveBenchmark(choice: BenchmarkChoice, rosterSkaters: readonly Subject[], stats: StatsIndex, opts: { season?: string } = {}): Benchmark {
   if (choice.kind === 'custom') {
     const gp = choice.gamesPlayed;
-    return Number.isInteger(gp) && gp >= 1 ? { available: true, gamesPlayed: gp, choice } : { available: false, choice, reason: 'invalid-custom' };
+    return Number.isInteger(gp) && gp >= 1 && gp <= regularSeasonGames(opts.season)
+      ? { available: true, gamesPlayed: gp, choice, basis: 'custom' }
+      : { available: false, choice, reason: 'invalid-custom' };
   }
   if (choice.kind === 'player') {
     const line = stats.get(choice.nhlId);
-    return line ? { available: true, gamesPlayed: line.gamesPlayed, choice, nhlId: line.nhlId, name: line.name } : { available: false, choice, reason: 'player-has-no-stats' };
+    return line
+      ? { available: true, gamesPlayed: line.gamesPlayed, choice, basis: 'player', nhlId: line.nhlId, name: line.name }
+      : { available: false, choice, reason: 'player-has-no-stats' };
   }
   let best: Subject | undefined;
   for (const s of rosterSkaters) {
     if (s.source === 'roster' && s.status === 'ok' && s.stats && (!best || s.stats.gamesPlayed > best.stats!.gamesPlayed)) best = s;
   }
-  return best ? { available: true, gamesPlayed: best.stats!.gamesPlayed, choice, nhlId: best.nhlId, name: best.name } : { available: false, choice, reason: 'no-roster-stats' };
+  if (best) return { available: true, gamesPlayed: best.stats!.gamesPlayed, choice, basis: 'roster-max', nhlId: best.nhlId, name: best.name };
+  let leagueMax = 0;
+  for (const line of stats.values()) leagueMax = Math.max(leagueMax, line.gamesPlayed);
+  return leagueMax > 0 ? { available: true, gamesPlayed: leagueMax, choice, basis: 'league-max' } : { available: false, choice, reason: 'no-stats' };
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +240,8 @@ export interface EvaluationInput {
   stats: StatsIndex;
   comparisons?: readonly number[];
   benchmark?: BenchmarkChoice;
+  /** Snapshot season ("20262027"); sets the custom benchmark's upper limit. */
+  season?: string;
 }
 
 export interface Evaluation {
@@ -229,7 +256,7 @@ export interface Evaluation {
 export function evaluatePlayers(input: EvaluationInput): Evaluation {
   const { skaters, goalies } = classifyRoster(input.roster, input.resolve, input.stats);
   const { subjects, alreadyOnRoster } = comparisonSubjects(input.comparisons ?? [], input.stats, rosterNhlIds(skaters));
-  const benchmark = resolveBenchmark(input.benchmark ?? { kind: 'roster-max' }, skaters, input.stats);
+  const benchmark = resolveBenchmark(input.benchmark ?? { kind: 'roster-max' }, skaters, input.stats, { season: input.season });
   return {
     benchmark,
     roster: skaters.map((s) => evaluateSubject(s, benchmark)),
@@ -242,16 +269,27 @@ export function evaluatePlayers(input: EvaluationInput): Evaluation {
 // ---------------------------------------------------------------------------
 // League-wide rankings (data only; presentation and prominence are open)
 
+/** Default minimum games played for league-wide rankings (adjustable). Roster evaluation has no minimum. */
+export const DEFAULT_RANKING_MIN_GP = 10;
+
+/**
+ * Statistics available as ranking categories: every V1 statistic except games played (the
+ * denominator). PIM and +/- are included and, like the others, can be sorted either way:
+ * a ranking is a statistical ordering, not a claim that higher is better for fantasy.
+ */
+export const RANKING_STATS: readonly StatKey[] = [...SCALED_STATS, 'plusMinus', 'shootingPct', 'faceoffWinPct', 'toiPerGame'];
+
 export interface RankingOptions {
   stat: StatKey;
   /** Benchmark GP for scaled stats. Required for them; ignored for unchanged stats. */
   benchmarkGp?: number;
   /** NHL ids to flag as on the user's roster (blue-dot indicator in the UI). */
   rosterNhlIds?: ReadonlySet<number>;
-  /** Leave out skaters below this many games (default 1: everyone with stats). */
+  /** Leave out skaters below this many games (default DEFAULT_RANKING_MIN_GP; 1 includes everyone with stats). */
   minGamesPlayed?: number;
+  /** NHL position codes (V1 filters by NHL position, not fantasy eligibility). */
   positions?: readonly SkaterPositionCode[];
-  /** Default 'desc' (higher is better). */
+  /** Default 'desc' (highest first); 'asc' for lowest first. */
   direction?: 'desc' | 'asc';
 }
 
@@ -278,7 +316,7 @@ export interface RankedPlayer {
 export function rankPlayers(skaters: readonly SkaterStatLine[], opts: RankingOptions): RankedPlayer[] {
   const scaled = isScaledStat(opts.stat);
   if (scaled && !(opts.benchmarkGp !== undefined && opts.benchmarkGp > 0)) throw new Error(`rankPlayers: ${opts.stat} needs a positive benchmarkGp`);
-  const minGp = opts.minGamesPlayed ?? 1;
+  const minGp = opts.minGamesPlayed ?? DEFAULT_RANKING_MIN_GP;
   const positions = opts.positions ? new Set(opts.positions) : undefined;
   const sign = opts.direction === 'asc' ? 1 : -1;
   const rows: RankedPlayer[] = skaters

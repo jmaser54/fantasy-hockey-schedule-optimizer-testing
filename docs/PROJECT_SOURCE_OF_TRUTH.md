@@ -9,7 +9,7 @@ Labels used below:
 - **Implemented**: verified in the current code; not necessarily an explicit requirement.
 - **Open**: unresolved; ask before changing behavior.
 
-Last reviewed against commit `2430b9662da3bc7de067f465d79edbeb1feff43a` (2026-11-19); existing behavior reviewed against the testing repository, and Player Evaluator decisions recorded in §I. §I's NHL statistics findings were added on 2026-11-20 from the probe run at `67ea97e`, and the skater-stats pipeline step (§C, §F, §I) was reviewed against the code on 2026-11-20.
+Last reviewed against commit `2430b9662da3bc7de067f465d79edbeb1feff43a` (2026-11-19); existing behavior reviewed against the testing repository, and Player Evaluator decisions recorded in §I. §I's NHL statistics findings were added on 2026-11-20 from the probe run at `67ea97e`, and the skater-stats pipeline step (§C, §F, §I) was reviewed against the code on 2026-11-20. On 2026-11-20 the owner's Player Evaluator decisions (minimum GP, benchmarks, ranking categories, persistence) were recorded in §I, and the Step 3 saved-roster integration (§C, §E, §F, §I) was reviewed against the code.
 
 **This copy lives in the testing repo** `jmaser54/fantasy-hockey-schedule-optimizer-testing` (default branch `main`, site https://jmaser54.github.io/fantasy-hockey-schedule-optimizer-testing/). The owner asked for changes to be tried here first; the live repo doesn't have them yet.
 
@@ -194,10 +194,12 @@ Vite 6 + React 18 + TypeScript (strict), Vitest. No runtime dependencies besides
 |---|---|---|
 | Entry | `index.html`, `src/main.tsx`, `src/ui/App.tsx` | Shell, tabs (hash routing via `tabFromHash`), the About view (`#about` via `isAboutHash`; `about` state, separate from `tab`), header (brand, subtitle, how-it-works strip, sticky `.tabbar`), data loading, footer (`DataFooter`: data note plus Contact and About links), `ContactModal`, toast. `Ready` holds the period mode and custom periods, builds the app context, and renders the period bar (`PeriodBar`, `CustomEditor`) unless `periodBar` is false, plus the Settings modal (`overlay`). |
 | Context | `src/ui/context.ts` | `AppCtx`: `state`, `dispatch`, `data`, `resolve`, `teams`, `windows` (current mode), `playoffWindows`, `selected`, `lineupPlayers`, `days`, `summarizeWindow`, `toast`. |
+| Evaluator preferences | `src/state/evaluatorPrefs.ts` | Player Evaluator comparison players and benchmark choice, in their own storage key (§E, §I). Not used by the UI yet. |
 | State | `src/state/appState.ts` | `AppState`, `reducer` (actions: select, setCustom, setPeriods, setLeague, addPlayers, removePlayer, updateEntry, replacePlayer, addCustomPlayer, clearRoster, setManual, clearManual, scenario, scenarioApply), `proposedRoster`, tolerant `deserialize`/`serialize`, `loadFromStorage`/`saveToStorage`. |
 | Domain (pure, tested) | `src/domain/*` | `optimizer.ts` (daily lineup, priorities, overrides, totals), `matching.ts` (Kuhn bipartite matching), `capacity.ts` (daily group counts, `lineupGroupTotals`), `roster.ts` (`validateRoster`, `describeIssue`, `toLineupPlayers`, `effectivePositions`), `schedule.ts` (`ScheduleIndex`, `teamOnDate`, `playerGameOn`, `playerGames`, `opponent`), `league.ts`, `dates.ts`, `rankings.ts`, `teamSchedules.ts`, `rosterImport.ts`, `names.ts`, `types.ts`, `evaluator.ts` (Player Evaluator calculations and league-wide ranking data, §I; not used by the UI yet). |
 | Data load | `src/data/load.ts`, `src/data/format.ts`, `src/data/validate.ts` | Fetch `public/data/*.json`, validate, build `Dataset`; `isStale` (more than 3 days old); `buildPlayerLookup` (resolves `nhl-<id>`/`espn-<id>` aliases). |
-| Data pipeline (Node, CI only) | `scripts/refresh-data.ts`, `src/data/pipeline/{nhl,espn,reconcile,stats}.ts` | Fetch NHL teams, schedules and rosters plus ESPN eligibility; strict parse; reconcile; validate; write `public/data/{schedule,players}.json`. Then, as an independent step, fetch the NHL Stats REST skater reports, join them, validate, and write `public/data/skater-stats.json` (§I). The app doesn't load that file yet. |
+| Evaluator data | `src/data/evaluatorData.ts` | `buildSkaterStats` / `loadSkaterStats` (validate and fetch `skater-stats.json`, separately from `loadDataset`) and `evaluateSavedRoster` (reads the saved roster into `evaluator.ts`, §I). Not called by the app yet. |
+| Data pipeline (Node, CI only) | `scripts/refresh-data.ts`, `src/data/pipeline/{nhl,espn,reconcile,stats}.ts` | Fetch NHL teams, schedules and rosters plus ESPN eligibility; strict parse; reconcile; validate; write `public/data/{schedule,players}.json`. Then, as an independent step, fetch the NHL Stats REST skater reports, join them, validate, and write `public/data/skater-stats.json` (§I). The app doesn't fetch that file yet (`loadSkaterStats` exists for the UI step). |
 | UI pages | `src/ui/Rankings.tsx`, `Roster.tsx`, `Lineup.tsx`, `Trades.tsx`, `Settings.tsx`, `Contact.tsx`, `common.tsx` | `common.tsx`: `PosBadges`, `PosToggles`, `PlayerSearch`, `Delta`, `InfoTip`, `PreferredToggle`. |
 | Other | `src/analytics.ts`, `src/contact.ts`, `src/styles.css` | GA page views, contact config, all CSS (tokens on `:root`, phone and touch media queries at the end). |
 
@@ -274,6 +276,7 @@ Each rule below is enforced by the code or tests named; keep them true.
   - Key `playoff-optimizer:v1` in `localStorage` (`STORAGE_KEY`, `STATE_VERSION = 1`).
   - Saved on every state change (`App.tsx` effect, then `saveToStorage`).
   - If storage fails, a banner says changes can't be saved.
+  - **Player Evaluator preferences (Confirmed 2026-11-20; Implemented in `src/state/evaluatorPrefs.ts`, not wired to the UI yet):** comparison players (NHL ids) and the selected benchmark are kept under a separate key, `playoff-evaluator:v1` (live and local) or `playoff-evaluator-testing:v1` (testing base), shape `{version: 1, comparisons, benchmark}`. Never stored in the app state, so saving them can't touch the roster. The roster-max default is stored as that choice, not a GP number, so it stays dynamic. Loading is tolerant (bad fields fall back to defaults).
   - No backend. The roster and settings never leave the browser. The only outbound traffic is the GA tag (page load plus a page view per tab change) and contact form posts.
 - **Saved data:**
   - `league` (rosterSize, irSlots, slots), `periods`, `custom` range, `selection`;
@@ -295,9 +298,11 @@ Each rule below is enforced by the code or tests named; keep them true.
 ## F. Testing, builds and deployment
 
 **Commands** (`package.json`):
-- `npm test`: `vitest run`. On 2026-11-20 it ran **170 tests in 13 files**, including:
+- `npm test`: `vitest run`. On 2026-11-20 (Step 3) it ran **191 tests in 15 files**, including:
   - `src/data/pipeline/stats.test.ts` (16: stats request URL, pagination, report join, `validateSkaterStats`);
-  - `src/domain/evaluator.test.ts` (26: normalization, roster classification, benchmarks, comparisons, rankings).
+  - `src/domain/evaluator.test.ts` (32: normalization, roster classification, benchmarks incl. league-max fallback and season limit, comparisons, rankings incl. the 10-GP default, PIM/+/-, direction and position filter);
+  - `src/data/evaluatorData.test.ts` (8: the saved roster read through `deserialize(serialize())` and never changed, IR/goalie/ESPN-only/custom/alias handling, preferences applied, the published snapshot against the published directory);
+  - `src/state/evaluatorPrefs.test.ts` (7: separate per-site keys, round trip, tolerant parse, saving prefs leaves the roster key byte-for-byte unchanged).
 
    The rest of the per-file list below predates that and is stale (Open: refresh it when this section is next reviewed):
   - `src/domain/optimizer.test.ts` (20): spec cases 1–10, overrides, priorities, brute-force matching.
@@ -412,7 +417,7 @@ Each rule below is enforced by the code or tests named; keep them true.
 - **Roster and privacy:** reuse the existing saved browser-local roster and player-ID lookup. No accounts, backend, ESPN/Yahoo authorization, or repeated roster upload requirement. Existing roster paste/manual entry remains available.
 - **Goalies:** deliberately excluded from V1 pending separate design. Preserve goalies in the existing roster and explain their exclusion in Player Evaluator.
 - **Injury adjustment:** excluded from V1.
-- **Data:** current bundled player directory contains identity/team/position/eligibility data, not season performance stats. The skater-statistics snapshot and refresh step are **implemented** (below). The snapshot keeps the last good file on failure. The app doesn't load it yet: the update-time display and stale warning belong to the UI step.
+- **Data:** current bundled player directory contains identity/team/position/eligibility data, not season performance stats. The skater-statistics snapshot and refresh step are **implemented** (below). The snapshot keeps the last good file on failure. The app doesn't fetch it yet (`loadSkaterStats` in `src/data/evaluatorData.ts` is ready for the UI step); the update-time display and stale warning belong to the UI step.
 
 ### Verified NHL statistics source (data proof of concept, 2026-11-20)
 
@@ -530,14 +535,18 @@ The module is pure and UI-independent. It takes the saved roster (`RosterEntry[]
   - Two saved ids that resolve to one player are listed once.
   - Players with no positions are treated as skaters.
 - **`comparisonSubjects`:** adds external NHL skaters by NHL id, with names from the stats line. They are deduplicated. Ids already on the roster are reported in `alreadyOnRoster` and shown once, as roster players. An id with no stats gets `no-games`. Comparison players are never added to the saved roster.
-- **`resolveBenchmark`:**
-  - `roster-max` (the default): the highest GP among roster skaters with stats; on ties, the first in roster order. Comparison players are ignored.
+- **`resolveBenchmark`:** every available benchmark carries a `basis` (`roster-max`, `league-max`, `player`, `custom`) so the UI can say which benchmark is in use.
+  - `roster-max` (the default): the highest GP among roster skaters with stats, IR players included; on ties, the first in roster order. Comparison players are ignored.
+  - **No usable roster benchmark** (empty roster, or no rostered skater with stats): falls back to the highest GP among all skaters in the snapshot, `basis: 'league-max'` (no player name: it is a league figure). Only an empty snapshot gives `available: false`, reason `no-stats`.
   - `player`: any skater's GP from the snapshot.
-  - `custom`: a whole number ≥ 1.
-  - If no roster skater has stats, the player has no stats, or the custom value is invalid, it returns `available: false` with a reason.
+  - `custom`: a whole number from 1 to `regularSeasonGames(season)`. `evaluatePlayers` passes the snapshot's `season`.
+  - `regularSeasonGames(season)`: 84 from 2026–27 on, 82 for earlier seasons, 84 when unknown. **Assumption (Implemented, not verified per season):** this is a rule, not data; the NHL season endpoint reported 84 games for 20262027. Update it if the league changes the schedule length.
+  - If the chosen player has no stats or the custom value is invalid, it returns `available: false` with a reason.
 - **`evaluateSubject` / `evaluatePlayers`:** compute adjusted counting stats per subject. They return `adjusted: null` when the subject has no stats or the benchmark is unavailable. Actual totals, GP and unchanged stats always remain available through `stats`.
 - **League-wide rankings: `rankPlayers(skaters, { stat, benchmarkGp, rosterNhlIds, minGamesPlayed, positions, direction })`.**
-  - Ranks every skater in the snapshot on one stat. Each row has its actual value, actual GP, normalized value and an `onRoster` flag for the blue-dot indicator.
+  - Ranks every skater in the snapshot on one stat. `RANKING_STATS` lists the categories: every V1 stat except GP, including PIM and +/-.
+  - `minGamesPlayed` defaults to `DEFAULT_RANKING_MIN_GP` = 10; pass a lower value to include more skaters. The minimum applies to rankings only; roster evaluation includes every rostered skater whatever their GP.
+  - `positions` filters by NHL position code (C/L/R/D). `direction` is `desc` (highest first, the default) or `asc` (lowest first) for any stat: a ranking is a statistical ordering, not a claim that higher is better. Each row has its actual value, actual GP, normalized value and an `onRoster` flag for the blue-dot indicator.
   - Uses competition ranking: ties share a rank (1, 2, 2, 4) and are listed by GP descending, then name, then id.
   - `null` values (S% with no shots, FO% with no faceoffs) are listed last and unranked.
   - Scaled stats require a benchmark. **The benchmark changes the displayed values but never the order**, which is actual ÷ GP.
@@ -566,17 +575,24 @@ The module is pure and UI-independent. It takes the saved roster (`RosterEntry[]
     - **Team.** For the 9 traded players the snapshot lists several teams in an unverified order. The current team is only reliable from the directory.
     - **Skaters with 0 GP** have no row, so they can't be ranked; that's correct.
     - **No injury status** is in the snapshot.
-    - **Low-GP skaters dominate normalized rankings.** 69 of 784 have ≤ 3 GP; a 1-GP skater with 1 goal ranks first in goals per GP. `minGamesPlayed` exists, but its default threshold is a product decision.
+    - **Low-GP skaters dominate normalized rankings.** 69 of 784 have ≤ 3 GP; a 1-GP skater with 1 goal ranks first in goals per GP. Handled by the 10-GP default minimum (Confirmed, below).
 
-**Open (Player Evaluator decisions for the owner):**
-- The default minimum-GP threshold for rankings (currently none).
-- Which benchmark rankings use when the user has no roster skaters with stats. The roster default is unavailable then; options are a custom GP, a league-wide maximum, or another rule.
-- Rank direction for PIM (higher is treated as better by default) and whether +/- belongs in rankings.
-- Whether rankings include position filters, and whether they use the NHL code or fantasy eligibility.
-- Whether a custom benchmark should have an upper limit (any whole number ≥ 1 is accepted now).
-- Whether IR players count toward the default roster-max benchmark (they currently do, as rostered skaters).
+**Confirmed (owner decisions, 2026-11-20; Implemented as noted):**
+- **Minimum GP:** league-wide rankings default to a 10-game minimum, adjustable by the user. Rankings only: rostered players appear in roster evaluation regardless of GP. (Implemented: `DEFAULT_RANKING_MIN_GP`; the adjustable control is a UI item.)
+- **No-roster benchmark:** with no usable roster benchmark, use the highest GP among skaters in the league-wide stats dataset, and identify clearly which benchmark is in use. (Implemented: `basis: 'league-max'`.)
+- **PIM and +/-:** both are ranking categories, sortable ascending and descending. Rankings are statistical ordering, not "higher is better". (Implemented: `RANKING_STATS`, `direction`.)
+- **Position filter:** NHL position for V1; fantasy eligibility may be considered later. (Implemented: `positions`.)
+- **Custom benchmark:** whole numbers from 1 to the season's games (84 for 2026–27), without hardcoding the season length where a simple season-aware approach works. (Implemented: `regularSeasonGames`.)
+- **IR players** count toward the default roster benchmark. (Implemented.)
+- **Persistence:** comparison players and explicitly selected benchmark settings are remembered between visits in local storage, separate from the saved fantasy roster; the default roster benchmark stays dynamic. (Implemented: `src/state/evaluatorPrefs.ts`, §E; not wired to the UI.) Whether the rankings minimum-GP setting is also remembered was not decided; it is not persisted.
+
+### Saved-roster integration (spec Step 3; Implemented 2026-11-20, not used by the UI yet)
+
+- `evaluateSavedRoster(saved, players, statsFile, prefs)` in `src/data/evaluatorData.ts` takes the persisted app state's `roster` and `customPlayers` (the same entries the Roster tab edits; the saved roster, not a Trade Lab proposal), the bundled player directory and the stats snapshot. It resolves ids with the existing `buildPlayerLookup` (so `espn-`/`nhl-` aliases and custom players work as elsewhere), builds the stats index and calls `evaluatePlayers` with the snapshot's season and the evaluator preferences. It returns the evaluation, the stats index and roster NHL ids for rankings, the season and `fetchedAt`.
+- It only reads: no roster copy, no new roster fields, no change to `AppState`, `STORAGE_KEY` or the loaders. Roster edits flow in because it reads whatever the saved state holds.
+- `loadSkaterStats(base)` fetches and validates `skater-stats.json` separately from `loadDataset`, so a stats problem can't stop the Lineup Planner from loading. The app doesn't call it yet; when to fetch it (on startup or on opening Player Evaluator) is a UI-step decision.
 - **Visual/UX:** compact roster-wide table, actual and adjusted values side by side, grouped stat categories, mobile-first layout. Exact presentation and navigation remain open for prototype/review. Existing desktop Lineup Planner appearance must not regress.
 - **Seasonal priority:** deliver a useful V1 promptly while GP gaps are comparatively large. Avoid delaying core evaluation for optional features.
 - **Screenshot roster recognition is a separate high-priority workstream, not a Player Evaluator V1 dependency or release gate.** Investigate in parallel; it should improve roster entry for the whole site, especially mobile. Existing paste/manual entry and saved-roster reuse must remain sufficient to use Player Evaluator.
-- **Open:** persistence of external comparison selections/custom benchmark; final labels/navigation; final visual layout; rankings navigation, prominence and presentation; the data and decision items listed above.
+- **Open:** final labels/navigation; final visual layout; rankings navigation, prominence and presentation; the data and decision items listed above.
 - All implementation and experiments begin in `jmaser54/fantasy-hockey-schedule-optimizer-testing` (default branch `main`). Do not change the live repository until the owner reviews and approves the tested result.
