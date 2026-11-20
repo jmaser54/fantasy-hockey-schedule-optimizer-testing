@@ -480,8 +480,8 @@ These are also available and verified, but not in V1: PPG, SHG, GWG, EV points, 
   - One entry per `playerId`, sorted by `nhlId`.
   - `teams` keeps the API order and isn't the current team.
   - `toiPerGame` is in seconds.
-  - About 240 KB uncompressed for ~780 skaters (estimated from a simulated run).
-  - It's created by the first successful refresh after this change; until then `check-data.ts` warns that it is missing.
+  - The first live snapshot (bot commit `c54a30d`, 2026-11-20) has 784 skaters (9 traded) and is 235 KB uncompressed; `check-data.ts` validates it.
+  - At that snapshot, **71** stats skaters had no `nhlId` in the directory (the confirmed-unresolved gap above; it moves daily). One reason: when a player leaves every NHL roster but stays in ESPN's pool, the refresh turns his `nhl-<id>` entry into an ESPN-only `espn-<id>` entry without `nhlId` (seen for Jani Nyman on 2026-11-20). This is pre-existing reconcile behavior, not caused by the stats step.
 - **`src/data/pipeline/stats.ts`:**
   - `statsPageUrl` always sends `gameTypeId=2`, the season, `isAggregate=false`, a 100-row `limit` and a `playerId` sort.
   - `fetchStatsReport` pages until `total`, and throws if the row count ≠ `total`, the total changes mid-fetch, or IDs repeat.
