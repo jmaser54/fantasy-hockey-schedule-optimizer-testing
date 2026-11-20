@@ -1,7 +1,7 @@
 # Player Evaluator — Feature Specification
 
 **Status:** Product direction agreed; implementation details remain open where explicitly marked below.  
-**Last updated:** 2026-11-19  
+**Last updated:** 2026-11-20  
 **Target:** Testing repository first. This document is development guidance and must never be published in the website bundle.
 
 ## 1. Product goal
@@ -97,7 +97,11 @@ Do not assume every field belongs in a scaled or unchanged category without chec
 - Validate player IDs, season, game type, duplicate records, numeric fields, and completeness before publishing a refreshed snapshot.
 - A failed refresh must preserve the last known-good snapshot, consistent with the existing data pipeline.
 
-**Candidate source for investigation:** NHL Stats REST API, especially `/stats/rest/en/skater/summary` filtered to the current season and regular-season game type. Additional reports may be needed for realtime totals (hits/blocks) and faceoff statistics. The endpoint and exact fields are not yet verified against live 2026–27 data; test before choosing the final implementation. Reference documentation: https://github.com/pseudo-r/Public-NHL-API/blob/main/docs/stats-rest/skaters.md
+**Source verified on 2026-11-20:** the NHL Stats REST API, joining the `skater/summary`, `skater/realtime` and `skater/faceoffwins` reports on `playerId`.
+- Query: current season, `gameTypeId=2`, `isAggregate=false`.
+- Pagination: 100-row pages sorted by `playerId`.
+
+`faceoffpercentages` isn't needed for V1. Exact fields, pagination limits, join behavior, coverage gaps, the recommended V1 statistics and snapshot shape, and the proposed pipeline step are recorded in `docs/PROJECT_SOURCE_OF_TRUTH.md` §I under "Verified NHL statistics source". Reference documentation (partly inaccurate: `limit=-1` is capped at 100 rows): https://github.com/pseudo-r/Public-NHL-API/blob/main/docs/stats-rest/skaters.md
 
 ## 4. User experience and visual direction
 
