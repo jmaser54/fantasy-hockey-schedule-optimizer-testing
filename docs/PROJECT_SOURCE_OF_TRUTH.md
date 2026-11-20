@@ -9,7 +9,7 @@ Labels used below:
 - **Implemented**: verified in the current code; not necessarily an explicit requirement.
 - **Open**: unresolved; ask before changing behavior.
 
-Last reviewed against commit `c9af699` (2026-10-19); sections touched by the testing-repo changes (2026-11-12) reviewed against the code.
+Last reviewed against commit `2430b9662da3bc7de067f465d79edbeb1feff43a` (2026-11-19); existing behavior reviewed against the testing repository, and Player Evaluator decisions recorded in §I.
 
 **This copy lives in the testing repo** `jmaser54/fantasy-hockey-schedule-optimizer-testing` (default branch `main`, site https://jmaser54.github.io/fantasy-hockey-schedule-optimizer-testing/). The owner asked for changes to be tried here first; the live repo doesn't have them yet.
 
