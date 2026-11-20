@@ -106,8 +106,8 @@ async function main() {
     try {
       const all = await getJson(url(report, { limit: -1 }));
       r.limitAll = { total: all.body.total, rows: all.body.data.length, ms: all.ms, bytes: all.bytes };
-      log(`limit=-1: total ${all.body.total}, rows ${all.body.data.length}, ${all.ms} ms, ${(all.bytes / 1024).toFixed(0)} KB`);
-      byReport[report] = all.body.data;
+      log(`limit=-1: total ${all.body.total}, rows ${all.body.data.length}, ${all.ms} ms, ${(all.bytes / 1024).toFixed(0)} KB${all.body.data.length < all.body.total ? '  <-- CAPPED, not a full fetch' : ''}`);
+      r.limitAllRows = all.body.data;
       await writeFile(`${RAW}/${report}-all.json`, JSON.stringify(all.body));
     } catch (e) { log(`limit=-1 failed: ${e.message}`); r.limitAllError = e.message; }
     // 2. Paginated with a stable sort
@@ -116,12 +116,14 @@ async function main() {
       const d = dupes(ids(pag.rows));
       r.paginated = { total: pag.total, rows: pag.rows.length, duplicateIds: d.length };
       log(`paginated (limit ${PAGE}, sort playerId): total ${pag.total}, rows ${pag.rows.length}, duplicate playerIds ${d.length}${d.length ? ' e.g. ' + d.slice(0, 5) : ''}`);
-      if (byReport[report]) {
-        const a = new Set(ids(byReport[report])), b = new Set(ids(pag.rows));
-        const onlyAll = [...a].filter((x) => !b.has(x)), onlyPag = [...b].filter((x) => !a.has(x));
-        log(`  same player set as limit=-1: ${onlyAll.length === 0 && onlyPag.length === 0} (only in limit=-1: ${onlyAll.length}, only in pages: ${onlyPag.length})`);
-      } else byReport[report] = pag.rows;
-    } catch (e) { log(`paginated failed: ${e.message}`); r.paginatedError = e.message; }
+      byReport[report] = pag.rows;
+      await writeFile(`${RAW}/${report}-paginated.json`, JSON.stringify(pag.rows));
+      if (r.limitAllRows) {
+        const b = new Set(ids(pag.rows));
+        log(`  limit=-1 rows all inside the paginated set: ${r.limitAllRows.every((x) => b.has(x.playerId))}`);
+        delete r.limitAllRows;
+      }
+    } catch (e) { log(`paginated failed: ${e.message}`); r.paginatedError = e.message; if (r.limitAllRows) byReport[report] = r.limitAllRows; delete r.limitAllRows; }
     // 3. Pagination WITHOUT a sort: does it drift?
     try {
       const pag = await fetchAll(report, { sort: '' });
@@ -154,11 +156,11 @@ async function main() {
 
   // isAggregate=true vs false (traded players)
   try {
-    const agg = await getJson(url('summary', { limit: -1, aggregate: true }));
+    const agg = await fetchAll('summary', { aggregate: true });
     const non = byReport.summary ?? [];
-    log(`\nsummary isAggregate=true: total ${agg.body.total} (isAggregate=false: ${non.length}); duplicate ids ${dupes(ids(agg.body.data)).length}`);
+    log(`\nsummary isAggregate=true (paginated): total ${agg.total}, rows ${agg.rows.length} (isAggregate=false: ${non.length}); duplicate ids ${dupes(ids(agg.rows)).length}`);
     const nonById = new Map(non.map((x) => [x.playerId, x]));
-    const diff = agg.body.data.filter((a) => { const n = nonById.get(a.playerId); return !n || n.gamesPlayed !== a.gamesPlayed || n.points !== a.points; });
+    const diff = agg.rows.filter((a) => { const n = nonById.get(a.playerId); return !n || n.gamesPlayed !== a.gamesPlayed || n.points !== a.points || n.teamAbbrevs !== a.teamAbbrevs; });
     log(`  rows whose GP/points differ between aggregate modes: ${diff.length}${diff.length ? ' e.g. ' + JSON.stringify(diff.slice(0, 3)) : ''}`);
   } catch (e) { log(`aggregate comparison failed: ${e.message}`); }
 
@@ -194,6 +196,51 @@ async function main() {
     const withZeroFo = byReport[report].filter((x) => (x.totalFaceoffs ?? x.faceoffs ?? 0) === 0).length;
     log(`  rows in ${report} with zero total faceoffs: ${withZeroFo}`);
   }
+
+
+  // Page-size cap, filter behaviour, arithmetic identities
+  log('\n=== API behaviour and internal consistency ===');
+  for (const lim of [101, 500, 1000]) {
+    try { const { body } = await getJson(url('summary', { limit: lim })); log(`summary limit=${lim}: rows ${body.data.length} of ${body.total}`); }
+    catch (e) { log(`summary limit=${lim} failed: ${e.message}`); }
+  }
+  for (const [label, extraCay] of [['preseason gameTypeId=1', 1], ['playoffs gameTypeId=3', 3]]) {
+    try {
+      const p = new URLSearchParams({ isAggregate: 'false', isGame: 'false', start: '0', limit: '5', sort: JSON.stringify([{ property: 'points', direction: 'DESC' }]), cayenneExp: `gameTypeId=${extraCay} and seasonId<=${SEASON} and seasonId>=${SEASON}` });
+      const { body } = await getJson(`${BASE}/skater/summary?${p}`);
+      log(`${label}: total ${body.total}; top: ${JSON.stringify(body.data.slice(0, 2).map((x) => [x.skaterFullName, x.gamesPlayed, x.points]))}`);
+    } catch (e) { log(`${label} failed: ${e.message}`); }
+  }
+  try {
+    const p = new URLSearchParams({ isAggregate: 'false', isGame: 'false', start: '0', limit: '5', cayenneExp: `seasonId<=${SEASON} and seasonId>=${SEASON}` });
+    const { body } = await getJson(`${BASE}/skater/summary?${p}`);
+    log(`no gameTypeId filter: total ${body.total} (regular season ${byReport.summary?.length}) - filter must always be sent`);
+  } catch (e) { log(`no gameTypeId filter failed: ${e.message}`); }
+  try {
+    const { body } = await getJson(`${BASE}/skater/summary?limit=5&cayenneExp=${encodeURIComponent('seasonId=20262027 and gameTypeId=2')}`);
+    log(`simple cayenneExp (seasonId=.. and gameTypeId=2), no sort: total ${body.total}`);
+  } catch (e) { log(`simple cayenneExp failed: ${e.message}`); }
+  try {
+    const p = new URLSearchParams({ start: '0', limit: '5', cayenneExp: `gameTypeId=2 and seasonId=${SEASON} and bogusField=1` });
+    const r = await fetch(`${BASE}/skater/summary?${p}`); log(`bad cayenne field: HTTP ${r.status} ${(await r.text()).slice(0, 150)}`);
+  } catch (e) { log(`bad cayenne probe failed: ${e.message}`); }
+
+  const S = byReport.summary ?? [], R = new Map((byReport.realtime ?? []).map((x) => [x.playerId, x])), F = new Map((byReport.faceoffwins ?? []).map((x) => [x.playerId, x]));
+  const bad = (name, pred) => { const b = S.filter(pred); log(`${name}: ${b.length} violations${b.length ? ' e.g. ' + JSON.stringify(b.slice(0, 3).map((x) => x.playerId)) : ''}`); };
+  bad('goals + assists = points', (x) => x.goals + x.assists !== x.points);
+  bad('evGoals + ppGoals + shGoals = goals', (x) => x.evGoals + x.ppGoals + x.shGoals !== x.goals);
+  bad('ppPoints >= ppGoals and shPoints >= shGoals', (x) => x.ppPoints < x.ppGoals || x.shPoints < x.shGoals);
+  bad('evPoints + ppPoints + shPoints = points', (x) => x.evPoints + x.ppPoints + x.shPoints !== x.points);
+  bad('shootingPct = goals/shots (±0.0001, null iff 0 shots)', (x) => x.shots === 0 ? x.shootingPct !== null : Math.abs(x.shootingPct - x.goals / x.shots) > 1e-4);
+  bad('pointsPerGame = points/GP (±0.0001)', (x) => Math.abs(x.pointsPerGame - x.points / x.gamesPlayed) > 1e-4);
+  bad('faceoffwins: wins + losses = total', (x) => { const f = F.get(x.playerId); return f && f.totalFaceoffWins + f.totalFaceoffLosses !== f.totalFaceoffs; });
+  bad('faceoffWinPct = wins/total (null iff 0 faceoffs)', (x) => { const f = F.get(x.playerId); if (!f) return false; return f.totalFaceoffs === 0 ? x.faceoffWinPct !== null : Math.abs(x.faceoffWinPct - f.totalFaceoffWins / f.totalFaceoffs) > 1e-4; });
+  bad('realtime/faceoffwins gamesPlayed equals summary', (x) => (R.get(x.playerId)?.gamesPlayed ?? x.gamesPlayed) !== x.gamesPlayed || (F.get(x.playerId)?.gamesPlayed ?? x.gamesPlayed) !== x.gamesPlayed);
+  bad('realtime otGoals equals summary', (x) => R.has(x.playerId) && R.get(x.playerId).otGoals !== x.otGoals);
+  const tot = (k, rows) => rows.reduce((a, x) => a + (x[k] ?? 0), 0);
+  log(`league totals: GP ${tot('gamesPlayed', S)}, goals ${tot('goals', S)}, points ${tot('points', S)}, shots ${tot('shots', S)}, hits ${tot('hits', [...R.values()])}, blocks ${tot('blockedShots', [...R.values()])}, FOW ${tot('totalFaceoffWins', [...F.values()])}, FOL ${tot('totalFaceoffLosses', [...F.values()])}`);
+  const gp = S.map((x) => x.gamesPlayed); log(`gamesPlayed range ${Math.min(...gp)}..${Math.max(...gp)}; positions ${JSON.stringify(S.reduce((a, x) => ((a[x.positionCode] = (a[x.positionCode] ?? 0) + 1), a), {}))}`);
+  const teams = new Set(S.flatMap((x) => String(x.teamAbbrevs).split(','))); log(`distinct teams in teamAbbrevs: ${teams.size} ${JSON.stringify([...teams].sort())}`);
 
   // Coverage against the bundled player directory
   try {
