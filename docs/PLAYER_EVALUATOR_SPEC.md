@@ -103,6 +103,20 @@ Do not assume every field belongs in a scaled or unchanged category without chec
 
 `faceoffpercentages` isn't needed for V1. **Implemented (2026-11-20):** the daily refresh writes a validated `public/data/skater-stats.json` with the confirmed V1 statistics, and a stats failure keeps the last good file without blocking the schedule/player refresh. Exact fields, pagination limits, join behavior, coverage gaps, the recommended V1 statistics and snapshot shape, and the proposed pipeline step are recorded in `docs/PROJECT_SOURCE_OF_TRUTH.md` §I under "Verified NHL statistics source". Reference documentation (partly inaccurate: `limit=-1` is capped at 100 rows): https://github.com/pseudo-r/Public-NHL-API/blob/main/docs/stats-rest/skaters.md
 
+### 3.7 Player Rankings (confirmed requirement, 2026-11-20)
+
+Player Evaluator must include league-wide player rankings based on statistics normalized to a common games-played benchmark, so players can be compared on equal terms.
+
+- Rank NHL skaters league-wide, not only the user's roster.
+- Support ranking across the available statistical categories.
+- Mark players on the user's actual fantasy roster with a small blue dot next to their names, consistent with the existing roster indicators.
+- Keep actual games played visible alongside normalized statistics.
+- Respect the selected normalization benchmark, including the default and custom options.
+
+**Product position:** rankings are an important, required capability, but they are **not assumed to be the primary focus, landing view or defining feature**. Normalized rankings exist elsewhere; the value here is convenient packaging that highlights the user's own players. Roster evaluation (§1) remains central.
+
+**Open:** navigation, prominence and presentation of rankings; the open data and ranking decisions listed in `docs/PROJECT_SOURCE_OF_TRUTH.md` §I.
+
 ## 4. User experience and visual direction
 
 - Player Evaluator should be a distinct, easy-to-find experience within Playoff Planner. Final navigation placement and naming remain open.
@@ -181,7 +195,7 @@ Relevant existing files to inspect before implementation:
 ## 9. Implementation sequence
 
 1. **Data proof of concept:** verify NHL stats endpoints and live 2026–27 responses; establish exact fields, report joins, pagination, player-ID coverage, and refresh behavior.
-2. **Domain model and tests:** define the normalized stats model and pure calculation functions; test zero GP, fractional values, benchmark changes, missing stats, and unchanged metrics.
+2. **Domain model and tests:** define the normalized stats model and pure calculation functions; test zero GP, fractional values, benchmark changes, missing stats, and unchanged metrics. Include the ranking calculations (§3.7). *Implemented 2026-11-20 in `src/domain/evaluator.ts`.*
 3. **Saved-roster integration:** read the existing roster without duplicating or changing its persistence model.
 4. **Minimal evaluator UI:** roster-wide results, actual/adjusted values, benchmark control, and external player search.
 5. **Visual/mobile refinement:** review at desktop, 390px, and 360px widths.
