@@ -127,7 +127,7 @@ try {
   // never changes it.
   const rosterSaved = await page.evaluate((k) => localStorage.getItem(k), siteKey);
   // Two product areas; each shows only its own destinations.
-  await page.getByRole('button', { name: 'Normalizer', exact: true }).click();
+  await page.getByRole('button', { name: 'Player Normalizer', exact: true }).click();
   if (await page.getByRole('tab', { name: 'Lineup' }).count()) fail('Playoff Planner destinations still shown in Player Evaluator');
   await page.getByRole('tab', { name: 'Roster Evaluation' }).click();
   await page.locator('.eval-table tbody tr', { hasText: 'Connor McDavid' }).waitFor({ timeout: 30_000 });
@@ -138,7 +138,7 @@ try {
   await page.locator('.rank-table tbody tr.roster-row', { hasText: 'Connor McDavid' }).waitFor({ timeout: 30_000 });
   if ((await page.evaluate((k) => localStorage.getItem(k), siteKey)) !== rosterSaved) fail('Player Rankings changed the saved roster');
   console.log(`evaluator OK: "${bench.trim()}"; Player Rankings lists the roster player, shaded`);
-  await page.getByRole('button', { name: 'Playoff Planner', exact: true }).click();
+  await page.getByRole('button', { name: 'Games Optimizer', exact: true }).click();
   if (await page.getByRole('tab', { name: 'Roster Evaluation' }).count()) fail('Player Evaluator destinations still shown in Playoff Planner');
 
   // 3. Reset <period> to Optimal: the screen and saved data update at once, in this tab and in

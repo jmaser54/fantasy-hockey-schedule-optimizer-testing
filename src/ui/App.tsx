@@ -35,9 +35,9 @@ const isEvaluatorTab = (t: TabId) => EVALUATOR_TABS.some((e) => e.id === t);
 
 /** The two equal product areas (primary navigation); each shows its own destinations beneath. */
 type AreaId = 'planner' | 'evaluator';
-const AREAS: { id: AreaId; label: string; short: string; first: TabId }[] = [
-  { id: 'planner', label: 'Playoff Planner', short: 'Planner', first: 'rankings' },
-  { id: 'evaluator', label: 'Normalizer', short: 'Normalizer', first: 'evaluator' },
+const AREAS: { id: AreaId; label: string; first: TabId }[] = [
+  { id: 'planner', label: 'Games Optimizer', first: 'rankings' },
+  { id: 'evaluator', label: 'Player Normalizer', first: 'evaluator' },
 ];
 const areaOf = (t: TabId): AreaId => (isEvaluatorTab(t) ? 'evaluator' : 'planner');
 
@@ -142,14 +142,10 @@ export function App() {
                 key={a.id}
                 type="button"
                 className="area"
-                aria-label={a.label}
                 aria-current={area === a.id ? 'true' : undefined}
                 onClick={() => area !== a.id && go(lastTab.current[a.id] ?? a.first)}
               >
-                <span className="label-full">{a.label}</span>
-                <span className="label-short" aria-hidden="true">
-                  {a.short}
-                </span>
+                {a.label}
               </button>
             ))}
           </nav>
@@ -159,7 +155,7 @@ export function App() {
         </div>
         <div className="topbar-inner tabbar-row">
           {area === 'planner' ? (
-            <nav className="tabs planner-tabs" role="tablist" aria-label="Playoff Planner">
+            <nav className="tabs planner-tabs" role="tablist" aria-label="Games Optimizer">
               {TABS.map((t) => (
                 <button key={t.id} role="tab" className="tab" aria-selected={!about && tab === t.id} aria-label={'short' in t ? t.label : undefined} onClick={() => go(t.id)}>
                   {'short' in t ? (
@@ -177,7 +173,7 @@ export function App() {
               ))}
             </nav>
           ) : (
-            <nav className="tabs evaluator-tabs" role="tablist" aria-label="Normalizer">
+            <nav className="tabs evaluator-tabs" role="tablist" aria-label="Player Normalizer">
               {EVALUATOR_TABS.map((t) => (
                 <button key={t.id} role="tab" className="tab" aria-selected={!about && tab === t.id} onClick={() => go(t.id)}>
                   {t.label}

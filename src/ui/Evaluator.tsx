@@ -16,7 +16,7 @@ import {
   type StatKey,
 } from '../domain/evaluator.ts';
 import type { Player } from '../domain/types.ts';
-import { loadEvaluatorPrefs, saveEvaluatorPrefs, type EvaluatorPrefs } from '../state/evaluatorPrefs.ts';
+import { clearComparisons, loadEvaluatorPrefs, saveEvaluatorPrefs, type EvaluatorPrefs } from '../state/evaluatorPrefs.ts';
 import { useApp } from './context.ts';
 import { InfoTip } from './common.tsx';
 import { formatAdjusted, formatStat, mergeComparisons, POSITION_SHORT, searchSkaters, sortRows, STAT_GROUPS, STAT_SHORT, type StatGroupId } from './evaluatorFormat.ts';
@@ -73,7 +73,7 @@ export function EvaluatorView({ page, onGoRoster }: { page: EvaluatorPage; onGoR
 }
 
 function Evaluator({ file, page, onGoRoster }: { file: SkaterStatsFile; page: EvaluatorPage; onGoRoster: () => void }) {
-  const { state, data } = useApp();
+  const { state, data, toast } = useApp();
   const [prefs, setPrefs] = useState<EvaluatorPrefs>(loadEvaluatorPrefs);
   useEffect(() => {
     saveEvaluatorPrefs(prefs);
@@ -99,6 +99,11 @@ function Evaluator({ file, page, onGoRoster }: { file: SkaterStatsFile; page: Ev
       benchmark: p.benchmark.kind === 'player' && p.benchmark.nhlId === id ? DEFAULT_BENCHMARK : p.benchmark,
     }));
   const addComparison = (id: number) => setPrefs((p) => (p.comparisons.includes(id) ? p : { ...p, comparisons: [...p.comparisons, id] }));
+  // Clears comparison players only (their own storage key, never the roster); a cleared benchmark player falls back to league max.
+  const clearAllComparisons = () => {
+    if (prefs.benchmark.kind === 'player') toast('Comparison players cleared. Benchmark reset to League max.');
+    setPrefs(clearComparisons);
+  };
 
   return (
     <div className="stack evaluator">
@@ -126,7 +131,16 @@ function Evaluator({ file, page, onGoRoster }: { file: SkaterStatsFile; page: Ev
             emptyRoster={state.roster.length === 0}
             onGoRoster={onGoRoster}
             goalies={result.evaluation.goalies.map((g) => g.name)}
-            footer={<ComparisonSearch skaters={file.skaters} exclude={new Set([...result.rosterNhlIds, ...prefs.comparisons])} teamOf={teamOf} onAdd={addComparison} />}
+            footer={
+              <div className="ev-cmp-row">
+                <ComparisonSearch skaters={file.skaters} exclude={new Set([...result.rosterNhlIds, ...prefs.comparisons])} teamOf={teamOf} onAdd={addComparison} />
+                {result.evaluation.comparisons.length > 0 && (
+                  <button type="button" className="btn small" onClick={clearAllComparisons}>
+                    Clear comparison players
+                  </button>
+                )}
+              </div>
+            }
           />
       ) : (
         <RankingsPanel

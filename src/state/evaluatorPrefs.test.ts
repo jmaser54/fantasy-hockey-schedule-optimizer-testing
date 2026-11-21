@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { initialState, reducer, saveToStorage, serialize, storageKeyFor, STORAGE_KEY } from './appState.ts';
 import {
+  clearComparisons,
   defaultEvaluatorPrefs,
   EVALUATOR_PREFS_KEY,
   evaluatorPrefsKeyFor,
@@ -72,6 +73,19 @@ describe('parseEvaluatorPrefs', () => {
     for (const bad of [0, 85, 2.5, '5']) expect(parseEvaluatorPrefs(JSON.stringify({ minGamesPlayed: bad })).minGamesPlayed).toBe(10);
     expect(parseEvaluatorPrefs(JSON.stringify({ minGamesPlayed: 1 })).minGamesPlayed).toBe(1);
     expect(parseEvaluatorPrefs(JSON.stringify({ comparisons: 'x', benchmark: { kind: 'player' } }))).toEqual(defaultEvaluatorPrefs());
+  });
+});
+
+describe('clearComparisons', () => {
+  it('removes every comparison player and keeps the other preferences', () => {
+    const prefs = { version: 2, comparisons: [7, 8], benchmark: { kind: 'custom' as const, gamesPlayed: 40 }, minGamesPlayed: 5 };
+    expect(clearComparisons(prefs)).toEqual({ ...prefs, comparisons: [] });
+    expect(prefs.comparisons).toEqual([7, 8]); // input untouched
+    for (const benchmark of [{ kind: 'league-max' as const }, { kind: 'roster-max' as const }]) expect(clearComparisons({ ...prefs, benchmark }).benchmark).toEqual(benchmark);
+  });
+
+  it('returns a cleared benchmark player to the default, league max', () => {
+    expect(clearComparisons({ version: 2, comparisons: [7], benchmark: { kind: 'player', nhlId: 7 }, minGamesPlayed: 10 }).benchmark).toEqual({ kind: 'league-max' });
   });
 });
 

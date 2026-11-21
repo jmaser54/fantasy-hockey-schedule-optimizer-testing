@@ -65,6 +65,14 @@ export function parseEvaluatorPrefs(raw: string | null): EvaluatorPrefs {
   return { ...base, comparisons, benchmark, minGamesPlayed };
 }
 
+/**
+ * Remove every comparison player. The saved roster is a different key and is never touched. If the
+ * benchmark was one of the cleared players, it returns to the default (league max).
+ */
+export function clearComparisons(prefs: EvaluatorPrefs): EvaluatorPrefs {
+  return { ...prefs, comparisons: [], benchmark: prefs.benchmark.kind === 'player' ? DEFAULT_BENCHMARK : prefs.benchmark };
+}
+
 export function serializeEvaluatorPrefs(prefs: EvaluatorPrefs): string {
   return JSON.stringify({ version: EVALUATOR_PREFS_VERSION, comparisons: prefs.comparisons, benchmark: prefs.benchmark, minGamesPlayed: prefs.minGamesPlayed });
 }
