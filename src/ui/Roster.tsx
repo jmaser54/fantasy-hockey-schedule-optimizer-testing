@@ -43,7 +43,7 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
   return (
     <div className="stack">
       <section className="panel">
-        <div className="panel-head roster-head">
+        <div className="panel-head">
           <h2>Roster</h2>
           <span className="counts">
             <span>
@@ -58,8 +58,6 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
               View Lineup →
             </button>
           )}
-          <span className="head-break" aria-hidden="true" />
-          <ClearRosterButton />
         </div>
         <div className="panel-body stack">
           {setupLine && <div className="roster-setup">{setupLine}</div>}
@@ -71,6 +69,11 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
               Search Players
             </button>
           </div>
+          {state.roster.length > 0 && (
+            <div className="clear-roster-row">
+              <ClearRosterButton />
+            </div>
+          )}
           {mode === 'search' && (
             <div className="add-bar">
               <PlayerSearch onPick={add} exclude={onRoster} placeholder="Add a player by name…" />
@@ -361,8 +364,9 @@ function RosterTable() {
 }
 
 /**
- * Clear Roster, a restrained red text button at the far right of the Roster heading row (owner
- * request, 2026-11-21). Same confirmation and clearRoster action as before.
+ * Clear Roster, a restrained red text button on its own row directly under the Paste Roster /
+ * Search Players toggle, aligned right (owner request, 2026-11-21). Separate from the toggle and shown
+ * in both modes. Same confirmation and clearRoster action as before.
  */
 function ClearRosterButton() {
   const { state, dispatch, toast } = useApp();
