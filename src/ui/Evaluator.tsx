@@ -337,6 +337,9 @@ function SortBasisMenu({ value, onChange }: { value: SortBasis; onChange: (v: So
   const label = SORT_BASES.find((b) => b.id === value)!.label;
   return (
     <div className="sort-basis" ref={ref}>
+      <span className="sort-basis-label" aria-hidden="true">
+        Sort by:
+      </span>
       <button
         type="button"
         className="sort-basis-btn"
