@@ -87,9 +87,16 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
   - slots: C×2, LW×2, RW×2, D×4, UTIL×1 (C/LW/RW/D), G×2;
   - rounds: R1 2027-02-22→03-07, R2 03-08→03-21, R3 03-22→04-04.
 - Switching between Paste Roster and Search Players never focuses an input (no `autoFocus`; removed 2026-11-21 because focusing made phones zoom or jump). The fields work normally when tapped.
-- Paste import auto-accepts **exact** name matches only. Ambiguous names (e.g. two Elias Petterssons) and typos are never guessed; the user chooses (`src/domain/rosterImport.ts` `matchName`).
+- **Roster input (owner decisions, 2026-11-21):** three equal modes in the segmented toggle: Paste Roster, Upload Image, Search Players (`INPUT_MODES` in `Roster.tsx`; on phones the labels may wrap to two lines).
+- **Import (paste and screenshots share one path, `extractRosterNames` in `src/domain/rosterImport.ts`):** names are found inside each line of a whole roster page (slots, stats, menus, opponents around them), including "Last, First" and comma lists; a nearby team code ("EDM", "Edm", "(EDM)") is a hint, but "@TOR"/"vs Det" are opponents and never hints. On **Add Players**:
+  - exact, unambiguous players are added at once, with no confirmation (a unique exact name is accepted whatever the nearby team says; the team only chooses between same-name players);
+  - players already on the roster, and duplicates within the import or across screenshots, are skipped and counted;
+  - only same-name players ("Which one?") and near matches ("Did you mean", from `matchName`: typos, OCR errors, "C. McDavid") are listed for review; a near match with a single candidate (or a single candidate on the hinted team) is pre-selected for one-click confirmation, never added without the user; a review name whose candidate is already on the roster, or was found exactly elsewhere, is not asked;
+  - obvious non-player text is dropped silently; name-like text that matches nobody is listed, collapsed, under "N names not recognized" with "Add as New Player…", and is never treated as imported.
+  The result panel shows "N added · N already on your roster · N need a look", Skip / Add N Players when there is something to review, or Done. On phones (≤600px) each review row puts its choices on a full-width line under the name. `matchName` and `parseRosterText` are unchanged (`parseRosterText` is no longer used by the UI).
+- **Upload Image:** "Choose Screenshots" (then "Add More Screenshots") opens the file picker (`accept="image/*"`, multiple); screenshots can be added at different times and removed. Each is read as soon as it is added ("Reading…" → "Ready"); Add Players imports the text of all of them together. Works with any site's layout (no site-specific reader). Loading the engine starts when the Upload Image panel opens.
 - Clear Roster is a separate outlined button: red text, white background and a subtle red outline, all visible by default (hover adds a light red fill; keyboard focus a red outline). It sits on its own row directly under the Paste Roster / Search Players toggle, aligned left (`.clear-roster-row`), in both modes (owner requests, 2026-11-21; `ClearRosterButton` in `Roster.tsx`). The roster area uses one spacing rhythm (`.panel-body.roster-body`): the setup line ("22 roster · 2 IR · 13 starters") 8px under the heading row, 10px to the toggle, 8px to Clear Roster, 12px to the paste or search content; on touch screens Clear Roster is at least 36px tall. The setup line is passed through `AppCtx.setupLine` (other tabs keep it above the content); the heading row keeps "Roster", the counts and View Lineup. There is only one Clear Roster; it appears only when the roster has players, needs confirmation, and keeps settings, rounds, custom players and Trade Lab adds.
-- Paste mode's hint reads "Paste your roster to automatically identify players" (owner wording, 2026-11-21).
+- Paste mode's hint reads "Paste your roster page - player names detected automatically" (owner wording, 2026-11-21), just above the text box, only in Paste Roster. The button is "Add Players".
 - The "Not on NHL Roster" badge and the "not on NHL roster" labels in search and paste review were removed from the UI. The `inactive` data flag stays (§D, §H).
 
 ### Optimization (Confirmed)
@@ -190,12 +197,13 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
 
 ## C. Architecture and data flow
 
-Vite 6 + React 18 + TypeScript (strict), Vitest. No runtime dependencies besides React.
+Vite 6 + React 18 + TypeScript (strict), Vitest. Runtime dependencies: React, and `tesseract.js` (7.0.0, Apache-2.0) for screenshot import, loaded as a separate chunk only when Upload Image is used. `@tesseract.js-data/eng` (MIT) is a dev dependency: its English model is copied into the build.
 
 | Area | Files | Role |
 |---|---|---|
 | Entry | `index.html`, `src/main.tsx`, `src/ui/App.tsx` | Shell, tabs (hash routing via `tabFromHash`), the About view (`#about` via `isAboutHash`; `about` state, separate from `tab`), header (brand, subtitle, how-it-works strip, sticky `.tabbar`), data loading, footer (`DataFooter`: data note plus Contact and About links), `ContactModal`, toast. `Ready` holds the period mode and custom periods, builds the app context, and renders the period bar (`PeriodBar`, `CustomEditor`) unless `periodBar` is false, plus the Settings modal (`overlay`). |
 | Context | `src/ui/context.ts` | `AppCtx`: `state`, `dispatch`, `data`, `resolve`, `teams`, `windows` (current mode), `playoffWindows`, `selected`, `lineupPlayers`, `days`, `summarizeWindow`, `toast`. |
+| Screenshot OCR | `src/ui/ocr.ts`, `vite.config.ts` (`ocrAssets` plugin) | Upload Image reads screenshots with Tesseract.js in Web Workers, in the browser (images never leave the device). `ocr.ts` greyscales, inverts dark-mode images and caps width at 1600px, then recognizes text; up to two workers read screenshots in parallel. The plugin copies the worker, three WASM core variants (the browser downloads one) and `eng.traineddata.gz` (4.0.0 best_int) into `dist/ocr/`, and serves them from `node_modules` in dev. First use downloads about 4.4 MB (gzipped); the browser caches it (the model also in IndexedDB). |
 | Evaluator preferences | `src/state/evaluatorPrefs.ts` | Player Evaluator comparison players, benchmark choice and rankings minimum GP, in their own storage key (§E, §I). |
 | Player Evaluator UI | `src/ui/Evaluator.tsx`, `src/ui/evaluatorFormat.ts` | The Player Evaluator destinations, Roster Evaluation (`#evaluator`) and Player Rankings (`#player-rankings`), under one `EvaluatorView`: lazy stats load, shared benchmark bar, the two stat tables (§I). Pure display helpers (stat groups, short labels, formatting, stats-name search, comparison-row merge and sorting) in `evaluatorFormat.ts`. |
 | State | `src/state/appState.ts` | `AppState`, `reducer` (actions: select, setCustom, setPeriods, setLeague, addPlayers, removePlayer, updateEntry, replacePlayer, addCustomPlayer, clearRoster, setManual, clearManual, scenario, scenarioApply), `proposedRoster`, tolerant `deserialize`/`serialize`, `loadFromStorage`/`saveToStorage`. |
@@ -301,7 +309,7 @@ Each rule below is enforced by the code or tests named; keep them true.
 ## F. Testing, builds and deployment
 
 **Commands** (`package.json`):
-- `npm test`: `vitest run`. On 2026-11-21 (latest iteration) it ran **201 tests in 16 files**, including:
+- `npm test`: `vitest run`. On 2026-11-21 (screenshot import) it ran **212 tests in 16 files**, including:
   - `src/data/pipeline/stats.test.ts` (16: stats request URL, pagination, report join, `validateSkaterStats`);
   - `src/domain/evaluator.test.ts` (33: incl. ranking by actual values (`sortBy`), normalization, roster classification, benchmarks incl. the league-max default, roster-max fallback and season limit, comparisons, rankings incl. the 10-GP default, PIM/+/-, direction and position filter);
   - `src/data/evaluatorData.test.ts` (8: the saved roster read through `deserialize(serialize())` and never changed, IR/goalie/ESPN-only/custom/alias handling, preferences applied, the published snapshot against the published directory);
@@ -312,7 +320,7 @@ Each rule below is enforced by the code or tests named; keep them true.
   - `src/domain/optimizer.test.ts` (20): spec cases 1–10, overrides, priorities, brute-force matching.
   - `capacity.test.ts` (7): summary reconciliation.
   - `domain.test.ts` (12): dates, league/IR validation, rankings.
-  - `rosterImport.test.ts` (7), `teamSchedules.test.ts` (7).
+  - `rosterImport.test.ts` (18: incl. 11 for `extractRosterNames`: whole pages, opponents, duplicates, "Last, First", ambiguous and near matches, unrecognized names), `teamSchedules.test.ts` (7).
   - `src/state/appState.test.ts` (11): reducer, persistence, legacy saves, Trade Lab proposals.
   - `src/data/pipeline/pipeline.test.ts` (16): parsers, reconciliation, history.
   - `src/analytics.test.ts` (3), `src/contact.test.ts` (2).
@@ -329,6 +337,7 @@ Each rule below is enforced by the code or tests named; keep them true.
   - Afterwards, `scripts/smoke-test.mjs` checks the live URL in headless Chromium (Playwright 1.56.1, installed in the job; the job runs on `ubuntu-24.04`, see §G 15):
     - the live data matches the committed snapshot, and Team Schedules (`#rankings`) shows 32 teams in its first table (`.table-wrap`; the Schedule Grid is a second table);
     - the data status chip and paste mode as the Roster default;
+    - Upload Image opens and the self-hosted OCR files (`ocr/worker.min.js`, `ocr/eng.traineddata.gz`, a core) are served (OCR is not run);
     - the Lineup heading matches `/of \d+ scheduled games fit your lineup/`;
     - the roster persists across a reload;
     - Roster Evaluation loads the published skater stats and shows the roster with a "Normalized to N GP" benchmark; Player Rankings lists the roster player with roster shading; neither changes the saved roster;
@@ -361,6 +370,7 @@ Each rule below is enforced by the code or tests named; keep them true.
    - the Lineup heading regex;
    - the Roster tab name `/^Roster(\s*\d+)?$/` (anchored at both ends since 2026-11-21: plain `/^Roster/` also matched the new "Roster Evaluation" tab and failed Playwright's strict mode; new tab names must not collide with these selectors);
    - the "Paste player names" label;
+   - the "Upload Image" tab and "Choose Screenshots" button, and the `ocr/` file names;
    - the "NHL data" status chip;
    - the Team Schedules table selector (`.table-wrap table`) and the `#rankings` start URL.
 
@@ -645,6 +655,6 @@ The module is pure and UI-independent. It takes the saved roster (`RosterEntry[]
 - `loadSkaterStats(base)` fetches and validates `skater-stats.json` separately from `loadDataset`, so a stats problem can't stop the Lineup Planner from loading. The Player Evaluator tab calls it when opened (Confirmed: not on startup).
 - **Visual/UX:** compact roster-wide table, actual and adjusted values side by side, grouped stat categories, mobile-first layout. Exact presentation and navigation remain open for prototype/review. Existing desktop Lineup Planner appearance must not regress.
 - **Seasonal priority:** deliver a useful V1 promptly while GP gaps are comparatively large. Avoid delaying core evaluation for optional features.
-- **Screenshot roster recognition is a separate high-priority workstream, not a Player Evaluator V1 dependency or release gate.** Investigate in parallel; it should improve roster entry for the whole site, especially mobile. Existing paste/manual entry and saved-roster reuse must remain sufficient to use Player Evaluator.
+- **Screenshot roster recognition (Implemented in testing 2026-11-21, not live; V1, see §B "Roster input"):** Tesseract.js in the browser was chosen over PaddleOCR (PP-OCRv4 via `@gutenye/ocr-browser`/onnxruntime-web). On realistic synthetic screenshots (ESPN-, Yahoo-, Fantrax-style desktop tables, a dark-mode phone app split over two screens, an abbreviated-name phone layout, a low-quality JPEG) Tesseract read each in about 1.1–1.9 s in desktop Chromium and found every visible player with no wrong player added. PaddleOCR took 7–11 s, often dropped the spaces between English words ("ConnorMcDavidEdmC"), and needed more than 35 MB of downloads. Measured: engine start about 0.3 s from cache, about 2 s for the first screenshot including start-up from a local server, about 6.3 s at 9 Mbit/s with no cache (uncompressed; about 4.4 MB gzipped on Pages), then about 1.1 s per screenshot; three at once about 3 s with two workers. **Open:** not tested on real mobile Safari or on real fantasy-site screenshots (the dev container can reach neither); phone CPU timing is unmeasured.
 - **Open:** final labels/navigation; final visual layout and presentation (the Step 4 prototype is for review); the data and decision items listed above.
 - All implementation and experiments begin in `jmaser54/fantasy-hockey-schedule-optimizer-testing` (default branch `main`). Do not change the live repository until the owner reviews and approves the tested result.

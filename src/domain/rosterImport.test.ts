@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPlayerIndex, matchName, parseRosterText, searchPlayers } from './rosterImport.ts';
+import { buildPlayerIndex, extractRosterNames, matchName, parseRosterText, searchPlayers } from './rosterImport.ts';
 import type { Player } from './types.ts';
 
 const P = (id: string, name: string, team: string, positions: Player['positions'] = ['C']): Player => ({
@@ -71,5 +71,95 @@ describe('searchPlayers', () => {
     expect(searchPlayers('hug', index).map((p) => p.id)).toEqual(['6', '7']);
     expect(searchPlayers('q hu', index).map((p) => p.id)).toEqual(['7']);
     expect(searchPlayers('x', index)).toEqual([]);
+  });
+});
+
+describe('extractRosterNames (whole roster pages, pasted or from screenshots)', () => {
+  const ids = (ps: Player[]) => ps.map((p) => p.id);
+  // An ESPN-style page copied whole: menus, headings, slot labels, opponents, times, stats.
+  const espnPage = [
+    'ESPN Fantasy\tHockey\tMy Team\tLeague\tPlayers',
+    'The Puck Stops Here',
+    '7-3-1 · 2nd in Division · Waiver Position 6',
+    'SLOT\tPLAYER\tACTION\tOPP\tSTATUS\tG\tA\tSOG\t+/-\tFPTS',
+    'C\tConnor McDavid Edm C\tMOVE\t@VAN\t7:00 PM\t0\t31\t5\t-9\t79',
+    'RW\tMitch Marner Vgk RW DTD\tMOVE\t@OTT\t7:00 PM\t3\t4\t38\t1\t52',
+    'D\tQuinn Hughes Van D\tMOVE\t@NJD\t7:00 PM\t28\t19\t33\t6\t47',
+    'BN\tTim Stützle Ott C,LW\tMOVE\t@EDM\t7:00 PM\t12\t13\t47\t4\t31',
+    'Totals · Scoring Period 47 · Last updated 2 min ago',
+  ].join('\n');
+
+  it('finds exact names inside full rows and ignores everything else', () => {
+    const r = extractRosterNames(espnPage, index, teams);
+    expect(ids(r.matched)).toEqual(['1', '5', '7', '4']);
+    expect(r.review).toEqual([]);
+    expect(r.unrecognized).toEqual([]);
+    expect(r.ignored).toBe(5);
+  });
+
+  it('never takes an opponent code ("@VAN", "vs Ott") as the player’s team', () => {
+    const r = extractRosterNames('Elias Pettersson Van C @EDM\nConnor McDavid vs Ott', index, teams);
+    expect(r.review[0]!.teamHint).toBe('VAN');
+    expect(ids(r.matched)).toEqual(['1']);
+  });
+
+  it('accepts a unique exact name whatever the nearby team says', () => {
+    expect(ids(extractRosterNames('Mitch Marner TOR', index, teams).matched)).toEqual(['5']);
+  });
+
+  it('de-duplicates players found more than once (overlapping screenshots)', () => {
+    const r = extractRosterNames('Connor McDavid EDM\nJack Hughes\nConnor McDavid EDM · C · Final\nMcDavid, Connor (EDM)', index, teams);
+    expect(ids(r.matched)).toEqual(['1', '6']);
+  });
+
+  it('reads "Last, First", comma lists and one-name-per-line lists', () => {
+    expect(ids(extractRosterNames('McDavid, Connor (EDM)\nHughes, Jack (NJD)', index, teams).matched)).toEqual(['1', '6']);
+    expect(ids(extractRosterNames('Connor McDavid, Mitch Marner, Jack Hughes', index, teams).matched)).toEqual(['1', '5', '6']);
+    expect(ids(extractRosterNames('Connor McDavid\nTim Stutzle\nJack Hughes', index, teams).matched)).toEqual(['1', '4', '6']);
+  });
+
+  it('sends same-name players to review instead of guessing', () => {
+    const r = extractRosterNames('Elias Pettersson VAN', index, teams);
+    expect(r.matched).toEqual([]);
+    expect(r.review).toHaveLength(1);
+    expect(r.review[0]!.result.status).toBe('ambiguous');
+    expect(r.review[0]!.preselect).toBeUndefined();
+  });
+
+  it('sends near matches (OCR errors, typos, initials) to review, pre-selecting a single candidate', () => {
+    const r = extractRosterNames('D  Tim Stiitzle  Ott C\nC. McDavid EDM - C\nConor McDavid\nQ. Hughes VAN - D', index, teams);
+    expect(r.matched).toEqual([]);
+    expect(r.review.map((x) => [x.name, x.result.status, x.preselect])).toEqual([
+      ['Tim Stiitzle', 'suggested', '4'],
+      ['C. McDavid', 'suggested', '1'], // "Conor McDavid" points to the same player: one row
+      ['Q. Hughes', 'suggested', '7'],
+    ]);
+    expect(extractRosterNames('Conor McDavid', index, teams).review[0]!.preselect).toBe('1');
+    // OCR sometimes drops the space after an initial, or reverses a misspelt name.
+    expect(extractRosterNames('M.Marner VGK-RW', index, teams).review[0]!.preselect).toBe('5');
+    expect(extractRosterNames('Stiitzle, Tim (OTT)', index, teams).review[0]!.preselect).toBe('4');
+  });
+
+  it('lists a player once for review however differently the screenshots show the name', () => {
+    const r = extractRosterNames('Elias Pettersson VAN\nPettersson, Elias (VAN)\nTim Stiitzle Ott C\nTim Stiitzle', index, teams);
+    expect(r.review.map((x) => x.name)).toEqual(['Elias Pettersson', 'Tim Stiitzle']);
+  });
+
+  it('drops a near match whose player was found exactly elsewhere', () => {
+    const r = extractRosterNames('Tim Stiitzle Ott C\nTim Stützle OTT', index, teams);
+    expect(ids(r.matched)).toEqual(['4']);
+    expect(r.review).toEqual([]);
+  });
+
+  it('still offers a lone surname typed on its own line', () => {
+    expect(extractRosterNames('Hughes', index, teams).review[0]!.result.status).toBe('suggested');
+  });
+
+  it('lists name-like text that matches nobody as unrecognized, never imported', () => {
+    const r = extractRosterNames('Wayne Gretzky EDM\nEdit Lineup\nPoints League\nMOVE @TOR 7:00 PM', index, teams);
+    expect(r.matched).toEqual([]);
+    expect(r.review).toEqual([]);
+    expect(r.unrecognized).toEqual(['Wayne Gretzky']);
+    expect(r.ignored).toBe(4);
   });
 });

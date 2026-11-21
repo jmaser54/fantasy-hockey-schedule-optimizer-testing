@@ -157,6 +157,8 @@ It is nevertheless a high-priority improvement to the overall Playoff Planner be
 - If implementation or quality testing takes longer than expected, release Player Evaluator without screenshot recognition and continue that work separately.
 - Do not add a dependency on screenshot recognition to saved-roster reuse, manual entry, or pasted roster import.
 
+**V1 implemented in the testing repo (2026-11-21, not live):** an Upload Image roster input beside Paste Roster and Search Players, reading screenshots on the device with Tesseract.js and importing through the same path as pasted text (exact players added at once; only same-name players and near matches reviewed). Details, measurements and open items: `docs/PROJECT_SOURCE_OF_TRUTH.md` §B ("Roster input") and §I.
+
 ## 7. Existing implementation to reuse
 
 Inspected in the testing repository on 2026-11-19:
