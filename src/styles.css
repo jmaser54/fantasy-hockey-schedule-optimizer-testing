@@ -102,12 +102,18 @@ main { max-width: 1200px; margin: 0 auto; padding: 16px; }
 .setup-line { display: block; margin: -8px 0 14px; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--muted); text-align: left; cursor: pointer; }
 .setup-line:hover { color: var(--accent); text-decoration: underline; }
 /* Roster tab: setup line on the left, Clear Roster on the right; wraps on narrow screens. */
-/* Roster tab: Clear Roster on its own row under the Paste/Search toggle, aligned right; the setup line sits under the heading row. */
-.clear-roster-btn { border: 0; background: none; padding: 4px 6px; margin-right: -6px; border-radius: 6px; color: var(--bad); font-size: 13px; font-weight: 600; white-space: nowrap; }
-.clear-roster-btn:hover { background: var(--bad-soft); }
-.clear-roster-row { display: flex; justify-content: flex-end; margin-top: -10px; }
-.roster-setup { margin-top: -6px; }
+/* Roster tab, one spacing rhythm: summary 8px under the heading row, 10px to the Paste/Search toggle,
+   8px to Clear Roster (left, under the toggle), 12px to the paste or search content. */
+.panel-body.roster-body { gap: 12px; padding-top: 8px; }
+.roster-setup { margin-bottom: -2px; }
 .roster-setup .setup-line { margin: 0; }
+.clear-roster-row { display: flex; justify-content: flex-start; margin-top: -4px; }
+.clear-roster-btn {
+  padding: 4px 10px; border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent); border-radius: 8px;
+  background: var(--surface); color: var(--bad); font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.clear-roster-btn:hover { background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 60%, transparent); }
+.clear-roster-btn:focus-visible { outline: 2px solid color-mix(in srgb, var(--bad) 50%, transparent); outline-offset: 2px; }
 
 .roster-pill {
   justify-self: start; display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 999px;
@@ -407,6 +413,7 @@ h3 { font-size: 13px; margin: 16px 0 6px; }
 @media (pointer: coarse) {
   .area { min-height: 40px; }
   .sort-basis-btn, .sort-basis-item { min-height: 36px; }
+  .clear-roster-btn { min-height: 36px; }
   .star, .info-btn { position: relative; }
   .star::after, .info-btn::after { content: ''; position: absolute; inset: -12px; }
   .icon-btn { min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }

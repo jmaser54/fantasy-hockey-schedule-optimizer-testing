@@ -59,7 +59,7 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
             </button>
           )}
         </div>
-        <div className="panel-body stack">
+        <div className="panel-body stack roster-body">
           {setupLine && <div className="roster-setup">{setupLine}</div>}
           <div className="mode-switch" role="tablist" aria-label="Add players">
             <button role="tab" aria-selected={mode === 'paste'} onClick={() => setMode('paste')}>
@@ -364,9 +364,10 @@ function RosterTable() {
 }
 
 /**
- * Clear Roster, a restrained red text button on its own row directly under the Paste Roster /
- * Search Players toggle, aligned right (owner request, 2026-11-21). Separate from the toggle and shown
- * in both modes. Same confirmation and clearRoster action as before.
+ * Clear Roster: red text on a white background with a subtle red outline (always visible), on its own
+ * row directly under the Paste Roster / Search Players toggle, aligned left (owner request,
+ * 2026-11-21). Separate from the toggle and shown in both modes. Same confirmation and clearRoster
+ * action as before.
  */
 function ClearRosterButton() {
   const { state, dispatch, toast } = useApp();
