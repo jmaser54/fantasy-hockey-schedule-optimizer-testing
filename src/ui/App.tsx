@@ -37,7 +37,7 @@ const isEvaluatorTab = (t: TabId) => EVALUATOR_TABS.some((e) => e.id === t);
 type AreaId = 'planner' | 'evaluator';
 const AREAS: { id: AreaId; label: string; short: string; first: TabId }[] = [
   { id: 'planner', label: 'Playoff Planner', short: 'Planner', first: 'rankings' },
-  { id: 'evaluator', label: 'Player Evaluator', short: 'Evaluator', first: 'evaluator' },
+  { id: 'evaluator', label: 'Normalizer', short: 'Normalizer', first: 'evaluator' },
 ];
 const areaOf = (t: TabId): AreaId => (isEvaluatorTab(t) ? 'evaluator' : 'planner');
 
@@ -177,7 +177,7 @@ export function App() {
               ))}
             </nav>
           ) : (
-            <nav className="tabs evaluator-tabs" role="tablist" aria-label="Player Evaluator">
+            <nav className="tabs evaluator-tabs" role="tablist" aria-label="Normalizer">
               {EVALUATOR_TABS.map((t) => (
                 <button key={t.id} role="tab" className="tab" aria-selected={!about && tab === t.id} onClick={() => go(t.id)}>
                   {t.label}

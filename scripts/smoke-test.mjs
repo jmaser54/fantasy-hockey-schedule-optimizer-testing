@@ -127,7 +127,7 @@ try {
   // never changes it.
   const rosterSaved = await page.evaluate((k) => localStorage.getItem(k), siteKey);
   // Two product areas; each shows only its own destinations.
-  await page.getByRole('button', { name: 'Player Evaluator', exact: true }).click();
+  await page.getByRole('button', { name: 'Normalizer', exact: true }).click();
   if (await page.getByRole('tab', { name: 'Lineup' }).count()) fail('Playoff Planner destinations still shown in Player Evaluator');
   await page.getByRole('tab', { name: 'Roster Evaluation' }).click();
   await page.locator('.eval-table tbody tr', { hasText: 'Connor McDavid' }).waitFor({ timeout: 30_000 });
