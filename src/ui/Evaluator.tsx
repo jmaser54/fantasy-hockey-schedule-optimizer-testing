@@ -4,6 +4,7 @@ import { evaluateSavedRoster, loadSkaterStats } from '../data/evaluatorData.ts';
 import { STALE_AFTER_MS } from '../data/load.ts';
 import { formatShort } from '../domain/dates.ts';
 import {
+  DEFAULT_BENCHMARK,
   evaluateSubject,
   isScaledStat,
   rankPlayers,
@@ -95,7 +96,7 @@ function Evaluator({ file, page, onGoRoster }: { file: SkaterStatsFile; page: Ev
     setPrefs((p) => ({
       ...p,
       comparisons: p.comparisons.filter((x) => x !== id),
-      benchmark: p.benchmark.kind === 'player' && p.benchmark.nhlId === id ? { kind: 'roster-max' } : p.benchmark,
+      benchmark: p.benchmark.kind === 'player' && p.benchmark.nhlId === id ? DEFAULT_BENCHMARK : p.benchmark,
     }));
   const addComparison = (id: number) => setPrefs((p) => (p.comparisons.includes(id) ? p : { ...p, comparisons: [...p.comparisons, id] }));
 
@@ -144,17 +145,20 @@ function Evaluator({ file, page, onGoRoster }: { file: SkaterStatsFile; page: Ev
 // ---------------------------------------------------------------------------
 // Benchmark
 
+/** How the benchmark was set, for the ⓘ explanation (not shown permanently). */
 function benchmarkSource(b: Benchmark): string {
   if (!b.available) return '';
   switch (b.basis) {
-    case 'roster-max':
-      return `Most games on your roster${b.name ? ` (${b.name})` : ''}`;
     case 'league-max':
-      return 'Most games in the NHL (none of your skaters have stats yet)';
+      return b.choice.kind === 'roster-max'
+        ? `Roster max isn’t available because none of your rostered skaters have stats yet, so league max is used: the highest GP among all NHL skaters this season (${b.gamesPlayed}).`
+        : `League max: the highest GP among all NHL skaters this season (${b.gamesPlayed}).`;
+    case 'roster-max':
+      return `Roster max: the highest GP among your rostered skaters with stats (${b.gamesPlayed}${b.name ? `, ${b.name}` : ''}).`;
     case 'player':
-      return `${b.name ?? 'Comparison player'}’s games played`;
+      return `Comparison player: ${b.name ?? 'the selected player'}’s GP (${b.gamesPlayed}).`;
     case 'custom':
-      return 'Custom';
+      return `Custom: ${b.gamesPlayed} GP, chosen by you.`;
   }
 }
 
@@ -170,7 +174,7 @@ function BenchmarkBar(props: { benchmark: Benchmark; choice: BenchmarkChoice; co
   const draftValid = /^\d+$/.test(draft) && draftNum >= 1 && draftNum <= SEASON_GAMES;
 
   const select = (v: string) => {
-    if (v === 'roster-max') onChange({ kind: 'roster-max' });
+    if (v === 'league-max' || v === 'roster-max') onChange({ kind: v });
     else if (v === 'custom') onChange({ kind: 'custom', gamesPlayed: benchmark.available ? benchmark.gamesPlayed : SEASON_GAMES });
     else onChange({ kind: 'player', nhlId: Number(v.slice(2)) });
   };
@@ -186,7 +190,8 @@ function BenchmarkBar(props: { benchmark: Benchmark; choice: BenchmarkChoice; co
           ) : (
             <b>No benchmark</b>
           )}
-          <InfoTip label="How normalization works">
+          <InfoTip label="How the benchmark works">
+            {benchmark.available && <span>{benchmarkSource(benchmark)}</span>}
             <span>
               Counting stats are shown as if every player had played the same number of games: <b>stat ÷ GP × benchmark</b>. Actual totals stay visible.
             </span>
@@ -194,13 +199,17 @@ function BenchmarkBar(props: { benchmark: Benchmark; choice: BenchmarkChoice; co
             <span>This compares observed production. It isn’t a projection.</span>
           </InfoTip>
         </div>
-        <div className="small muted">{benchmark.available ? benchmarkSource(benchmark) : 'Choose a benchmark to see normalized stats.'}</div>
+        {!benchmark.available && <div className="small muted">Choose a benchmark to see normalized stats.</div>}
+        {benchmark.available && benchmark.choice.kind === 'roster-max' && benchmark.basis === 'league-max' && (
+          <div className="small muted">Roster max unavailable, using league max</div>
+        )}
       </div>
       <div className="bench-controls">
         <label className="small muted" htmlFor="bench-select">
           Benchmark
         </label>
         <select id="bench-select" value={value} onChange={(e) => select(e.target.value)}>
+          <option value="league-max">League max</option>
           <option value="roster-max">Roster max</option>
           {players.map((p) => (
             <option key={p.nhlId} value={`p:${p.nhlId}`}>
@@ -477,7 +486,7 @@ function RankingsPanel(props: {
   const bm = props.benchmark;
   const canRank = !scaled || bm.available;
   const byId = useMemo(() => new Map(props.skaters.map((s) => [s.nhlId, s])), [props.skaters]);
-  // Clicking a column ranks on it (highest first); clicking it again flips the order.
+  // The stat headers are the only sort control: a new column ranks highest first; the same column again flips the order.
   const onSort = (k: StatKey) => {
     if (k === stat) setDirection((d) => (d === 'desc' ? 'asc' : 'desc'));
     else {
@@ -502,7 +511,6 @@ function RankingsPanel(props: {
     [canRank, props.skaters, stat, bm, props.rosterNhlIds, props.minGamesPlayed, position, direction],
   );
   useEffect(() => setShown(PAGE), [stat, position, direction, props.minGamesPlayed]);
-  const mine = rows.filter((r) => r.onRoster).length;
 
   return (
     <div className="panel">
@@ -538,27 +546,12 @@ function RankingsPanel(props: {
             }}
           />
         </label>
-        <div className="field">
-          <span className="small muted">Order</span>
-          <div className="segmented" role="group" aria-label="Order">
-            <button aria-pressed={direction === 'desc'} onClick={() => setDirection('desc')}>
-              Highest
-            </button>
-            <button aria-pressed={direction === 'asc'} onClick={() => setDirection('asc')}>
-              Lowest
-            </button>
-          </div>
-        </div>
+        {!minValid && <span className="badge bad">Min GP 1–{SEASON_GAMES}</span>}
       </div>
       {!canRank ? (
         <div className="empty">Choose a benchmark above to rank on {LABEL.get(stat)?.toLowerCase()}.</div>
       ) : (
         <>
-          <p className="small muted rank-summary">
-            {rows.length} skaters with {props.minGamesPlayed}+ GP
-            {mine > 0 && <> · {mine} on your roster (shaded)</>} · ranked by {LABEL.get(stat)?.toLowerCase()}, {direction === 'desc' ? 'highest' : 'lowest'} first
-            {!minValid && <span className="badge bad"> Min GP 1–{SEASON_GAMES}</span>}
-          </p>
           <div className="table-wrap">
             <table className="eval-table rank-table">
               <thead>

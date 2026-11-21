@@ -8,7 +8,7 @@
 
 Add a second, independent Playoff Planner tool that helps fantasy hockey managers evaluate the statistical production of their actual roster without manually researching every player.
 
-The core analysis normalizes skater counting statistics to a common games-played benchmark. The default benchmark is the highest games-played total among the user's rostered skaters.
+The core analysis normalizes skater counting statistics to a common games-played benchmark. The default benchmark is **league max**, the highest games-played total among all NHL skaters in the current season's stats (owner decision, 2026-11-21; it was previously the roster maximum).
 
 This is a statistical comparison of observed production rates, **not a forecast or prediction** of future performance.
 
@@ -44,14 +44,14 @@ For each supported skater counting statistic:
 
 `adjustedStat = actualStat / actualGP * benchmarkGP`
 
-Default benchmark:
+Default benchmark (**Confirmed 2026-11-21**, replacing the earlier roster-maximum default):
 
-`benchmarkGP = maximum GP among the user's rostered skaters with available season stats`
+`benchmarkGP = maximum GP among all NHL skaters in the current season's stats dataset` (league max)
 
 - Show actual and adjusted statistics side by side.
 - Preserve actual GP and actual totals; never replace or conceal the source values.
 - Keep decimal adjusted values so the normalization remains transparent and comparisons are not distorted by premature rounding.
-- Clearly label the benchmark (for example, “Normalized to 18 GP”).
+- Clearly label the benchmark (for example, “Normalized to 25 GP”). **Confirmed 2026-11-21:** keep the GP prominent; put the explanation of how it was set behind the ⓘ, not as a permanent sentence, and don't show a player's name in the default label.
 - If GP is zero or unavailable, do not divide; show the adjusted value as unavailable and explain why where useful.
 - If a player has no stats record or cannot be confidently matched to an NHL player ID, do not guess or silently substitute another player. Show a clear unmatched/unavailable state.
 - The analysis must use current-season regular-season statistics. Do not mix preseason, playoff, or career totals into the current-season calculation.
@@ -79,16 +79,16 @@ Plus/minus is intentionally static in V1. Although it can be mathematically mult
 Do not assume every field belongs in a scaled or unchanged category without checking its definition. Document the treatment of every displayed statistic.
 
 ### 3.5 Benchmark controls and external comparisons
-- Default benchmark: the highest GP among the user's rostered skaters, **including skaters on IR** (Confirmed 2026-11-20).
-- **No usable roster benchmark** (no roster, or no rostered skater with stats): use the highest GP among skaters in the league-wide stats dataset, and clearly identify which benchmark is in use (Confirmed 2026-11-20).
+- **Benchmark options (Confirmed 2026-11-21), in this order:** League max (the default: highest GP among all NHL skaters in the current season's stats; skaters only), Roster max (highest GP among the user's rostered skaters with valid stats, **including skaters on IR**), a comparison player's GP, or a custom whole number.
+- **Roster max unavailable** (no roster, or no rostered skater with stats): use league max and say so (Confirmed 2026-11-20).
+- An explicitly selected benchmark is remembered across visits and both Player Evaluator destinations; users with no saved explicit choice get League max.
 - Allow the user to search for and add one or more NHL skaters who are not on their fantasy roster to the analysis. These are comparison players, not additions to the saved fantasy roster.
 - Allow the user to choose a comparison player as the benchmark. In that mode, normalize the analysis to that player's current-season GP.
 - Allow a custom benchmark GP value: a whole number from 1 through the current season's regular-season games (84 for 2026–27). Player Evaluator is a current-season tool: no historical-season support or 82-game rule; keep the limit easy to update if the NHL changes its format (Confirmed 2026-11-20).
-- The roster's maximum-GP benchmark remains the default.
 - Adding/removing comparison players or changing the benchmark must not alter the user's actual saved roster.
 - External-player comparison is intended to support acquisition and trade evaluation without requiring the user to manage another fantasy team's full roster.
 
-**Confirmed (2026-11-20): persistence.** Comparison-player selections, explicitly selected benchmark settings and the rankings minimum-GP selection are remembered between visits in browser local storage, separate from the saved fantasy roster. The default roster-based benchmark stays dynamic (it is stored as a choice, never as a fixed GP number). Implemented in `src/state/evaluatorPrefs.ts`; see `docs/PROJECT_SOURCE_OF_TRUTH.md` §E and §I.
+**Confirmed (2026-11-20): persistence.** Comparison-player selections, explicitly selected benchmark settings and the rankings minimum-GP selection are remembered between visits in browser local storage, separate from the saved fantasy roster. Benchmarks are stored as choices (league max, roster max, a player), never as fixed GP numbers, so they stay dynamic. Implemented in `src/state/evaluatorPrefs.ts`; see `docs/PROJECT_SOURCE_OF_TRUTH.md` §E and §I.
 
 ### 3.6 Data freshness
 - Retrieve season statistics from a trustworthy NHL data source and refresh them on a regular schedule.
@@ -125,7 +125,7 @@ Player Evaluator must include league-wide player rankings based on statistics no
 
 ## 4. User experience and visual direction
 
-- Player Evaluator should be a distinct, easy-to-find experience within Playoff Planner. **Confirmed (2026-11-20):** initially a separate tab alongside the Lineup Planner; the two tools stay distinct. Roster evaluation is the central experience. **Revised (2026-11-21):** the navigation shows two tool families, Playoff Planner (Schedules, Roster, Lineup, Trade Lab) and Player Evaluator (Roster Evaluation, Player Rankings), with a restrained visual distinction; the shared benchmark control sits above both evaluator destinations. Comparison players appear within the roster table. Final naming remains open.
+- Player Evaluator should be a distinct, easy-to-find experience within Playoff Planner. **Confirmed (2026-11-20):** initially a separate tab alongside the Lineup Planner; the two tools stay distinct. Roster evaluation is the central experience. **Revised (2026-11-21, second iteration):** Playoff Planner and Player Evaluator are two equal primary product areas; the selected area's destinations (Schedules, Roster, Lineup, Trade Lab, or Roster Evaluation, Player Rankings) appear in a compact secondary row beneath, and only those. The shared benchmark control sits above both evaluator destinations. Comparison players appear within the roster table. Final naming remains open.
 - **Confirmed (2026-11-20):** load statistics only when Player Evaluator is opened; a stats failure must not affect the rest of the app. Show the stats update time with a proportionate stale warning.
 - The main results should be a compact roster-wide table, not a set of large individual player cards.
 - Actual and adjusted values must be visible side by side.
@@ -188,11 +188,11 @@ Relevant existing files to inspect before implementation:
 1. A returning user with a saved roster can open Player Evaluator and see results without uploading or pasting the roster again.
 2. A new user can populate a roster through the existing paste/manual-entry experience.
 3. Skaters are matched to NHL statistics by stable player ID, not name-only guesses.
-4. The default benchmark is the highest GP among rostered skaters with valid stats.
+4. The default benchmark is league max: the highest GP among all NHL skaters in the current season's stats (changed 2026-11-21 from the roster maximum).
 5. Every displayed counting statistic is normalized correctly; every displayed rate/context statistic follows its documented unchanged treatment.
 6. Actual GP and actual statistics remain visible alongside adjusted values.
 7. Users can add external NHL skaters to the comparison without changing their fantasy roster.
-8. Users can choose the roster maximum, an external benchmark player, or a custom GP benchmark.
+8. Users can choose league max, the roster maximum, an external benchmark player, or a custom GP benchmark.
 9. Missing, zero-GP, or unmatched player data is handled transparently without crashing or fabricating adjusted values.
 10. Statistics are sourced from a validated current-season regular-season dataset with a visible update timestamp.
 11. The experience is understandable and usable at desktop and phone widths, with no regressions to existing features.

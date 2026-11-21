@@ -62,8 +62,10 @@ describe('evaluateSavedRoster', () => {
       ['custom-1', null, 'unmatched'],
     ]);
     expect(r.evaluation.goalies.map((g) => g.name)).toEqual(['Goalie']);
-    expect(r.evaluation.benchmark).toMatchObject({ available: true, gamesPlayed: 20, basis: 'roster-max', name: 'Charlie' }); // the IR skater sets it
+    expect(r.evaluation.benchmark).toMatchObject({ available: true, gamesPlayed: 20, basis: 'league-max', choice: { kind: 'league-max' } }); // the default
     expect(r.evaluation.roster[1]!.adjusted!.goals).toBe(10);
+    const rosterMax = evaluateSavedRoster(saved, players, stats, { benchmark: { kind: 'roster-max' } });
+    expect(rosterMax.evaluation.benchmark).toMatchObject({ available: true, gamesPlayed: 20, basis: 'roster-max', name: 'Charlie' }); // the IR skater sets it
     expect([...r.rosterNhlIds].sort()).toEqual([1, 2, 3]);
     expect(r).toMatchObject({ season: '20262027', statsFetchedAt: '2026-11-20T12:00:00Z' });
   });
@@ -85,11 +87,13 @@ describe('evaluateSavedRoster', () => {
     expect(r.rosterNhlIds.has(7)).toBe(false); // comparisons are never roster players
   });
 
-  it('the default benchmark follows roster changes made in the Roster tab', () => {
+  it('the roster-max benchmark follows roster changes made in the Roster tab; league max does not', () => {
+    const rosterMax = { benchmark: { kind: 'roster-max' as const } };
     let s = savedState();
-    expect(evaluateSavedRoster(s, players, stats).evaluation.benchmark).toMatchObject({ gamesPlayed: 20 });
+    expect(evaluateSavedRoster(s, players, stats, rosterMax).evaluation.benchmark).toMatchObject({ gamesPlayed: 20 });
     s = reducer(s, { type: 'removePlayer', id: 'nhl-3' });
-    expect(evaluateSavedRoster(s, players, stats).evaluation.benchmark).toMatchObject({ gamesPlayed: 12, name: 'Alpha' });
+    expect(evaluateSavedRoster(s, players, stats, rosterMax).evaluation.benchmark).toMatchObject({ gamesPlayed: 12, name: 'Alpha' });
+    expect(evaluateSavedRoster(s, players, stats).evaluation.benchmark).toMatchObject({ gamesPlayed: 20, basis: 'league-max' });
   });
 
   it('uses the league-wide highest GP, labelled as such, when no rostered skater has stats', () => {
@@ -126,6 +130,11 @@ describe('buildSkaterStats', () => {
     const r = evaluateSavedRoster(saved, directory, snapshot);
     expect(r.evaluation.roster).toHaveLength(5);
     expect(r.evaluation.roster.every((x) => x.status === 'ok' && x.adjusted !== null)).toBe(true);
-    expect(r.evaluation.benchmark).toMatchObject({ available: true, basis: 'roster-max' });
+    expect(r.evaluation.benchmark).toMatchObject({ available: true, basis: 'league-max', gamesPlayed: Math.max(...snapshot.skaters.map((x) => x.gamesPlayed)) });
+    expect(evaluateSavedRoster(saved, directory, snapshot, { benchmark: { kind: 'roster-max' } }).evaluation.benchmark).toMatchObject({
+      available: true,
+      basis: 'roster-max',
+      gamesPlayed: Math.max(...r.evaluation.roster.map((x) => x.stats!.gamesPlayed)),
+    });
   });
 });

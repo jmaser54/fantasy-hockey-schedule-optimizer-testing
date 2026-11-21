@@ -167,12 +167,15 @@ export function rosterNhlIds(skaters: readonly Subject[]): Set<number> {
 // ---------------------------------------------------------------------------
 // Benchmark
 
-export type BenchmarkChoice = { kind: 'roster-max' } | { kind: 'player'; nhlId: number } | { kind: 'custom'; gamesPlayed: number };
+export type BenchmarkChoice = { kind: 'league-max' } | { kind: 'roster-max' } | { kind: 'player'; nhlId: number } | { kind: 'custom'; gamesPlayed: number };
+
+/** The default benchmark: the highest GP among all skaters in the season's stats (owner decision, 2026-11-21). */
+export const DEFAULT_BENCHMARK: BenchmarkChoice = { kind: 'league-max' };
 
 /**
- * What the benchmark GP came from, so it can be labelled: the roster's highest GP, the
- * league-wide highest GP (the fallback when no rostered skater has stats), a chosen player,
- * or a custom value.
+ * What the benchmark GP came from, so it can be labelled: the league-wide highest GP (the default,
+ * and the fallback for roster-max when no rostered skater has stats), the roster's highest GP, a
+ * chosen player, or a custom value.
  */
 export type BenchmarkBasis = 'roster-max' | 'league-max' | 'player' | 'custom';
 
@@ -187,10 +190,11 @@ export type Benchmark =
 export const SEASON_GAMES = 84;
 
 /**
- * Default: highest GP among roster skaters with stats, IR players included (ties: first in
- * roster order). With no rostered skater stats it falls back to the highest GP in the whole
- * snapshot (basis 'league-max'). Player: that skater's GP. Custom: a whole number from 1 to
- * SEASON_GAMES.
+ * League max (the default): highest GP among all skaters in the snapshot (skaters only, so no
+ * goalies). Roster max: highest GP among roster skaters with stats, IR players included (ties:
+ * first in roster order); with no rostered skater stats it falls back to league max (basis
+ * 'league-max' while the choice stays 'roster-max', so the UI can say so). Player: that skater's
+ * GP. Custom: a whole number from 1 to SEASON_GAMES.
  */
 export function resolveBenchmark(choice: BenchmarkChoice, rosterSkaters: readonly Subject[], stats: StatsIndex): Benchmark {
   if (choice.kind === 'custom') {
@@ -206,8 +210,10 @@ export function resolveBenchmark(choice: BenchmarkChoice, rosterSkaters: readonl
       : { available: false, choice, reason: 'player-has-no-stats' };
   }
   let best: Subject | undefined;
-  for (const s of rosterSkaters) {
-    if (s.source === 'roster' && s.status === 'ok' && s.stats && (!best || s.stats.gamesPlayed > best.stats!.gamesPlayed)) best = s;
+  if (choice.kind === 'roster-max') {
+    for (const s of rosterSkaters) {
+      if (s.source === 'roster' && s.status === 'ok' && s.stats && (!best || s.stats.gamesPlayed > best.stats!.gamesPlayed)) best = s;
+    }
   }
   if (best) return { available: true, gamesPlayed: best.stats!.gamesPlayed, choice, basis: 'roster-max', nhlId: best.nhlId, name: best.name };
   let leagueMax = 0;
@@ -251,7 +257,7 @@ export interface Evaluation {
 export function evaluatePlayers(input: EvaluationInput): Evaluation {
   const { skaters, goalies } = classifyRoster(input.roster, input.resolve, input.stats);
   const { subjects, alreadyOnRoster } = comparisonSubjects(input.comparisons ?? [], input.stats, rosterNhlIds(skaters));
-  const benchmark = resolveBenchmark(input.benchmark ?? { kind: 'roster-max' }, skaters, input.stats);
+  const benchmark = resolveBenchmark(input.benchmark ?? DEFAULT_BENCHMARK, skaters, input.stats);
   return {
     benchmark,
     roster: skaters.map((s) => evaluateSubject(s, benchmark)),

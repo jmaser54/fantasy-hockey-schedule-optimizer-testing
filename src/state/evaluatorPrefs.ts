@@ -1,4 +1,4 @@
-import { DEFAULT_RANKING_MIN_GP, SEASON_GAMES, type BenchmarkChoice } from '../domain/evaluator.ts';
+import { DEFAULT_BENCHMARK, DEFAULT_RANKING_MIN_GP, SEASON_GAMES, type BenchmarkChoice } from '../domain/evaluator.ts';
 
 /**
  * Player Evaluator preferences: comparison players, the selected benchmark and the rankings'
@@ -7,15 +7,19 @@ import { DEFAULT_RANKING_MIN_GP, SEASON_GAMES, type BenchmarkChoice } from '../d
  * them never touches the roster and the roster's persistence model is unchanged. The live and testing
  * sites share one browser storage, so the testing build uses its own key, as for the app state.
  *
- * The default roster-max benchmark is stored as that choice, never as a GP number, so it keeps
- * following the roster. A custom benchmark is stored as the user's number; its upper limit is checked
- * when it is resolved against the current season.
+ * Benchmarks are stored as the choice (league max, roster max, a player), never as a GP number, so
+ * they keep following the data. A custom benchmark is stored as the user's number; its upper limit is
+ * checked when it is resolved.
+ *
+ * Version 2 (2026-11-21) made league max the default. Version 1 always saved its default, roster max,
+ * so a version-1 roster-max can't be told apart from "never chose" and loads as the new default;
+ * version-1 player and custom choices were explicit and are kept.
  */
 export function evaluatorPrefsKeyFor(baseUrl: string): string {
   return /\/fantasy-hockey-schedule-optimizer-testing\/$/.test(baseUrl) ? 'playoff-evaluator-testing:v1' : 'playoff-evaluator:v1';
 }
 export const EVALUATOR_PREFS_KEY = evaluatorPrefsKeyFor((import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/');
-export const EVALUATOR_PREFS_VERSION = 1;
+export const EVALUATOR_PREFS_VERSION = 2;
 
 export interface EvaluatorPrefs {
   version: number;
@@ -27,7 +31,7 @@ export interface EvaluatorPrefs {
 }
 
 export function defaultEvaluatorPrefs(): EvaluatorPrefs {
-  return { version: EVALUATOR_PREFS_VERSION, comparisons: [], benchmark: { kind: 'roster-max' }, minGamesPlayed: DEFAULT_RANKING_MIN_GP };
+  return { version: EVALUATOR_PREFS_VERSION, comparisons: [], benchmark: DEFAULT_BENCHMARK, minGamesPlayed: DEFAULT_RANKING_MIN_GP };
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -35,6 +39,7 @@ const isId = (v: unknown): v is number => Number.isInteger(v) && (v as number) >
 
 function loadBenchmark(v: unknown): BenchmarkChoice | undefined {
   if (!isObj(v)) return undefined;
+  if (v.kind === 'league-max') return { kind: 'league-max' };
   if (v.kind === 'roster-max') return { kind: 'roster-max' };
   if (v.kind === 'player' && isId(v.nhlId)) return { kind: 'player', nhlId: v.nhlId };
   if (v.kind === 'custom' && Number.isInteger(v.gamesPlayed) && (v.gamesPlayed as number) >= 1) return { kind: 'custom', gamesPlayed: v.gamesPlayed as number };
@@ -55,7 +60,9 @@ export function parseEvaluatorPrefs(raw: string | null): EvaluatorPrefs {
   const comparisons = Array.isArray(data.comparisons) ? [...new Set(data.comparisons.filter(isId))] : base.comparisons;
   const minGp = data.minGamesPlayed;
   const minGamesPlayed = Number.isInteger(minGp) && (minGp as number) >= 1 && (minGp as number) <= SEASON_GAMES ? (minGp as number) : base.minGamesPlayed;
-  return { ...base, comparisons, benchmark: loadBenchmark(data.benchmark) ?? base.benchmark, minGamesPlayed };
+  let benchmark = loadBenchmark(data.benchmark) ?? base.benchmark;
+  if (benchmark.kind === 'roster-max' && !(typeof data.version === 'number' && data.version >= 2)) benchmark = base.benchmark;
+  return { ...base, comparisons, benchmark, minGamesPlayed };
 }
 
 export function serializeEvaluatorPrefs(prefs: EvaluatorPrefs): string {

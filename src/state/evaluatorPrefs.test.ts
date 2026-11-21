@@ -36,26 +36,39 @@ describe('evaluator preference keys', () => {
 });
 
 describe('parseEvaluatorPrefs', () => {
-  it('defaults to no comparisons and the dynamic roster-max benchmark', () => {
-    expect(parseEvaluatorPrefs(null)).toEqual({ version: 1, comparisons: [], benchmark: { kind: 'roster-max' }, minGamesPlayed: 10 });
+  it('defaults to no comparisons and the league-max benchmark', () => {
+    expect(parseEvaluatorPrefs(null)).toEqual({ version: 2, comparisons: [], benchmark: { kind: 'league-max' }, minGamesPlayed: 10 });
     expect(parseEvaluatorPrefs('not json')).toEqual(defaultEvaluatorPrefs());
     expect(parseEvaluatorPrefs('[1,2]')).toEqual(defaultEvaluatorPrefs());
   });
 
   it('round-trips comparisons and each benchmark choice', () => {
-    for (const benchmark of [{ kind: 'roster-max' as const }, { kind: 'player' as const, nhlId: 8478402 }, { kind: 'custom' as const, gamesPlayed: 60 }]) {
-      const prefs = { version: 1, comparisons: [8478402, 8471675], benchmark, minGamesPlayed: 5 };
+    for (const benchmark of [{ kind: 'league-max' as const }, { kind: 'roster-max' as const }, { kind: 'player' as const, nhlId: 8478402 }, { kind: 'custom' as const, gamesPlayed: 60 }]) {
+      const prefs = { version: 2, comparisons: [8478402, 8471675], benchmark, minGamesPlayed: 5 };
       expect(parseEvaluatorPrefs(serializeEvaluatorPrefs(prefs))).toEqual(prefs);
     }
   });
 
-  it('stores the roster-max choice, never a GP number, so it follows the roster', () => {
-    expect(JSON.parse(serializeEvaluatorPrefs(defaultEvaluatorPrefs())).benchmark).toEqual({ kind: 'roster-max' });
+  it('stores benchmark choices, never a GP number, so they follow the data', () => {
+    expect(JSON.parse(serializeEvaluatorPrefs(defaultEvaluatorPrefs())).benchmark).toEqual({ kind: 'league-max' });
+    expect(JSON.parse(serializeEvaluatorPrefs({ ...defaultEvaluatorPrefs(), benchmark: { kind: 'roster-max' } }))).toMatchObject({ version: 2, benchmark: { kind: 'roster-max' } });
+  });
+
+  it('loads a version-1 roster-max (the old auto-saved default) as league max, and keeps explicit choices', () => {
+    expect(parseEvaluatorPrefs(JSON.stringify({ version: 1, comparisons: [7], benchmark: { kind: 'roster-max' }, minGamesPlayed: 12 }))).toEqual({
+      version: 2,
+      comparisons: [7],
+      benchmark: { kind: 'league-max' },
+      minGamesPlayed: 12,
+    });
+    expect(parseEvaluatorPrefs(JSON.stringify({ version: 1, benchmark: { kind: 'custom', gamesPlayed: 60 } })).benchmark).toEqual({ kind: 'custom', gamesPlayed: 60 });
+    expect(parseEvaluatorPrefs(JSON.stringify({ version: 1, benchmark: { kind: 'player', nhlId: 7 } })).benchmark).toEqual({ kind: 'player', nhlId: 7 });
+    expect(parseEvaluatorPrefs(JSON.stringify({ version: 2, benchmark: { kind: 'roster-max' } })).benchmark).toEqual({ kind: 'roster-max' });
   });
 
   it('drops bad values field by field', () => {
     const p = parseEvaluatorPrefs(JSON.stringify({ comparisons: [5, 5, 'x', -1, 2.5, 7], benchmark: { kind: 'custom', gamesPlayed: 0 } }));
-    expect(p).toEqual({ version: 1, comparisons: [5, 7], benchmark: { kind: 'roster-max' }, minGamesPlayed: 10 });
+    expect(p).toEqual({ version: 2, comparisons: [5, 7], benchmark: { kind: 'league-max' }, minGamesPlayed: 10 });
     for (const bad of [0, 85, 2.5, '5']) expect(parseEvaluatorPrefs(JSON.stringify({ minGamesPlayed: bad })).minGamesPlayed).toBe(10);
     expect(parseEvaluatorPrefs(JSON.stringify({ minGamesPlayed: 1 })).minGamesPlayed).toBe(1);
     expect(parseEvaluatorPrefs(JSON.stringify({ comparisons: 'x', benchmark: { kind: 'player' } }))).toEqual(defaultEvaluatorPrefs());
@@ -78,7 +91,7 @@ describe('saving and loading evaluator preferences', () => {
     const rosterBefore = storage.getItem(STORAGE_KEY);
     expect(rosterBefore).toBe(serialize(state));
 
-    const prefs = { version: 1, comparisons: [7], benchmark: { kind: 'custom' as const, gamesPlayed: 40 }, minGamesPlayed: 3 };
+    const prefs = { version: 2, comparisons: [7], benchmark: { kind: 'custom' as const, gamesPlayed: 40 }, minGamesPlayed: 3 };
     expect(saveEvaluatorPrefs(prefs)).toBe(true);
     expect(loadEvaluatorPrefs()).toEqual(prefs);
     expect(storage.getItem(STORAGE_KEY)).toBe(rosterBefore);

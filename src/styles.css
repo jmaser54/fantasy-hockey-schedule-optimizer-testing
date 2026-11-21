@@ -402,6 +402,7 @@ h3 { font-size: 13px; margin: 16px 0 6px; }
 
 /* Touch screens: comfortable tap targets. Icons keep their size; the tappable area grows. */
 @media (pointer: coarse) {
+  .area { min-height: 40px; }
   .star, .info-btn { position: relative; }
   .star::after, .info-btn::after { content: ''; position: absolute; inset: -12px; }
   .icon-btn { min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
@@ -426,19 +427,14 @@ h3 { font-size: 13px; margin: 16px 0 6px; }
 
 
 /* Player Evaluator (first prototype; layout expected to change after review) */
-/* Navigation: the Player Evaluator family sits in its own group beside the Playoff Planner tabs. */
-@media (min-width: 601px) {
-  .tabbar-row .tabs.planner-tabs { flex: 0 1 auto; }
-  .tabbar-row .tabs.tool-tabs { margin-left: 6px; padding-left: 14px; border-left: 1px solid var(--border); }
-}
-.tabs.tool-tabs { align-items: center; }
-/* Tablets: not enough room for both families on one row; Player Evaluator gets its own row. */
-@media (min-width: 601px) and (max-width: 1040px) {
-  .tabbar-row { flex-wrap: wrap; row-gap: 0; }
-  .tabbar-row .tabs.planner-tabs { flex: 1 1 auto; }
-  .tabbar-row .tabs.tool-tabs { order: 3; flex-basis: 100%; margin-left: 0; padding-left: 0; border-left: 0; border-top: 1px solid var(--border); }
-}
-.tool-label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); white-space: nowrap; margin-right: 4px; }
+/* Navigation: two equal product areas (Playoff Planner, Player Evaluator), with League Settings on
+   the same row; the selected area's destinations are the tab row beneath. */
+.tabbar .area-row { display: flex; align-items: center; gap: 12px; padding-top: 6px; }
+.areas { display: flex; gap: 4px; margin-right: auto; min-width: 0; }
+.area { border: 0; background: none; padding: 5px 10px; border-radius: 8px; font-size: 14px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.area:hover { color: var(--text); background: var(--surface-2); }
+.area[aria-current='true'] { color: var(--accent); background: var(--accent-soft); }
+.area-row .settings-btn { padding: 5px 12px; font-size: 13px; }
 .evaluator { gap: 12px; }
 .eval-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 4px 12px; }
 .eval-title { font-size: 18px; margin: 0; }
@@ -467,13 +463,13 @@ input[aria-invalid='true'] { border-color: var(--bad); }
 .ev-legend { margin: 0; }
 .rank-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 16px; border-bottom: 1px solid var(--border); }
 .rank-controls .field { gap: 2px; }
-.rank-summary { margin: 0; padding: 8px 14px; }
 .rank-table .rk { position: sticky; left: 0; z-index: 1; width: 40px; min-width: 40px; background: var(--surface); }
 .rank-table th.sticky { left: 40px; }
 .rank-more { padding: 10px 14px; border-top: 1px solid var(--border); }
 @media (max-width: 600px) {
-  .tabbar-row .tabs.tool-tabs { padding-left: 2px; border-top: 1px solid var(--border); }
-  .tool-label { font-size: 10px; letter-spacing: 0; margin-right: 0; }
+  .tabbar .area-row { padding-top: 6px; gap: 8px; }
+  .area .label-full { display: none; }
+  .area .label-short { display: inline; }
   .eval-table th, .eval-table td { padding: 6px 6px; }
   .eval-table tbody th.sticky { white-space: normal; min-width: 112px; max-width: 132px; font-size: 13px; }
   .eval-table .ev-name { display: block; }

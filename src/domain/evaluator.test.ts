@@ -145,7 +145,18 @@ describe('comparison players', () => {
 describe('resolveBenchmark', () => {
   const skaters = classifyRoster([entry('nhl-2'), entry('nhl-1'), entry('nhl-3'), entry('nhl-4')], resolve, stats).skaters;
 
-  it('defaults to the highest GP among roster skaters with stats (first in roster order on ties)', () => {
+  it('league max (the default) is the highest GP in the whole snapshot, even when roster skaters have stats', () => {
+    const fewGames = classifyRoster([entry('nhl-2')], resolve, stats).skaters; // Bravo: 10 GP
+    expect(resolveBenchmark({ kind: 'league-max' }, fewGames, stats)).toMatchObject({ available: true, gamesPlayed: 20, basis: 'league-max', choice: { kind: 'league-max' } });
+    expect(resolveBenchmark({ kind: 'league-max' }, fewGames, stats)).not.toHaveProperty('name');
+    expect(resolveBenchmark({ kind: 'roster-max' }, fewGames, stats)).toMatchObject({ gamesPlayed: 10, basis: 'roster-max' });
+    expect(resolveBenchmark({ kind: 'league-max' }, [], buildStatsIndex([]))).toMatchObject({ available: false, reason: 'no-stats' });
+    const e = evaluatePlayers({ roster: [entry('nhl-2')], resolve, stats: buildStatsIndex([line(2, 10, { goals: 5 }), line(9, 25)]) });
+    expect(e.benchmark).toMatchObject({ gamesPlayed: 25, basis: 'league-max' }); // default, whatever the roster's GP
+    expect(e.roster[0]!.adjusted!.goals).toBe(12.5); // 5 / 10 * 25
+  });
+
+  it('roster max is the highest GP among roster skaters with stats (first in roster order on ties)', () => {
     expect(resolveBenchmark({ kind: 'roster-max' }, skaters, stats)).toMatchObject({ available: true, gamesPlayed: 20, nhlId: 1, name: 'Alpha', basis: 'roster-max' });
   });
 

@@ -24,7 +24,7 @@ const TABS = [
   { id: 'lineup', label: 'Lineup' },
   { id: 'trades', label: 'Trade Lab' },
 ] as const;
-/** Player Evaluator: a separate tool family with its own navigation group (no period bar). */
+/** Player Evaluator's destinations (no period bar). */
 const EVALUATOR_TABS = [
   { id: 'evaluator', label: 'Roster Evaluation' },
   { id: 'player-rankings', label: 'Player Rankings' },
@@ -32,6 +32,14 @@ const EVALUATOR_TABS = [
 const ALL_TABS = [...TABS, ...EVALUATOR_TABS];
 type TabId = (typeof ALL_TABS)[number]['id'];
 const isEvaluatorTab = (t: TabId) => EVALUATOR_TABS.some((e) => e.id === t);
+
+/** The two equal product areas (primary navigation); each shows its own destinations beneath. */
+type AreaId = 'planner' | 'evaluator';
+const AREAS: { id: AreaId; label: string; short: string; first: TabId }[] = [
+  { id: 'planner', label: 'Playoff Planner', short: 'Planner', first: 'rankings' },
+  { id: 'evaluator', label: 'Player Evaluator', short: 'Evaluator', first: 'evaluator' },
+];
+const areaOf = (t: TabId): AreaId => (isEvaluatorTab(t) ? 'evaluator' : 'planner');
 
 const isAboutHash = () => globalThis.location?.hash === '#about';
 
@@ -105,6 +113,10 @@ export function App() {
   }, [toastMsg]);
 
   const toast = useCallback((m: string) => setToastMsg(m), []);
+  // Each product area reopens on the destination last used in it (this visit only).
+  const area = areaOf(tab);
+  const lastTab = useRef<Partial<Record<AreaId, TabId>>>({});
+  lastTab.current[area] = tab;
   const go = (id: TabId) => {
     history.replaceState(null, '', `#${id}`);
     setTab(id);
@@ -123,37 +135,56 @@ export function App() {
         </div>
       </header>
       <div className="tabbar">
-        <div className="topbar-inner tabbar-row">
+        <div className="topbar-inner area-row">
+          <nav className="areas" aria-label="Product area">
+            {AREAS.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                className="area"
+                aria-label={a.label}
+                aria-current={area === a.id ? 'true' : undefined}
+                onClick={() => area !== a.id && go(lastTab.current[a.id] ?? a.first)}
+              >
+                <span className="label-full">{a.label}</span>
+                <span className="label-short" aria-hidden="true">
+                  {a.short}
+                </span>
+              </button>
+            ))}
+          </nav>
           <button className="settings-btn" onClick={() => setSettingsOpen(true)} title="Review and adjust your league settings">
             <span aria-hidden="true">⚙︎</span> League Settings
           </button>
-          <nav className="tabs planner-tabs" role="tablist" aria-label="Playoff Planner">
-            {TABS.map((t) => (
-              <button key={t.id} role="tab" className="tab" aria-selected={!about && tab === t.id} aria-label={'short' in t ? t.label : undefined} onClick={() => go(t.id)}>
-                {'short' in t ? (
-                  <>
-                    <span className="label-full">{t.label}</span>
-                    <span className="label-short" aria-hidden="true">
-                      {t.short}
-                    </span>
-                  </>
-                ) : (
-                  t.label
-                )}
-                {t.id === 'roster' && state.roster.length > 0 && <span className="count">{state.roster.length}</span>}
-              </button>
-            ))}
-          </nav>
-          <nav className="tabs tool-tabs" role="tablist" aria-label="Player Evaluator">
-            <span className="tool-label" aria-hidden="true">
-              Player Evaluator
-            </span>
-            {EVALUATOR_TABS.map((t) => (
-              <button key={t.id} role="tab" className="tab" aria-selected={!about && tab === t.id} onClick={() => go(t.id)}>
-                {t.label}
-              </button>
-            ))}
-          </nav>
+        </div>
+        <div className="topbar-inner tabbar-row">
+          {area === 'planner' ? (
+            <nav className="tabs planner-tabs" role="tablist" aria-label="Playoff Planner">
+              {TABS.map((t) => (
+                <button key={t.id} role="tab" className="tab" aria-selected={!about && tab === t.id} aria-label={'short' in t ? t.label : undefined} onClick={() => go(t.id)}>
+                  {'short' in t ? (
+                    <>
+                      <span className="label-full">{t.label}</span>
+                      <span className="label-short" aria-hidden="true">
+                        {t.short}
+                      </span>
+                    </>
+                  ) : (
+                    t.label
+                  )}
+                  {t.id === 'roster' && state.roster.length > 0 && <span className="count">{state.roster.length}</span>}
+                </button>
+              ))}
+            </nav>
+          ) : (
+            <nav className="tabs evaluator-tabs" role="tablist" aria-label="Player Evaluator">
+              {EVALUATOR_TABS.map((t) => (
+                <button key={t.id} role="tab" className="tab" aria-selected={!about && tab === t.id} onClick={() => go(t.id)}>
+                  {t.label}
+                </button>
+              ))}
+            </nav>
+          )}
         </div>
       </div>
       <main>
