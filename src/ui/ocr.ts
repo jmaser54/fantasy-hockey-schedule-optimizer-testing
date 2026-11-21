@@ -9,6 +9,8 @@ import type { Worker } from 'tesseract.js';
 const OCR_PATH = `${import.meta.env.BASE_URL}ocr/`;
 /** Large screenshots are scaled down to this width: plenty for names, much faster to read. */
 const MAX_WIDTH = 1600;
+/** White margin added around each screenshot: Tesseract can drop text that touches the image edge. */
+const MARGIN = 32;
 /** Up to two workers read screenshots in parallel. */
 const MAX_WORKERS = 2;
 
@@ -34,17 +36,22 @@ async function acquire(): Promise<Worker> {
   return w;
 }
 
-/** Greyscale, invert dark-mode screenshots (dark text on light reads best) and cap the width. */
+/**
+ * Greyscale, invert dark-mode screenshots (dark text on light reads best), cap the width, and add a
+ * white margin so a name on the first or last row isn't lost at the edge.
+ */
 async function prepare(file: Blob): Promise<HTMLCanvasElement> {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, MAX_WIDTH / bitmap.width);
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
+  canvas.width = w + 2 * MARGIN;
+  canvas.height = h + 2 * MARGIN;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, MARGIN, MARGIN, w, h);
   bitmap.close();
-  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const img = ctx.getImageData(MARGIN, MARGIN, w, h);
   const px = img.data;
   let sum = 0;
   for (let i = 0; i < px.length; i += 4) {
@@ -53,7 +60,9 @@ async function prepare(file: Blob): Promise<HTMLCanvasElement> {
     sum += y;
   }
   if (sum / (px.length / 4) < 110) for (let i = 0; i < px.length; i += 4) px[i] = px[i + 1] = px[i + 2] = 255 - px[i]!;
-  ctx.putImageData(img, 0, 0);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.putImageData(img, MARGIN, MARGIN);
   return canvas;
 }
 

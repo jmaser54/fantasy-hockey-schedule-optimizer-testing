@@ -61,15 +61,47 @@ export function parseRosterText(text: string, teamIds: ReadonlySet<TeamId>): Par
 export interface PlayerIndex {
   byName: Map<string, Player[]>;
   all: Player[];
+  /** First initial + rest of the name ("c mcdavid"), built from the directory: one player means unique. */
+  byInitial: Map<string, Player[]>;
+  /**
+   * Names with ä/ö/ü, as patterns that also accept the usual OCR and typing variants of the umlaut
+   * ("Stiitzle", "Stitzle", "Stuetzle"): the full name, and the initial + rest form.
+   */
+  umlauts: { full: RegExp; initial: RegExp; player: Player }[];
+}
+
+const UMLAUT_VARIANTS: Record<string, string> = { ü: '(?:ue|ii|ti|li|il|u|i|y)', ö: '(?:oe|o|0|6)', ä: '(?:ae|a|4)' };
+
+/** "Tim Stützle" → patterns for "tim stützle"-like full names and "t stützle"-like initial forms. */
+function umlautPatterns(name: string): { full: RegExp; initial: RegExp } | undefined {
+  const lower = name.toLowerCase();
+  if (!/[äöü]/.test(lower)) return undefined;
+  // Keep the umlauts as placeholders through normalizeName (which would turn them into plain vowels).
+  const marked = normalizeName(lower.replace(/ü/g, '1').replace(/ö/g, '2').replace(/ä/g, '3'));
+  const toRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/1/g, UMLAUT_VARIANTS.ü!).replace(/2/g, UMLAUT_VARIANTS.ö!).replace(/3/g, UMLAUT_VARIANTS.ä!);
+  const parts = marked.split(' ');
+  return { full: new RegExp(`^${toRe(marked)}$`), initial: new RegExp(`^${toRe(parts[0]![0]!)} ${toRe(parts.slice(1).join(' '))}$`) };
+}
+
+/** First initial + the rest of a normalized name: "connor mcdavid" → "c mcdavid", "tj hughes" → "t hughes". */
+function initialKey(normalized: string): string | undefined {
+  const parts = normalized.split(' ');
+  return parts.length >= 2 ? `${parts[0]![0]} ${parts.slice(1).join(' ')}` : undefined;
 }
 
 export function buildPlayerIndex(players: readonly Player[]): PlayerIndex {
   const byName = new Map<string, Player[]>();
+  const byInitial = new Map<string, Player[]>();
+  const umlauts: PlayerIndex['umlauts'] = [];
   for (const p of players) {
     const k = normalizeName(p.name);
     byName.set(k, [...(byName.get(k) ?? []), p]);
+    const ik = initialKey(k);
+    if (ik) byInitial.set(ik, [...(byInitial.get(ik) ?? []), p]);
+    const u = umlautPatterns(p.name);
+    if (u) umlauts.push({ ...u, player: p });
   }
-  return { byName, all: [...players] };
+  return { byName, all: [...players], byInitial, umlauts };
 }
 
 export type MatchResult =
@@ -195,7 +227,7 @@ export function extractRosterNames(text: string, index: PlayerIndex, teamIds: Re
   const review = new Map<string, FoundName>();
   const unrecognized = new Set<string>();
   let ignored = 0;
-  const addFound = (raw: string, name: string, teamHint: TeamId | undefined, result: MatchResult) => {
+  const addFound = (raw: string, name: string, teamHint: TeamId | undefined, result: MatchResult, initialForm = false) => {
     if (result.status === 'matched') {
       matched.set(result.player.id, result.player);
       return;
@@ -205,7 +237,7 @@ export function extractRosterNames(text: string, index: PlayerIndex, teamIds: Re
     const key = result.status === 'unmatched' ? normalizeName(name) : result.candidates.map((c) => c.id).sort().join(',');
     if (review.has(key)) return;
     let preselect: string | undefined;
-    if (result.status === 'suggested') {
+    if (result.status === 'suggested' || (result.status === 'ambiguous' && initialForm)) {
       const onTeam = teamHint ? result.candidates.filter((c) => c.team === teamHint) : [];
       preselect = result.candidates.length === 1 ? result.candidates[0]!.id : onTeam.length === 1 ? onTeam[0]!.id : undefined;
     }
@@ -221,7 +253,12 @@ export function extractRosterNames(text: string, index: PlayerIndex, teamIds: Re
         const span = tokens.slice(i, i + k);
         let key = normalizeName(span.join(' '));
         if (!index.byName.has(key) && span[0]!.endsWith(',')) key = normalizeName([...span.slice(1), span[0]].join(' '));
-        if (!index.byName.has(key)) continue;
+        if (!index.byName.has(key)) {
+          // An umlaut name read with a variant ("Tim Stiitzle"): accepted when exactly one player fits.
+          const u = index.umlauts.filter((x) => x.full.test(key));
+          if (u.length !== 1) continue;
+          key = normalizeName(u[0]!.player.name);
+        }
         const name = span.join(' ').replace(/,$/, '');
         const teamHint = teamNear(tokens, i + k, teamIds);
         // A unique exact name is accepted whatever the nearby team says (the directory's team can lag a
@@ -234,13 +271,47 @@ export function extractRosterNames(text: string, index: PlayerIndex, teamIds: Re
       }
     }
     if (found) continue;
-    // 2. A name-like phrase close to a player (typo, OCR error, initial + last name).
+    // 2. First initial + last name ("C. McDavid", OCR "C McDavid" or "GD. Tarasov" with the slot run in):
+    // automatic when the directory has exactly one such player, a review when several share it.
+    for (let i = 0; i < tokens.length && !found; i++) {
+      const init = /^(?:[A-Z]{0,2}([A-Z])\.|([ABEHIJKLMNOPQRSTVXYZ]))$/.exec(tokens[i]!);
+      if (!init) continue;
+      for (let k = Math.min(3, tokens.length - i - 1); k >= 1; k--) {
+        const rest = normalizeName(tokens.slice(i + 1, i + 1 + k).join(' '));
+        if (!rest || /\d/.test(rest)) continue;
+        const key = `${(init[1] ?? init[2])!.toLowerCase()} ${rest}`;
+        let same = index.byInitial.get(key) ?? [];
+        if (same.length === 0) {
+          const u = index.umlauts.filter((x) => x.initial.test(key));
+          if (u.length === 1) same = [u[0]!.player];
+        }
+        if (same.length === 0) continue;
+        const name = `${(init[1] ?? init[2])!}. ${tokens.slice(i + 1, i + 1 + k).join(' ')}`;
+        const teamHint = teamNear(tokens, i + 1 + k, teamIds);
+        // An initial without its dot and with no team beside it ("P Kane said") is weaker evidence: suggest it.
+        const sure = !!init[1] || !!teamHint;
+        addFound(
+          raw,
+          name,
+          teamHint,
+          same.length > 1 ? { status: 'ambiguous', candidates: same } : sure ? { status: 'matched', player: same[0]! } : { status: 'suggested', candidates: same },
+          true,
+        );
+        found = true;
+        break;
+      }
+    }
+    if (found) continue;
+    // 3. A name-like phrase close to a player (typo, OCR error, initial + misread last name).
     const clean = tokens.map((t) => t.replace(/,$/, ''));
     const runs: { start: number; words: string[] }[] = [];
     let cur: string[] = [];
     clean.forEach((t, i) => {
       const afterInitial = i > 0 && /^[A-Z]\.$/.test(clean[i - 1]!);
-      if (NAME_TOKEN.test(t) && (afterInitial || !(t.length <= 3 && t === t.toUpperCase() && !t.endsWith('.')))) cur.push(t);
+      // A lone capital right before a name word may be an initial whose dot OCR lost ("C McDavid"): kept
+      // for a suggestion only (step 2 already handled the safe cases).
+      const bareInitial = /^[A-Z]$/.test(t) && /^[A-ZÀ-Þ][a-zà-ÿ'’-]+(?:[A-Z][a-zà-ÿ'’-]+)*$/.test(clean[i + 1] ?? '');
+      if (bareInitial || (NAME_TOKEN.test(t) && (afterInitial || !(t.length <= 3 && t === t.toUpperCase() && !t.endsWith('.'))))) cur.push(t);
       else {
         if (cur.length) runs.push({ start: i - cur.length, words: cur });
         cur = [];
@@ -267,7 +338,7 @@ export function extractRosterNames(text: string, index: PlayerIndex, teamIds: Re
       if (suggested) break;
     }
     if (suggested) continue;
-    // A lone surname typed on its own line ("Hughes") is still offered as a suggestion.
+    // 4. A lone surname typed on its own line ("Hughes") is still offered as a suggestion.
     if (tokens.length === 1 && NAME_TOKEN.test(tokens[0]!) && !PAGE_WORDS.has(tokens[0]!.toLowerCase())) {
       const r = matchName(tokens[0]!, index);
       if (r.status === 'suggested') {
@@ -275,7 +346,7 @@ export function extractRosterNames(text: string, index: PlayerIndex, teamIds: Re
         continue;
       }
     }
-    const nameLike = runs.find((r) => r.words.length >= 2 && r.words.length <= 3 && !r.words.some((w) => PAGE_WORDS.has(w.toLowerCase()) || w.endsWith('.')));
+    const nameLike = runs.find((r) => r.words.length >= 2 && r.words.length <= 3 && !r.words.some((w) => PAGE_WORDS.has(w.toLowerCase()) || w.endsWith('.') || w.length === 1));
     if (nameLike) unrecognized.add(nameLike.words.join(' '));
     ignored++;
   }

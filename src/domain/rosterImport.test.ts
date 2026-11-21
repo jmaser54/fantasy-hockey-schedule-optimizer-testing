@@ -126,23 +126,59 @@ describe('extractRosterNames (whole roster pages, pasted or from screenshots)', 
     expect(r.review[0]!.preselect).toBeUndefined();
   });
 
-  it('sends near matches (OCR errors, typos, initials) to review, pre-selecting a single candidate', () => {
-    const r = extractRosterNames('D  Tim Stiitzle  Ott C\nC. McDavid EDM - C\nConor McDavid\nQ. Hughes VAN - D', index, teams);
+  it('sends near matches (typos, OCR errors in other letters) to review, pre-selecting a single candidate', () => {
+    const r = extractRosterNames('Conor McDavid\nMitch Marmer VGK', index, teams);
     expect(r.matched).toEqual([]);
     expect(r.review.map((x) => [x.name, x.result.status, x.preselect])).toEqual([
-      ['Tim Stiitzle', 'suggested', '4'],
-      ['C. McDavid', 'suggested', '1'], // "Conor McDavid" points to the same player: one row
-      ['Q. Hughes', 'suggested', '7'],
+      ['Conor McDavid', 'suggested', '1'],
+      ['Mitch Marmer', 'suggested', '5'],
     ]);
-    expect(extractRosterNames('Conor McDavid', index, teams).review[0]!.preselect).toBe('1');
-    // OCR sometimes drops the space after an initial, or reverses a misspelt name.
-    expect(extractRosterNames('M.Marner VGK-RW', index, teams).review[0]!.preselect).toBe('5');
-    expect(extractRosterNames('Stiitzle, Tim (OTT)', index, teams).review[0]!.preselect).toBe('4');
+  });
+
+  it('resolves a unique first initial + last name automatically, using the directory', () => {
+    const r = extractRosterNames('C   C. McDavid  EDM - C  0 31\nD Q. Hughes VAN - D\nUTIL J. Hughes NJD - C\nM.Marner VGK-RW\nJ Hughes NJD', index, teams);
+    expect(ids(r.matched)).toEqual(['1', '7', '6', '5']);
+    expect(r.review).toEqual([]);
+  });
+
+  it('asks when several players share the first initial + last name, never guessing', () => {
+    const r = extractRosterNames('IR E. Pettersson VAN - C', index, teams);
+    expect(r.matched).toEqual([]);
+    expect(r.review.map((x) => [x.name, x.result.status, x.result.status === 'ambiguous' && x.result.candidates.map((c) => c.id), x.preselect])).toEqual([
+      ['E. Pettersson', 'ambiguous', ['2', '3'], undefined],
+    ]);
+    // A team that singles one out pre-selects it, but the user still confirms.
+    const raty = buildPlayerIndex([P('a', 'Aatu Raty', 'TOR'), P('b', 'Aku Raty', 'EDM')]);
+    const t = extractRosterNames('A. Raty TOR - C', raty, new Set(['TOR', 'EDM']));
+    expect(t.matched).toEqual([]);
+    expect([t.review[0]!.result.status, t.review[0]!.preselect]).toEqual(['ambiguous', 'a']);
+  });
+
+  it('reads an initial run into the slot label ("GD. Tarasov") and keeps slot letters without a dot cautious', () => {
+    const goalies = buildPlayerIndex([...players, P('9', 'Daniil Tarasov', 'DET', ['G'])]);
+    expect(ids(extractRosterNames('GD. Tarasov DET - G 27', goalies, teams).matched)).toEqual(['9']);
+    expect(ids(extractRosterNames('G D. Tarasov DET -G 27', goalies, teams).matched)).toEqual(['9']);
+    // Without a dot, an initial resolves only next to a team code ("J Hughes NJD"); alone it is suggested.
+    const bare = extractRosterNames('J Hughes said', index, teams);
+    expect(bare.matched).toEqual([]);
+    expect([bare.review[0]!.result.status, bare.review[0]!.preselect]).toEqual(['suggested', '6']);
+    // "C McDavid": C is also a slot label, so without a dot it is only suggested.
+    const c = extractRosterNames('C McDavid EDM', index, teams);
+    expect(c.matched).toEqual([]);
+    expect(c.review[0]!.preselect).toBe('1');
+  });
+
+  it('accepts umlaut names read with the usual variants (Stützle as Stiitzle, Stitzle, Stutzle, Stuetzle)', () => {
+    for (const line of ['D  Tim Stiitzle  Ott C', 'b Tim Stitzle on cow MOVE @NYR', 'Tim Stuetzle', 'D T. Stutzle o17-c,Lw 12 13', 'T. Stiitzle OTT - C', 'Stiitzle, Tim (OTT)', 'Tim Stützle']) {
+      expect([line, ids(extractRosterNames(line, index, teams).matched)]).toEqual([line, ['4']]);
+    }
+    // Only names that have an umlaut get this tolerance.
+    expect(extractRosterNames('Mitch Mirner', index, teams).matched).toEqual([]);
   });
 
   it('lists a player once for review however differently the screenshots show the name', () => {
-    const r = extractRosterNames('Elias Pettersson VAN\nPettersson, Elias (VAN)\nTim Stiitzle Ott C\nTim Stiitzle', index, teams);
-    expect(r.review.map((x) => x.name)).toEqual(['Elias Pettersson', 'Tim Stiitzle']);
+    const r = extractRosterNames('Elias Pettersson VAN\nPettersson, Elias (VAN)\nE. Pettersson VAN - C\nMitch Marmer VGK\nMitch Marmer', index, teams);
+    expect(r.review.map((x) => x.name)).toEqual(['Elias Pettersson', 'Mitch Marmer']);
   });
 
   it('drops a near match whose player was found exactly elsewhere', () => {
