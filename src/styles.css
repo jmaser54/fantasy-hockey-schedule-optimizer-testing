@@ -25,6 +25,8 @@
   color-scheme: only light;
   /* Aliases used by newer components, mapped onto the original palette. */
   --border-strong: var(--border);
+  /* Player Evaluator: rows for the user's rostered players. */
+  --roster-row: #eef5fd;
   --blue: var(--accent);
   --green: var(--good);
 }
@@ -424,8 +426,19 @@ h3 { font-size: 13px; margin: 16px 0 6px; }
 
 
 /* Player Evaluator (first prototype; layout expected to change after review) */
-.tab.tool-tab { margin-left: 10px; position: relative; }
-.tab.tool-tab::before { content: ''; position: absolute; left: -6px; top: 9px; bottom: 11px; border-left: 1px solid var(--border); }
+/* Navigation: the Player Evaluator family sits in its own group beside the Playoff Planner tabs. */
+@media (min-width: 601px) {
+  .tabbar-row .tabs.planner-tabs { flex: 0 1 auto; }
+  .tabbar-row .tabs.tool-tabs { margin-left: 6px; padding-left: 14px; border-left: 1px solid var(--border); }
+}
+.tabs.tool-tabs { align-items: center; }
+/* Tablets: not enough room for both families on one row; Player Evaluator gets its own row. */
+@media (min-width: 601px) and (max-width: 1040px) {
+  .tabbar-row { flex-wrap: wrap; row-gap: 0; }
+  .tabbar-row .tabs.planner-tabs { flex: 1 1 auto; }
+  .tabbar-row .tabs.tool-tabs { order: 3; flex-basis: 100%; margin-left: 0; padding-left: 0; border-left: 0; border-top: 1px solid var(--border); }
+}
+.tool-label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); white-space: nowrap; margin-right: 4px; }
 .evaluator { gap: 12px; }
 .eval-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 4px 12px; }
 .eval-title { font-size: 18px; margin: 0; }
@@ -434,7 +447,7 @@ h3 { font-size: 13px; margin: 16px 0 6px; }
 .bench-value { display: flex; align-items: center; gap: 8px; font-size: 15px; }
 .bench-value b { font-size: 17px; }
 .bench-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
-.bench-controls select, .rank-controls select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); max-width: 240px; }
+.bench-controls select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); max-width: 240px; }
 .bench-custom { display: inline-flex; align-items: center; gap: 6px; }
 .bench-custom input, .min-gp input { width: 64px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 input[aria-invalid='true'] { border-color: var(--bad); }
@@ -448,25 +461,19 @@ input[aria-invalid='true'] { border-color: var(--bad); }
 .ev-reason { color: var(--muted); font-size: 12px; white-space: normal; }
 .ev-remove { margin-left: auto; padding: 0 4px; font-size: 12px; }
 .eval-table .group-row td { background: var(--surface-2); font-size: 11px; font-weight: 700; color: var(--muted); padding: 4px 10px; }
-.eval-table tr.cmp-row .ev-name { font-weight: 500; }
+.eval-table tr.roster-row > * { background: var(--roster-row); }
 .eval-foot { display: grid; gap: 8px; padding: 10px 14px 12px; border-top: 1px solid var(--border); }
 .ev-search { flex: none; max-width: 360px; }
 .ev-legend { margin: 0; }
-.rankings-link {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; justify-self: start; border: 0; background: none; padding: 4px 0;
-  color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; text-align: left;
-}
-.rankings-link:hover { text-decoration: underline; }
-.rankings-link .muted { font-weight: 400; }
-.back-link { justify-self: start; }
 .rank-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 16px; border-bottom: 1px solid var(--border); }
 .rank-controls .field { gap: 2px; }
 .rank-summary { margin: 0; padding: 8px 14px; }
-.rank-table tr.mine th.sticky, .rank-table tr.mine td { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
+.rank-table .rk { position: sticky; left: 0; z-index: 1; width: 40px; min-width: 40px; background: var(--surface); }
+.rank-table th.sticky { left: 40px; }
 .rank-more { padding: 10px 14px; border-top: 1px solid var(--border); }
 @media (max-width: 600px) {
-  .tab.tool-tab { margin-left: 0; }
-  .tab.tool-tab::before { display: none; }
+  .tabbar-row .tabs.tool-tabs { padding-left: 2px; border-top: 1px solid var(--border); }
+  .tool-label { font-size: 10px; letter-spacing: 0; margin-right: 0; }
   .eval-table th, .eval-table td { padding: 6px 6px; }
   .eval-table tbody th.sticky { white-space: normal; min-width: 112px; max-width: 132px; font-size: 13px; }
   .eval-table .ev-name { display: block; }
@@ -479,11 +486,10 @@ input[aria-invalid='true'] { border-color: var(--bad); }
   .bench-controls select { flex: 1 1 auto; max-width: none; }
   .ev-search { max-width: none; }
   .rank-controls { gap: 8px 12px; }
-  .rank-controls .field:first-child { flex-basis: 100%; }
-  .rank-controls select { max-width: none; width: 100%; }
+  .rank-table .rk { width: 30px; min-width: 30px; }
+  .rank-table th.sticky { left: 30px; }
 }
 @media (max-width: 400px) {
   .eval-table th, .eval-table td { padding: 6px 4px; }
   .eval-table tbody th.sticky { min-width: 100px; max-width: 112px; padding-left: 6px; }
 }
-@media (min-width: 601px) { .rank-table { max-width: 720px; } }

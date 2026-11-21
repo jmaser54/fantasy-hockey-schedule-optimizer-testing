@@ -23,16 +23,21 @@ const TABS = [
   { id: 'roster', label: 'Roster' },
   { id: 'lineup', label: 'Lineup' },
   { id: 'trades', label: 'Trade Lab' },
-  // A separate tool from the Lineup Planner tabs above (it has no period bar).
-  { id: 'evaluator', label: 'Player Evaluator', short: 'Evaluator' },
 ] as const;
-type TabId = (typeof TABS)[number]['id'];
+/** Player Evaluator: a separate tool family with its own navigation group (no period bar). */
+const EVALUATOR_TABS = [
+  { id: 'evaluator', label: 'Roster Evaluation' },
+  { id: 'player-rankings', label: 'Player Rankings' },
+] as const;
+const ALL_TABS = [...TABS, ...EVALUATOR_TABS];
+type TabId = (typeof ALL_TABS)[number]['id'];
+const isEvaluatorTab = (t: TabId) => EVALUATOR_TABS.some((e) => e.id === t);
 
 const isAboutHash = () => globalThis.location?.hash === '#about';
 
 function tabFromHash(): TabId {
   const h = globalThis.location?.hash.replace('#', '');
-  return (TABS.find((t) => t.id === h)?.id ?? 'rankings') as TabId;
+  return (ALL_TABS.find((t) => t.id === h)?.id ?? 'rankings') as TabId;
 }
 
 export function App() {
@@ -79,7 +84,7 @@ export function App() {
   useEffect(() => {
     if (tab === trackedTab.current) return;
     trackedTab.current = tab;
-    trackTabView(TABS.find((t) => t.id === tab)!.label);
+    trackTabView(ALL_TABS.find((t) => t.id === tab)!.label);
   }, [tab]);
 
   useEffect(() => {
@@ -122,9 +127,9 @@ export function App() {
           <button className="settings-btn" onClick={() => setSettingsOpen(true)} title="Review and adjust your league settings">
             <span aria-hidden="true">⚙︎</span> League Settings
           </button>
-          <nav className="tabs" role="tablist">
+          <nav className="tabs planner-tabs" role="tablist" aria-label="Playoff Planner">
             {TABS.map((t) => (
-              <button key={t.id} role="tab" className={t.id === 'evaluator' ? 'tab tool-tab' : 'tab'} aria-selected={!about && tab === t.id} aria-label={'short' in t ? t.label : undefined} onClick={() => go(t.id)}>
+              <button key={t.id} role="tab" className="tab" aria-selected={!about && tab === t.id} aria-label={'short' in t ? t.label : undefined} onClick={() => go(t.id)}>
                 {'short' in t ? (
                   <>
                     <span className="label-full">{t.label}</span>
@@ -136,6 +141,16 @@ export function App() {
                   t.label
                 )}
                 {t.id === 'roster' && state.roster.length > 0 && <span className="count">{state.roster.length}</span>}
+              </button>
+            ))}
+          </nav>
+          <nav className="tabs tool-tabs" role="tablist" aria-label="Player Evaluator">
+            <span className="tool-label" aria-hidden="true">
+              Player Evaluator
+            </span>
+            {EVALUATOR_TABS.map((t) => (
+              <button key={t.id} role="tab" className="tab" aria-selected={!about && tab === t.id} onClick={() => go(t.id)}>
+                {t.label}
               </button>
             ))}
           </nav>
@@ -156,7 +171,7 @@ export function App() {
             dispatch={dispatch}
             data={status.data}
             toast={toast}
-            periodBar={!about && tab !== 'evaluator'}
+            periodBar={!about && !isEvaluatorTab(tab)}
             showModes={tab !== 'roster'}
             onOpenSettings={() => setSettingsOpen(true)}
             overlay={settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
@@ -166,7 +181,8 @@ export function App() {
             {!about && tab === 'roster' && <RosterView onGoLineup={() => go('lineup')} />}
             {!about && tab === 'lineup' && <LineupView onGoRoster={() => go('roster')} />}
             {!about && tab === 'trades' && <TradesView onGoRoster={() => go('roster')} />}
-            {!about && tab === 'evaluator' && <EvaluatorView onGoRoster={() => go('roster')} />}
+            {/* One element for both destinations, so the shared state survives switching between them. */}
+            {!about && isEvaluatorTab(tab) && <EvaluatorView page={tab === 'player-rankings' ? 'rankings' : 'roster'} onGoRoster={() => go('roster')} />}
           </Ready>
         )}
       </main>

@@ -104,7 +104,7 @@ try {
   if (!/NHL data/.test(chip)) fail(`unexpected data status: ${chip}`);
   console.log(`rankings OK: ${rows} teams; status "${chip.trim()}"`);
 
-  await page.getByRole('tab', { name: /^Roster/ }).click();
+  await page.getByRole('tab', { name: /^Roster(\s*\d+)?$/ }).click();
   if (!(await page.getByLabel('Paste player names').isVisible())) fail('paste mode is not the default on the roster page');
   await page.getByRole('tab', { name: 'Search Players' }).click();
   await page.getByLabel('Search players').fill('Connor McDavid');
@@ -118,7 +118,7 @@ try {
   // reloaded Lineup page (#lineup) to render its heading instead.
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.locator('.panel-head h2', { hasText: /of \d+ scheduled games fit your lineup/ }).first().waitFor({ timeout: 30_000 });
-  await page.getByRole('tab', { name: /^Roster/ }).click();
+  await page.getByRole('tab', { name: /^Roster(\s*\d+)?$/ }).click();
   const counts = await page.locator('.counts').innerText();
   if (!/Roster\s+1\//.test(counts)) fail(`roster not restored after reload: ${counts}`);
   console.log('persistence OK');
@@ -126,12 +126,15 @@ try {
   // Player Evaluator: loads the published skater stats on opening, reads the saved roster and
   // never changes it.
   const rosterSaved = await page.evaluate((k) => localStorage.getItem(k), siteKey);
-  await page.getByRole('tab', { name: 'Player Evaluator' }).click();
+  await page.getByRole('tab', { name: 'Roster Evaluation' }).click();
   await page.locator('.eval-table tbody tr', { hasText: 'Connor McDavid' }).waitFor({ timeout: 30_000 });
   const bench = (await page.locator('.bench-main').innerText()).replace(/\s+/g, ' ');
   if (!/Normalized to \d+ GP/.test(bench)) fail(`evaluator benchmark unexpected: ${bench}`);
   if ((await page.evaluate((k) => localStorage.getItem(k), siteKey)) !== rosterSaved) fail('Player Evaluator changed the saved roster');
-  console.log(`evaluator OK: "${bench.trim()}"`);
+  await page.getByRole('tab', { name: 'Player Rankings' }).click();
+  await page.locator('.rank-table tbody tr.roster-row', { hasText: 'Connor McDavid' }).waitFor({ timeout: 30_000 });
+  if ((await page.evaluate((k) => localStorage.getItem(k), siteKey)) !== rosterSaved) fail('Player Rankings changed the saved roster');
+  console.log(`evaluator OK: "${bench.trim()}"; Player Rankings lists the roster player, shaded`);
 
   // 3. Reset <period> to Optimal: the screen and saved data update at once, in this tab and in
   // another open tab (which must not keep showing, or later re-save, the old lineup).
@@ -174,7 +177,7 @@ try {
     // A write to the other site's storage (as its open tab would make) must not reach this page.
     await other.evaluate(([k, v]) => localStorage.setItem(k, v), [otherKey, JSON.stringify({ version: 1, roster: [] })]);
     await sleep(500);
-    if (!/^Roster\s*1$/.test((await page.locator('.tab', { hasText: 'Roster' }).innerText()).trim())) fail('a change to the other site\'s storage reached this page');
+    if (!/^Roster\s*1$/.test((await page.locator('.planner-tabs .tab', { hasText: 'Roster' }).innerText()).trim())) fail('a change to the other site\'s storage reached this page');
     await other.evaluate(([k, v]) => localStorage.setItem(k, v), [otherKey, otherSiteData]);
     await other.close();
     console.log('two tabs OK: changes and resets show in every open tab at once');
@@ -189,7 +192,7 @@ try {
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('table tbody tr');
   await page.waitForTimeout(3000);
-  for (const tab of [/^Roster/, 'Lineup', 'Trade Lab']) {
+  for (const tab of [/^Roster(\s*\d+)?$/, 'Lineup', 'Trade Lab']) {
     await page.getByRole('tab', { name: tab }).click();
     await page.waitForTimeout(1500);
   }

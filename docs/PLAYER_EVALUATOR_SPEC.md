@@ -110,7 +110,7 @@ Player Evaluator must include league-wide player rankings based on statistics no
 
 - Rank NHL skaters league-wide, not only the user's roster.
 - Support ranking across the available statistical categories.
-- Mark players on the user's actual fantasy roster with a small blue dot next to their names, consistent with the existing roster indicators.
+- Mark players on the user's actual fantasy roster. **Changed by the owner (2026-11-21):** subtle light-blue row shading for rostered players, white rows for everyone else, in both Player Evaluator tables; no blue dots.
 - Keep actual games played visible alongside normalized statistics.
 - Respect the selected normalization benchmark, including the default and custom options.
 
@@ -121,11 +121,11 @@ Player Evaluator must include league-wide player rankings based on statistics no
 
 **Product position:** rankings are an important, required capability, but they are **not assumed to be the primary focus, landing view or defining feature**. Normalized rankings exist elsewhere; the value here is convenient packaging that highlights the user's own players. Roster evaluation (§1) remains central.
 
-**Confirmed (2026-11-20):** rankings are a secondary feature inside Player Evaluator: easy to reach, but not the landing view. The minimum-GP selection (default 10) is remembered between visits, separately from the roster. **Implemented** as a first prototype (Step 4). **Open:** final presentation after review.
+**Confirmed (2026-11-20):** rankings are a secondary feature inside Player Evaluator: easy to reach, but not the landing view. The minimum-GP selection (default 10) is remembered between visits, separately from the roster. **Implemented** as a first prototype (Step 4). **Confirmed revision (2026-11-21):** Player Rankings is a peer destination to Roster Evaluation and uses the same multi-column stat table (same columns, groups, formatting, sorting and shared benchmark) with rank positions and the existing filters. **Open:** final presentation after review.
 
 ## 4. User experience and visual direction
 
-- Player Evaluator should be a distinct, easy-to-find experience within Playoff Planner. **Confirmed (2026-11-20):** initially a separate tab alongside the Lineup Planner; the two tools stay distinct. Roster evaluation is the central experience. Final naming remains open.
+- Player Evaluator should be a distinct, easy-to-find experience within Playoff Planner. **Confirmed (2026-11-20):** initially a separate tab alongside the Lineup Planner; the two tools stay distinct. Roster evaluation is the central experience. **Revised (2026-11-21):** the navigation shows two tool families, Playoff Planner (Schedules, Roster, Lineup, Trade Lab) and Player Evaluator (Roster Evaluation, Player Rankings), with a restrained visual distinction; the shared benchmark control sits above both evaluator destinations. Comparison players appear within the roster table. Final naming remains open.
 - **Confirmed (2026-11-20):** load statistics only when Player Evaluator is opened; a stats failure must not affect the rest of the app. Show the stats update time with a proportionate stale warning.
 - The main results should be a compact roster-wide table, not a set of large individual player cards.
 - Actual and adjusted values must be visible side by side.

@@ -60,3 +60,48 @@ export function searchSkaters(query: string, skaters: readonly SkaterStatLine[],
   }
   return out.sort((a, b) => b.gamesPlayed - a.gamesPlayed || a.name.localeCompare(b.name)).slice(0, limit);
 }
+
+// ---------------------------------------------------------------------------
+// Row order for the Player Evaluator tables
+
+type Row = { source: 'roster' | 'comparison'; status: string; stats?: SkaterStatLine; adjusted?: Partial<Record<StatKey, number>> | null };
+
+/**
+ * Roster Evaluation's default order: rostered skaters with stats in roster order, each comparison
+ * player inserted after the last one with the same NHL position (else the same group, forward or
+ * defense; else at the end), then players without stats. Inputs are not changed.
+ */
+export function mergeComparisons<T extends Row>(roster: readonly T[], comparisons: readonly T[]): T[] {
+  const ok = (r: T) => r.status === 'ok' && !!r.stats;
+  const rows = roster.filter(ok);
+  const isD = (p: SkaterPositionCode) => p === 'D';
+  for (const c of comparisons.filter(ok)) {
+    const pos = c.stats!.position;
+    let at = -1;
+    for (let i = 0; i < rows.length; i++) if (rows[i]!.stats!.position === pos) at = i;
+    if (at < 0) for (let i = 0; i < rows.length; i++) if (isD(rows[i]!.stats!.position) === isD(pos)) at = i;
+    rows.splice(at < 0 ? rows.length : at + 1, 0, c);
+  }
+  return [...rows, ...roster.filter((r) => !ok(r)), ...comparisons.filter((r) => !ok(r))];
+}
+
+/** A row's value for one column: normalized for counting stats, as reported otherwise. */
+export function rowValue(r: Row, key: StatKey, scaled: boolean): number | null {
+  if (!r.stats) return null;
+  if (scaled) return r.adjusted?.[key] ?? null;
+  return r.stats[key];
+}
+
+/** Sort rows with stats on one column (missing values last); rows without stats stay at the end, in order. */
+export function sortRows<T extends Row>(rows: readonly T[], key: StatKey, dir: 'desc' | 'asc', scaled: boolean): T[] {
+  const sign = dir === 'desc' ? -1 : 1;
+  const withStats = rows.filter((r) => r.status === 'ok' && r.stats);
+  const rest = rows.filter((r) => !(r.status === 'ok' && r.stats));
+  const sorted = [...withStats].sort((a, b) => {
+    const x = rowValue(a, key, scaled);
+    const y = rowValue(b, key, scaled);
+    if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+    return sign * (x - y);
+  });
+  return [...sorted, ...rest];
+}

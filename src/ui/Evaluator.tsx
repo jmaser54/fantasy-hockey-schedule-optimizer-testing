@@ -4,8 +4,8 @@ import { evaluateSavedRoster, loadSkaterStats } from '../data/evaluatorData.ts';
 import { STALE_AFTER_MS } from '../data/load.ts';
 import { formatShort } from '../domain/dates.ts';
 import {
+  evaluateSubject,
   isScaledStat,
-  RANKING_STATS,
   rankPlayers,
   SEASON_GAMES,
   STAT_DEFINITIONS,
@@ -18,7 +18,7 @@ import type { Player } from '../domain/types.ts';
 import { loadEvaluatorPrefs, saveEvaluatorPrefs, type EvaluatorPrefs } from '../state/evaluatorPrefs.ts';
 import { useApp } from './context.ts';
 import { InfoTip } from './common.tsx';
-import { formatAdjusted, formatStat, POSITION_SHORT, searchSkaters, STAT_GROUPS, STAT_SHORT, type StatGroupId } from './evaluatorFormat.ts';
+import { formatAdjusted, formatStat, mergeComparisons, POSITION_SHORT, searchSkaters, sortRows, STAT_GROUPS, STAT_SHORT, type StatGroupId } from './evaluatorFormat.ts';
 
 /**
  * Player Evaluator (first functional prototype). Reads the saved roster, never changes it, and keeps
@@ -38,9 +38,11 @@ function requestStats(season: string): Promise<SkaterStatsFile> {
 }
 
 const LABEL = new Map(STAT_DEFINITIONS.map((d) => [d.key, d.label]));
-const isPhone = () => globalThis.matchMedia?.('(max-width: 600px)').matches ?? false;
 
-export function EvaluatorView({ onGoRoster }: { onGoRoster: () => void }) {
+/** The two Player Evaluator destinations; the benchmark bar above them is shared. */
+export type EvaluatorPage = 'roster' | 'rankings';
+
+export function EvaluatorView({ page, onGoRoster }: { page: EvaluatorPage; onGoRoster: () => void }) {
   const { data } = useApp();
   const [status, setStatus] = useState<StatsStatus>({ state: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -66,13 +68,12 @@ export function EvaluatorView({ onGoRoster }: { onGoRoster: () => void }) {
         </button>
       </div>
     );
-  return <Evaluator file={status.file} onGoRoster={onGoRoster} />;
+  return <Evaluator file={status.file} page={page} onGoRoster={onGoRoster} />;
 }
 
-function Evaluator({ file, onGoRoster }: { file: SkaterStatsFile; onGoRoster: () => void }) {
+function Evaluator({ file, page, onGoRoster }: { file: SkaterStatsFile; page: EvaluatorPage; onGoRoster: () => void }) {
   const { state, data } = useApp();
   const [prefs, setPrefs] = useState<EvaluatorPrefs>(loadEvaluatorPrefs);
-  const [view, setView] = useState<'roster' | 'rankings'>('roster');
   useEffect(() => {
     saveEvaluatorPrefs(prefs);
   }, [prefs]);
@@ -102,11 +103,9 @@ function Evaluator({ file, onGoRoster }: { file: SkaterStatsFile; onGoRoster: ()
     <div className="stack evaluator">
       <div className="eval-head">
         <div>
-          <h2 className="eval-title">{view === 'roster' ? 'Player Evaluator' : 'League Rankings'}</h2>
+          <h2 className="eval-title">{page === 'roster' ? 'Roster Evaluation' : 'Player Rankings'}</h2>
           <p className="eval-sub">
-            {view === 'roster'
-              ? 'Your skaters’ production, normalized to the same number of games.'
-              : 'Every NHL skater, ranked on one stat normalized to your benchmark.'}
+            {page === 'roster' ? 'Your skaters’ production, normalized to the same number of games.' : 'Every NHL skater’s production, normalized to your benchmark.'}
           </p>
         </div>
         <span className={stale ? 'badge warn' : 'small muted'} title={`NHL regular-season stats, fetched ${file.fetchedAt.replace('T', ' ').slice(0, 16)} UTC`}>
@@ -116,9 +115,8 @@ function Evaluator({ file, onGoRoster }: { file: SkaterStatsFile; onGoRoster: ()
 
       <BenchmarkBar benchmark={result.evaluation.benchmark} choice={prefs.benchmark} comparisons={result.evaluation.comparisons} onChange={setBenchmark} />
 
-      {view === 'roster' ? (
-        <>
-          <RosterPanel
+      {page === 'roster' ? (
+        <RosterPanel
             roster={result.evaluation.roster}
             comparisons={result.evaluation.comparisons}
             benchmark={result.evaluation.benchmark}
@@ -129,25 +127,15 @@ function Evaluator({ file, onGoRoster }: { file: SkaterStatsFile; onGoRoster: ()
             goalies={result.evaluation.goalies.map((g) => g.name)}
             footer={<ComparisonSearch skaters={file.skaters} exclude={new Set([...result.rosterNhlIds, ...prefs.comparisons])} teamOf={teamOf} onAdd={addComparison} />}
           />
-          <button type="button" className="rankings-link" onClick={() => setView('rankings')}>
-            League rankings <span aria-hidden="true">→</span>
-            <span className="muted small">Rank every NHL skater on one stat</span>
-          </button>
-        </>
       ) : (
-        <>
-          <button type="button" className="link-btn back-link" onClick={() => setView('roster')}>
-            ← Back to your roster
-          </button>
-          <RankingsPanel
-            skaters={file.skaters}
-            benchmark={result.evaluation.benchmark}
-            rosterNhlIds={result.rosterNhlIds}
-            minGamesPlayed={prefs.minGamesPlayed}
-            onMinGamesPlayed={(minGamesPlayed) => setPrefs((p) => ({ ...p, minGamesPlayed }))}
-            teamOf={teamOf}
-          />
-        </>
+        <RankingsPanel
+          skaters={file.skaters}
+          benchmark={result.evaluation.benchmark}
+          rosterNhlIds={result.rosterNhlIds}
+          minGamesPlayed={prefs.minGamesPlayed}
+          onMinGamesPlayed={(minGamesPlayed) => setPrefs((p) => ({ ...p, minGamesPlayed }))}
+          teamOf={teamOf}
+        />
       )}
     </div>
   );
@@ -259,21 +247,36 @@ const REASON: Record<string, string> = {
 
 type SortState = { key: StatKey; dir: 'desc' | 'asc' } | null;
 
-function statValue(s: EvaluatedSubject, key: StatKey): number | null {
-  if (!s.stats) return null;
-  if (isScaledStat(key)) return s.adjusted ? s.adjusted[key] : null;
-  return s.stats[key];
+/** Sortable stat column headers, shared by both tables. */
+function StatHeaders({ stats, sort, onSort }: { stats: StatKey[]; sort: SortState; onSort: (k: StatKey) => void }) {
+  return (
+    <>
+      {stats.map((k) => (
+        <th
+          key={k}
+          className={`n sortable${sort?.key === k ? ' active' : ''}`}
+          title={`${LABEL.get(k)}${isScaledStat(k) ? ' — normalized, actual below' : ' — as reported'}. Click to sort.`}
+          aria-sort={sort?.key === k ? (sort.dir === 'desc' ? 'descending' : 'ascending') : undefined}
+          onClick={() => onSort(k)}
+        >
+          {STAT_SHORT[k]}
+          {sort?.key === k ? (sort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
+        </th>
+      ))}
+    </>
+  );
 }
 
-function sortRows(rows: EvaluatedSubject[], sort: SortState): EvaluatedSubject[] {
-  if (!sort) return rows;
-  const sign = sort.dir === 'desc' ? -1 : 1;
-  return [...rows].sort((a, b) => {
-    const x = statValue(a, sort.key);
-    const y = statValue(b, sort.key);
-    if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
-    return sign * (x - y);
-  });
+function StatGroupToggle({ group, onChange }: { group: StatGroupId; onChange: (g: StatGroupId) => void }) {
+  return (
+    <div className="segmented" role="group" aria-label="Stat group">
+      {STAT_GROUPS.map((g) => (
+        <button key={g.id} aria-pressed={group === g.id} onClick={() => onChange(g.id)}>
+          {g.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function RosterPanel(props: {
@@ -287,58 +290,55 @@ function RosterPanel(props: {
   goalies: string[];
   footer: React.ReactNode;
 }) {
-  const [group, setGroup] = useState<StatGroupId>(() => (isPhone() ? 'scoring' : 'all'));
+  const [group, setGroup] = useState<StatGroupId>('all');
   const [sort, setSort] = useState<SortState>(null);
   const stats = STAT_GROUPS.find((g) => g.id === group)!.stats;
   const cols = stats.length + 2;
   const onSort = (key: StatKey) => setSort((s) => (s?.key === key ? (s.dir === 'desc' ? { key, dir: 'asc' } : null) : { key, dir: 'desc' }));
-  const ok = (rows: EvaluatedSubject[]) => rows.filter((r) => r.status === 'ok');
-  const missing = props.roster.filter((r) => r.status !== 'ok');
+  // Comparison players sit among rostered players by position, and join the same sort.
+  const merged = mergeComparisons(props.roster, props.comparisons);
+  const rows = sort ? sortRows(merged, sort.key, sort.dir, isScaledStat(sort.key)) : merged;
 
-  const row = (s: EvaluatedSubject, kind: 'roster' | 'comparison') => (
-    <tr key={`${kind}-${s.playerId ?? s.nhlId}`} className={kind === 'comparison' ? 'cmp-row' : undefined}>
-      <th scope="row" className="sticky">
-        <span className="ev-name">
-          {kind === 'roster' && <span className="mine-dot" title="On your roster" />}
-          <span>{s.name}</span>
-          {s.onIr && <span className="badge">IR</span>}
-          {kind === 'comparison' && s.nhlId !== undefined && (
-            <button className="icon-btn ev-remove" aria-label={`Remove ${s.name} from comparison`} title="Remove from comparison" onClick={() => props.onRemoveComparison(s.nhlId!)}>
-              ✕
-            </button>
-          )}
-        </span>
-        <span className="ev-meta">
-          {s.stats ? `${POSITION_SHORT[s.stats.position]} · ` : ''}
-          {props.teamOf(s.nhlId, s.stats)}
-        </span>
-      </th>
-      {s.status === 'ok' && s.stats ? (
-        <>
-          <td className="n">{s.stats.gamesPlayed}</td>
-          {stats.map((k) => (
-            <StatCell key={k} subject={s} stat={k} />
-          ))}
-        </>
-      ) : (
-        <td colSpan={cols - 1} className="ev-reason">
-          {REASON[s.status] ?? 'No stats'}
-        </td>
-      )}
-    </tr>
-  );
+  const row = (s: EvaluatedSubject) => {
+    const kind = s.source;
+    return (
+      <tr key={`${kind}-${s.playerId ?? s.nhlId}`} className={kind === 'roster' ? 'roster-row' : 'cmp-row'}>
+        <th scope="row" className="sticky">
+          <span className="ev-name">
+            <span>{s.name}</span>
+            {s.onIr && <span className="badge">IR</span>}
+            {kind === 'comparison' && s.nhlId !== undefined && (
+              <button className="icon-btn ev-remove" aria-label={`Remove ${s.name} from comparison`} title="Remove from comparison" onClick={() => props.onRemoveComparison(s.nhlId!)}>
+                ✕
+              </button>
+            )}
+          </span>
+          <span className="ev-meta">
+            {s.stats ? `${POSITION_SHORT[s.stats.position]} · ` : ''}
+            {props.teamOf(s.nhlId, s.stats)}
+          </span>
+        </th>
+        {s.status === 'ok' && s.stats ? (
+          <>
+            <td className="n">{s.stats.gamesPlayed}</td>
+            {stats.map((k) => (
+              <StatCell key={k} subject={s} stat={k} />
+            ))}
+          </>
+        ) : (
+          <td colSpan={cols - 1} className="ev-reason">
+            {REASON[s.status] ?? 'No stats'}
+          </td>
+        )}
+      </tr>
+    );
+  };
 
   return (
     <div className="panel">
       <div className="panel-head">
         <h2>Your roster</h2>
-        <div className="segmented" role="group" aria-label="Stat group">
-          {STAT_GROUPS.map((g) => (
-            <button key={g.id} aria-pressed={group === g.id} onClick={() => setGroup(g.id)}>
-              {g.label}
-            </button>
-          ))}
-        </div>
+        <StatGroupToggle group={group} onChange={setGroup} />
       </div>
       {props.emptyRoster ? (
         <div className="empty">
@@ -359,31 +359,10 @@ function RosterPanel(props: {
                 <th className="n" title="Games played (actual)">
                   GP
                 </th>
-                {stats.map((k) => (
-                  <th
-                    key={k}
-                    className={`n sortable${sort?.key === k ? ' active' : ''}`}
-                    title={`${LABEL.get(k)}${isScaledStat(k) ? ' — normalized, actual below' : ' — as reported'}. Click to sort.`}
-                    aria-sort={sort?.key === k ? (sort.dir === 'desc' ? 'descending' : 'ascending') : undefined}
-                    onClick={() => onSort(k)}
-                  >
-                    {STAT_SHORT[k]}
-                    {sort?.key === k ? (sort.dir === 'desc' ? ' ↓' : ' ↑') : ''}
-                  </th>
-                ))}
+                <StatHeaders stats={stats} sort={sort} onSort={onSort} />
               </tr>
             </thead>
-            <tbody>
-              {sortRows(ok(props.roster), sort).map((s) => row(s, 'roster'))}
-              {missing.map((s) => row(s, 'roster'))}
-              {props.comparisons.length > 0 && (
-                <tr className="group-row">
-                  <td colSpan={cols}>Comparison players · not on your roster</td>
-                </tr>
-              )}
-              {sortRows(ok(props.comparisons), sort).map((s) => row(s, 'comparison'))}
-              {props.comparisons.filter((c) => c.status !== 'ok').map((s) => row(s, 'comparison'))}
-            </tbody>
+            <tbody>{rows.map(row)}</tbody>
           </table>
         </div>
       )}
@@ -467,7 +446,7 @@ function ComparisonSearch(props: { skaters: readonly SkaterStatLine[]; exclude: 
 }
 
 // ---------------------------------------------------------------------------
-// League-wide rankings (secondary)
+// Player Rankings: every NHL skater, in the same table format as Roster Evaluation
 
 const PAGE = 50;
 const POSITION_FILTERS: { id: 'all' | SkaterPositionCode; label: string }[] = [
@@ -486,16 +465,28 @@ function RankingsPanel(props: {
   onMinGamesPlayed: (n: number) => void;
   teamOf: (nhlId: number, line?: SkaterStatLine) => string;
 }) {
+  const [group, setGroup] = useState<StatGroupId>('all');
   const [stat, setStat] = useState<StatKey>('points');
   const [position, setPosition] = useState<'all' | SkaterPositionCode>('all');
   const [direction, setDirection] = useState<'desc' | 'asc'>('desc');
   const [shown, setShown] = useState(PAGE);
   const [minDraft, setMinDraft] = useState(String(props.minGamesPlayed));
   const minValid = /^\d+$/.test(minDraft) && Number(minDraft) >= 1 && Number(minDraft) <= SEASON_GAMES;
+  const stats = STAT_GROUPS.find((g) => g.id === group)!.stats;
   const scaled = isScaledStat(stat);
   const bm = props.benchmark;
   const canRank = !scaled || bm.available;
+  const byId = useMemo(() => new Map(props.skaters.map((s) => [s.nhlId, s])), [props.skaters]);
+  // Clicking a column ranks on it (highest first); clicking it again flips the order.
+  const onSort = (k: StatKey) => {
+    if (k === stat) setDirection((d) => (d === 'desc' ? 'asc' : 'desc'));
+    else {
+      setStat(k);
+      setDirection('desc');
+    }
+  };
 
+  // Order and ranks come from the existing rankPlayers; each row's other columns from evaluateSubject.
   const rows = useMemo(
     () =>
       canRank
@@ -515,17 +506,11 @@ function RankingsPanel(props: {
 
   return (
     <div className="panel">
+      <div className="panel-head">
+        <h2>All NHL skaters</h2>
+        <StatGroupToggle group={group} onChange={setGroup} />
+      </div>
       <div className="panel-body rank-controls">
-        <label className="field">
-          <span className="small muted">Stat</span>
-          <select value={stat} onChange={(e) => setStat(e.target.value as StatKey)}>
-            {RANKING_STATS.map((k) => (
-              <option key={k} value={k}>
-                {LABEL.get(k)} ({STAT_SHORT[k]})
-              </option>
-            ))}
-          </select>
-        </label>
         <div className="field">
           <span className="small muted">Position</span>
           <div className="segmented" role="group" aria-label="Position">
@@ -571,50 +556,43 @@ function RankingsPanel(props: {
         <>
           <p className="small muted rank-summary">
             {rows.length} skaters with {props.minGamesPlayed}+ GP
-            {mine > 0 && (
-              <>
-                {' '}
-                · <span className="mine-dot" /> {mine} on your roster
-              </>
-            )}
-            {' · '}
-            {scaled ? `normalized to ${bm.available ? bm.gamesPlayed : ''} GP, actual below` : 'as reported'}
+            {mine > 0 && <> · {mine} on your roster (shaded)</>} · ranked by {LABEL.get(stat)?.toLowerCase()}, {direction === 'desc' ? 'highest' : 'lowest'} first
             {!minValid && <span className="badge bad"> Min GP 1–{SEASON_GAMES}</span>}
           </p>
           <div className="table-wrap">
             <table className="eval-table rank-table">
               <thead>
                 <tr>
-                  <th className="n">#</th>
+                  <th className="n rk">#</th>
                   <th className="sticky">Player</th>
-                  <th className="n">GP</th>
-                  <th className="n">{STAT_SHORT[stat]}</th>
+                  <th className="n" title="Games played (actual)">
+                    GP
+                  </th>
+                  <StatHeaders stats={stats} sort={{ key: stat, dir: direction }} onSort={onSort} />
                 </tr>
               </thead>
               <tbody>
-                {rows.slice(0, shown).map((r) => (
-                  <tr key={r.nhlId} className={r.onRoster ? 'mine' : undefined}>
-                    <td className="n muted">{r.rank ?? '—'}</td>
-                    <th scope="row" className="sticky">
-                      <span className="ev-name">
-                        {r.onRoster && <span className="mine-dot" title="On your roster" />}
-                        <span>{r.name}</span>
-                      </span>
-                      <span className="ev-meta">
-                        {POSITION_SHORT[r.position]} · {props.teamOf(r.nhlId, { teams: r.teams } as SkaterStatLine)}
-                      </span>
-                    </th>
-                    <td className="n">{r.gamesPlayed}</td>
-                    {scaled ? (
-                      <td className="n ev-cell">
-                        <b>{r.value !== null ? formatAdjusted(r.value) : '—'}</b>
-                        <span className="ev-actual">{r.actual ?? '—'}</span>
-                      </td>
-                    ) : (
-                      <td className="n">{formatStat(stat, r.value)}</td>
-                    )}
-                  </tr>
-                ))}
+                {rows.slice(0, shown).map((r) => {
+                  const line = byId.get(r.nhlId)!;
+                  const subject = evaluateSubject({ source: 'comparison', nhlId: r.nhlId, name: r.name, status: 'ok', stats: line }, bm);
+                  return (
+                    <tr key={r.nhlId} className={r.onRoster ? 'roster-row' : undefined}>
+                      <td className="n muted rk">{r.rank ?? '—'}</td>
+                      <th scope="row" className="sticky">
+                        <span className="ev-name">
+                          <span>{r.name}</span>
+                        </span>
+                        <span className="ev-meta">
+                          {POSITION_SHORT[r.position]} · {props.teamOf(r.nhlId, line)}
+                        </span>
+                      </th>
+                      <td className="n">{r.gamesPlayed}</td>
+                      {stats.map((k) => (
+                        <StatCell key={k} subject={subject} stat={k} />
+                      ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
