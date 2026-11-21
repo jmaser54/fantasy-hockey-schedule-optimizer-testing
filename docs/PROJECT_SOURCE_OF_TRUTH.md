@@ -88,7 +88,7 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
   - rounds: R1 2027-02-22→03-07, R2 03-08→03-21, R3 03-22→04-04.
 - Switching between Paste Roster and Search Players never focuses an input (no `autoFocus`; removed 2026-11-21 because focusing made phones zoom or jump). The fields work normally when tapped.
 - Paste import auto-accepts **exact** name matches only. Ambiguous names (e.g. two Elias Petterssons) and typos are never guessed; the user chooses (`src/domain/rosterImport.ts` `matchName`).
-- Clear Roster lives inside the roster panel and needs confirmation. It keeps settings, rounds, custom players and Trade Lab adds.
+- Clear Roster sits at the top of the Roster tab, on the setup line's row (summary left, Clear Roster right, wrapping on narrow screens; `ClearRosterButton` in `Roster.tsx`, rendered through `Ready`'s `setupExtra`). Moved from the bottom of the roster panel at the owner's request on 2026-11-21; there is only one. Shown only when the roster has players. It needs confirmation and keeps settings, rounds, custom players and Trade Lab adds.
 - The "Not on NHL Roster" badge and the "not on NHL roster" labels in search and paste review were removed from the UI. The `inactive` data flag stays (§D, §H).
 
 ### Optimization (Confirmed)
