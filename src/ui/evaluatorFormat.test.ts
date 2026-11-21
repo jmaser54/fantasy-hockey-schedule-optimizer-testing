@@ -14,9 +14,12 @@ describe('Player Evaluator formatting', () => {
   });
 
   it('formats values by kind', () => {
-    expect(formatAdjusted(12.345)).toBe('12.3');
-    // Per Game shows three decimals, trailing zeros kept; every other benchmark one.
-    expect([adjustedDecimals('per-game'), adjustedDecimals('league-max'), adjustedDecimals('roster-max'), adjustedDecimals('custom'), adjustedDecimals('player'), adjustedDecimals(undefined)]).toEqual([3, 1, 1, 1, 1, 1]);
+    expect(formatAdjusted(12.3456)).toBe('12.35');
+    // Per Game shows three decimals, every other benchmark two; trailing zeros kept.
+    expect([adjustedDecimals('per-game'), adjustedDecimals('league-max'), adjustedDecimals('roster-max'), adjustedDecimals('custom'), adjustedDecimals('player'), adjustedDecimals(undefined)]).toEqual([3, 2, 2, 2, 2, 2]);
+    expect(formatAdjusted(8.8, 2)).toBe('8.80');
+    expect(formatAdjusted(0, 2)).toBe('0.00');
+    expect(formatAdjusted(22.4166, 2)).toBe('22.42');
     expect(formatAdjusted(0.875, 3)).toBe('0.875');
     expect(formatAdjusted(0.9, 3)).toBe('0.900');
     expect(formatAdjusted(0, 3)).toBe('0.000');

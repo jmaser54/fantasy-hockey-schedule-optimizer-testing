@@ -477,7 +477,7 @@ function RosterPanel(props: {
       <div className="eval-foot">
         {props.footer}
         <p className="small muted ev-legend">
-          <b className="num">{formatAdjusted(decimals === 3 ? 0.875 : 12.3, decimals)}</b> normalized to {props.benchmark.available ? `${props.benchmark.gamesPlayed} GP` : 'the benchmark'} · <span className="num">10</span> actual
+          <b className="num">{formatAdjusted(decimals === 3 ? 0.875 : 12.34, decimals)}</b> normalized to {props.benchmark.available ? `${props.benchmark.gamesPlayed} GP` : 'the benchmark'} · <span className="num">10</span> actual
           {props.goalies.length > 0 && (
             <>
               <br />
