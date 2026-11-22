@@ -16,8 +16,11 @@ import { fetchStatsReport, joinSkaterStats, STATS_BASE, STATS_REPORTS, type Stat
 import { validateSkaterStats } from '../src/data/validate.ts';
 
 const RAW_DIR = 'data-raw';
-const wanted = process.env.SEASONS?.split(',').map((s) => s.trim()).filter(Boolean);
+// SEASONS unset or empty (the workflow's default input) means every historical season.
+const list = (process.env.SEASONS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+const wanted = list.length ? list : undefined;
 const seasons = HISTORICAL_SEASONS.filter((s) => !wanted || wanted.includes(s.season));
+if (seasons.length === 0) throw new Error('No seasons selected');
 if (wanted && seasons.length !== wanted.length) throw new Error(`Unknown season in SEASONS=${process.env.SEASONS}; known: ${HISTORICAL_SEASONS.map((s) => s.season).join(', ')}`);
 
 const report: string[] = [];
