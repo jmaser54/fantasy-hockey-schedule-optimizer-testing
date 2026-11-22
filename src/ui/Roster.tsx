@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { formatRange } from '../domain/dates.ts';
 import { playerGames } from '../domain/schedule.ts';
 import { extractRosterNames, type MatchResult } from '../domain/rosterImport.ts';
@@ -108,7 +108,13 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
           <div className="mode-switch modes-3" role="tablist" aria-label="Add players">
             {INPUT_MODES.map((m) => (
               <button key={m.id} role="tab" aria-selected={mode === m.id} onClick={() => setMode(m.id)}>
-                {m.label}
+                {/* One word per line, so all three labels are two lines; the space keeps the accessible name. */}
+                {m.label.split(' ').map((w, i) => (
+                  <Fragment key={i}>
+                    {i > 0 && ' '}
+                    <span className="mode-word">{w}</span>
+                  </Fragment>
+                ))}
               </button>
             ))}
           </div>

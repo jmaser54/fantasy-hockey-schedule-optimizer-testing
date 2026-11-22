@@ -87,7 +87,7 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on T
   - slots: C×2, LW×2, RW×2, D×4, UTIL×1 (C/LW/RW/D), G×2;
   - rounds: R1 2027-02-22→03-07, R2 03-08→03-21, R3 03-22→04-04.
 - Switching between Paste Roster and Search Players never focuses an input (no `autoFocus`; removed 2026-11-21 because focusing made phones zoom or jump). The fields work normally when tapped.
-- **Roster input (owner decisions, 2026-11-21):** three equal modes in the segmented toggle: Paste Roster, Upload Image, Search Players (`INPUT_MODES` in `Roster.tsx`; on phones the labels may wrap to two lines).
+- **Roster input (owner decisions, 2026-11-21):** three equal modes in the segmented toggle: Paste Roster, Upload Image, Search Players (`INPUT_MODES` in `Roster.tsx`). Each label is always two lines, one word per line ("Paste / Roster", "Upload / Image", "Search / Players"), at every width (owner request, 2026-11-22; `.mode-word` spans, with a real space between them so the accessible names are unchanged).
 - **Import (paste and screenshots share one path, `extractRosterNames` in `src/domain/rosterImport.ts`):** names are found inside each line of a whole roster page (slots, stats, menus, opponents around them), including "Last, First" and comma lists; a nearby team code ("EDM", "Edm", "(EDM)") is a hint, but "@TOR"/"vs Det" are opponents and never hints. On **Add Players**:
   - exact, unambiguous players are added at once, with no confirmation (a unique exact name is accepted whatever the nearby team says; the team only chooses between same-name players);
   - players already on the roster, and duplicates within the import or across screenshots, are skipped and counted;
