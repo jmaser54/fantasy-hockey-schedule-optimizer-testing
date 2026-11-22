@@ -65,6 +65,8 @@ export type Action =
   | { type: 'clearRoster' }
   | { type: 'setManual'; date: ISODate; override: DayOverride | null }
   | { type: 'clearManual'; dates?: ISODate[] }
+  /** Move a player to or from IR and save the re-optimized days in one step (`planIrChange`). */
+  | { type: 'applyIrChange'; id: string; onIr: boolean; manual: Record<ISODate, DayOverride | null> }
   | { type: 'scenario'; scenario: Scenario }
   | { type: 'scenarioApply' }
   /** Saved data changed in another tab: show it here too. */
@@ -158,6 +160,11 @@ export function reducer(state: AppState, action: Action): AppState {
       const manual = { ...state.manual };
       for (const d of action.dates) delete manual[d];
       return { ...state, manual };
+    }
+    case 'applyIrChange': {
+      let next = reducer(state, { type: 'updateEntry', id: action.id, patch: { onIr: action.onIr } });
+      for (const [date, override] of Object.entries(action.manual)) next = reducer(next, { type: 'setManual', date, override });
+      return next;
     }
     case 'scenario':
       return { ...state, scenario: action.scenario };

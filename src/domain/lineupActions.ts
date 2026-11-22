@@ -1,0 +1,244 @@
+/**
+ * Lineup actions for the week grid (Lineup UX redesign, 2026-11-22). Pure helpers on top of the
+ * existing optimizer: the automatic lineup (`optimizeDay` with no override) stays the baseline, and
+ * manual changes are saved per date as exact lineups (`DayOverride.lineup`), as the day editor did.
+ * Nothing here invents a new optimization: seats are filled with the same Kuhn matching
+ * (`maxBipartiteMatching`) in the same priority order (`priorityOrder`).
+ */
+import { maxBipartiteMatching } from './matching.ts';
+import { canPlaySeat, moveInLineup, optimizeDay, priorityOrder, type DayOverride, type DayResult, type LineupPlayer, type Seat } from './optimizer.ts';
+import type { ScheduleIndex } from './schedule.ts';
+import type { Game, ISODate } from './types.ts';
+
+/** Seat key → player id, or null for an empty seat. */
+export type Lineup = Record<string, string | null>;
+
+export const lineupOf = (day: DayResult): Lineup => Object.fromEntries(day.seats.map((x) => [x.seat.key, x.playerId ?? null]));
+
+/** Players with a game on the day (IR or not), by id. */
+const gamesOf = (day: DayResult): Map<string, Game> => new Map(day.players.flatMap((s) => (s.game ? [[s.playerId, s.game] as const] : [])));
+
+/**
+ * The override to save for one date's new exact lineup, as the day editor saved it: null when the
+ * lineup equals the automatic one (the day goes back to optimized). Carried "no longer applies"
+ * notes are kept. Only this date is affected.
+ */
+export function overrideFor(
+  date: ISODate,
+  next: Lineup,
+  roster: readonly LineupPlayer[],
+  seats: readonly Seat[],
+  schedule: ScheduleIndex,
+  notes?: string[],
+): DayOverride | null {
+  const auto = optimizeDay(date, roster, seats, schedule);
+  if (auto.seats.every((x) => (x.playerId ?? null) === (next[x.seat.key] ?? null))) return null;
+  return { start: Object.values(next).filter((x): x is string => !!x), sit: [], lineup: next, ...(notes?.length ? { notes } : {}) };
+}
+
+// ---------------------------------------------------------------------------
+// What a game that is not in the lineup means
+
+/**
+ * - `in-lineup`: the player is in an active slot.
+ * - `ir`: the player is on IR.
+ * - `opportunity`: the game could be added without giving up another game (an open slot, a slot held
+ *   by a player without a game, or a rearrangement of the current starters). Only manually changed
+ *   days can have these: the automatic lineup is already a maximum (§D.1).
+ * - `priority`: every way in costs another game; the lineup (automatic or yours) chose other players.
+ * - `constraint`: no lineup slot accepts the player's positions.
+ */
+export type GameKind = 'in-lineup' | 'ir' | 'opportunity' | 'priority' | 'constraint';
+
+/** Seat assignment for `ids` (all must be seated) that keeps each player's current seat where possible; null if impossible. */
+function seatAll(ids: readonly string[], lineup: Lineup, seats: readonly Seat[], players: ReadonlyMap<string, LineupPlayer>): Lineup | null {
+  const current = new Map(Object.entries(lineup).flatMap(([k, id]) => (id ? [[id, k] as const] : [])));
+  const adjacency = ids.map((id) => {
+    const p = players.get(id)!;
+    const ok = seats.flatMap((s, i) => (canPlaySeat(p, s) ? [i] : []));
+    const mine = seats.findIndex((s) => s.key === current.get(id));
+    return mine >= 0 && ok.includes(mine) ? [mine, ...ok.filter((i) => i !== mine)] : ok;
+  });
+  const m = maxBipartiteMatching(ids.length, seats.length, adjacency);
+  if (m.size < ids.length) return null;
+  const out: Lineup = Object.fromEntries(seats.map((s) => [s.key, null]));
+  m.leftToRight.forEach((si, i) => (out[seats[si]!.key] = ids[i]!));
+  return out;
+}
+
+export function gameKind(day: DayResult, playerId: string, players: ReadonlyMap<string, LineupPlayer>, seats: readonly Seat[]): GameKind | undefined {
+  const st = day.players.find((x) => x.playerId === playerId);
+  const p = players.get(playerId);
+  if (!st?.game || !p) return undefined;
+  if (st.seatKey) return 'in-lineup';
+  if (p.onIr) return 'ir';
+  if (!seats.some((s) => canPlaySeat(p, s))) return 'constraint';
+  const games = gamesOf(day);
+  const lineup = lineupOf(day);
+  const keep = Object.values(lineup).filter((id): id is string => !!id && games.has(id));
+  return seatAll([...keep, playerId], lineup, seats, players) ? 'opportunity' : 'priority';
+}
+
+/** Would the automatic lineup include this game? (Tells "your changes left this out" from a plain open slot.) */
+export function inAutomaticLineup(date: ISODate, playerId: string, roster: readonly LineupPlayer[], seats: readonly Seat[], schedule: ScheduleIndex): boolean {
+  return optimizeDay(date, roster, seats, schedule).players.some((x) => x.playerId === playerId && !!x.seatKey);
+}
+
+// ---------------------------------------------------------------------------
+// Options for a game cell
+
+export interface AddOption {
+  /** `open`: gains a game and gives none up. `replace`: gains this game, gives up `lose`. */
+  kind: 'open' | 'replace';
+  seatKey: string;
+  seatLabel: string;
+  /** The player who leaves the lineup (may have no game). */
+  outId?: string;
+  gain: Game;
+  /** The game given up (replace only). */
+  lose?: Game;
+  /** The lowest-priority player to replace: the first suggestion. */
+  suggested?: boolean;
+  next: Lineup;
+}
+
+/**
+ * Ways to put a player's game into the day's lineup. Open spots first (empty seats before seats held
+ * by players without a game). If none is direct but the current starters can be rearranged, one open
+ * option moves them (`seatKey` is the player's new seat). Then replacements: one per player with a
+ * game who could make room, lowest priority first (reverse `priorityOrder`), the first marked suggested.
+ */
+export function addOptions(day: DayResult, playerId: string, roster: readonly LineupPlayer[], seats: readonly Seat[]): AddOption[] {
+  const players = new Map(roster.map((p) => [p.id, p]));
+  const p = players.get(playerId);
+  const games = gamesOf(day);
+  const gain = games.get(playerId);
+  if (!p || !gain || p.onIr || day.players.find((x) => x.playerId === playerId)?.seatKey) return [];
+  const lineup = lineupOf(day);
+  const label = (k: string) => seats.find((s) => s.key === k)!.label;
+  const open: AddOption[] = [];
+  const replace: AddOption[] = [];
+  for (const seat of seats) {
+    if (!canPlaySeat(p, seat)) continue;
+    const occupant = lineup[seat.key] ?? undefined;
+    const next = moveInLineup(lineup, seats, players, playerId, seat.key, occupant);
+    if (!next) continue;
+    if (!occupant || !games.has(occupant)) open.push({ kind: 'open', seatKey: seat.key, seatLabel: seat.label, outId: occupant, gain, next });
+    else if (!replace.some((r) => r.outId === occupant)) replace.push({ kind: 'replace', seatKey: seat.key, seatLabel: seat.label, outId: occupant, gain, lose: games.get(occupant)!, next });
+  }
+  open.sort((a, b) => Number(!!a.outId) - Number(!!b.outId));
+  if (open.length === 0) {
+    const keep = Object.values(lineup).filter((id): id is string => !!id && games.has(id));
+    const seated = seatAll([...keep, playerId], lineup, seats, players);
+    if (seated) {
+      const key = Object.keys(seated).find((k) => seated[k] === playerId)!;
+      open.push({ kind: 'open', seatKey: key, seatLabel: label(key), gain, next: seated });
+    }
+  }
+  // Lowest priority first: not preferred before preferred, later roster order before earlier.
+  const rank = new Map(priorityOrder(roster).map((x, i) => [x.id, i]));
+  replace.sort((a, b) => rank.get(b.outId!)! - rank.get(a.outId!)!);
+  if (replace[0]) replace[0].suggested = true;
+  return [...open, ...replace];
+}
+
+export interface MoveOption {
+  /** Undefined: to the bench (out of the lineup). */
+  seatKey?: string;
+  seatLabel: string;
+  /** Who swaps with the player (takes their seat or goes to the bench). */
+  withId?: string;
+  next: Lineup;
+}
+
+/** For a player in the lineup: other seats they can move to (swapping with the occupant), and the bench. */
+export function moveOptions(day: DayResult, playerId: string, roster: readonly LineupPlayer[], seats: readonly Seat[]): MoveOption[] {
+  const players = new Map(roster.map((p) => [p.id, p]));
+  const lineup = lineupOf(day);
+  const from = seats.find((s) => lineup[s.key] === playerId);
+  if (!from) return [];
+  const out: MoveOption[] = [];
+  for (const seat of seats) {
+    if (seat.key === from.key) continue;
+    const occupant = lineup[seat.key] ?? undefined;
+    const next = moveInLineup(lineup, seats, players, playerId, seat.key, occupant);
+    if (next) out.push({ seatKey: seat.key, seatLabel: seat.label, withId: occupant, next });
+  }
+  const bench = moveInLineup(lineup, seats, players, playerId, undefined, undefined);
+  if (bench) out.push({ seatLabel: 'Bench', next: bench });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// IR changes
+
+export interface DayChange {
+  date: ISODate;
+  /** Players with a game who joined / left the lineup that day. */
+  added: string[];
+  removed: string[];
+}
+
+export interface IrPlan {
+  /** New overrides for the dates that change (null clears the date's changes). */
+  manual: Record<ISODate, DayOverride | null>;
+  changes: DayChange[];
+  before: number;
+  after: number;
+}
+
+/**
+ * Moving a player to or from IR is a roster-wide change, re-optimized over the selected period:
+ * - Automatically optimized days follow the new roster on their own (the optimizer reruns).
+ * - Days you changed keep your lineup. Going to IR, the player's seat is refilled with the best
+ *   bench player with a game who can play it (priority order, same matching); nobody else moves.
+ *   Coming off IR changes nothing on those days.
+ * Returns the overrides to save and what changes in the lineup on each date.
+ */
+export function planIrChange(
+  playerId: string,
+  toIr: boolean,
+  roster: readonly LineupPlayer[],
+  dates: readonly ISODate[],
+  seats: readonly Seat[],
+  schedule: ScheduleIndex,
+  manual: Readonly<Record<ISODate, DayOverride>>,
+): IrPlan {
+  const after = roster.map((p) => (p.id === playerId ? { ...p, onIr: toIr } : p));
+  const next: Record<ISODate, DayOverride | null> = {};
+  const changes: DayChange[] = [];
+  let before = 0;
+  let total = 0;
+  for (const date of dates) {
+    const o = manual[date];
+    const old = optimizeDay(date, roster, seats, schedule, o);
+    let override = o;
+    if (toIr && o?.lineup) {
+      const vacated = Object.keys(o.lineup).filter((k) => o.lineup![k] === playerId);
+      if (vacated.length) {
+        const lineup: Lineup = { ...o.lineup };
+        for (const k of vacated) lineup[k] = null;
+        const day = optimizeDay(date, after, seats, schedule);
+        const games = gamesOf(day);
+        const seatedIds = new Set(Object.values(lineup).filter(Boolean));
+        const bench = priorityOrder(after.filter((p) => !p.onIr && !seatedIds.has(p.id) && games.has(p.id)));
+        const open = seats.filter((s) => vacated.includes(s.key));
+        const m = maxBipartiteMatching(bench.length, open.length, bench.map((p) => open.flatMap((s, i) => (canPlaySeat(p, s) ? [i] : []))));
+        m.leftToRight.forEach((si, i) => si >= 0 && (lineup[open[si]!.key] = bench[i]!.id));
+        const saved = overrideFor(date, lineup, after, seats, schedule, o.notes);
+        next[date] = saved;
+        override = saved ?? undefined;
+      }
+    }
+    const now = optimizeDay(date, after, seats, schedule, override);
+    before += old.usable;
+    total += now.usable;
+    const inLineup = (d: DayResult) => new Set(d.players.filter((x) => x.seatKey && x.game).map((x) => x.playerId));
+    const a = inLineup(old);
+    const b = inLineup(now);
+    const added = [...b].filter((id) => !a.has(id));
+    const removed = [...a].filter((id) => !b.has(id));
+    if (added.length || removed.length) changes.push({ date, added, removed });
+  }
+  return { manual: next, changes, before, after: total };
+}

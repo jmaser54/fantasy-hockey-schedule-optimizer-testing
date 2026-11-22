@@ -301,41 +301,37 @@ try {
   // 3. Reset <period> to Optimal: the screen and saved data update at once, in this tab and in
   // another open tab (which must not keep showing, or later re-save, the old lineup).
   await page.getByRole('tab', { name: 'Lineup' }).click();
-  const starters = (p) => p.locator('.day-editor .seat').evaluateAll((rs) => rs.filter((r) => r.querySelector('.pos-btn').textContent !== 'BN' && r.querySelector('.who b')).map((r) => r.querySelector('.who b').textContent));
+  // The week grid is the editor (Lineup redesign, 2026-11-22): McDavid's game cell on a day he starts.
+  const mcRow = (p) => p.locator('.lgrid tbody tr', { hasText: 'Connor McDavid' });
   const savedDays = (p) => p.evaluate((k) => Object.keys(JSON.parse(localStorage.getItem(k)).manual).length, siteKey);
+  const cells = await mcRow(page).locator('td.c').count();
+  let day = -1;
+  for (let i = 0; i < cells && day < 0; i++) if (await mcRow(page).locator('td.c').nth(i).locator('.cell.used').count()) day = i;
+  const inLineup = async (p) => (await mcRow(p).locator('td.c').nth(day).locator('.cell.used').count()) > 0;
   const benchMcDavid = async (p) => {
-    const ed = p.locator('.day-editor');
-    await ed.locator('.seat', { hasText: 'Connor McDavid' }).locator('.pos-btn').click();
-    await ed.locator('.seat', { hasText: 'Empty' }).filter({ has: p.locator('.pos-btn.target', { hasText: /^BN$/ }) }).locator('.pos-btn').click();
+    await mcRow(p).locator('td.c').nth(day).locator('.cell-btn').click();
+    await p.locator('.sheet').getByRole('button', { name: /^Remove from lineup/ }).click();
+    await p.locator('.sheet').getByRole('button', { name: 'Close' }).click();
   };
   const resetPeriod = (p) => p.getByRole('button', { name: /^Reset (?!Day ).+ to Optimal$/ }).click();
-  const days = await page.locator('.lgrid .day-btn').count();
-  let day = -1;
-  for (let i = 0; i < days && day < 0; i++) {
-    await page.locator('.lgrid .day-btn').nth(i).click();
-    await page.locator('.day-editor').waitFor();
-    if ((await starters(page)).includes('Connor McDavid')) day = i;
-    else await page.locator('.lgrid .day-btn').nth(i).click();
-  }
   if (day < 0) {
     console.log('reset check skipped: Connor McDavid has no game in the selected week');
   } else {
     await benchMcDavid(page);
-    if ((await starters(page)).includes('Connor McDavid') || (await savedDays(page)) !== 1) fail('manual move to the bench was not applied');
+    if ((await inLineup(page)) || (await savedDays(page)) !== 1) fail('manual removal from the lineup was not applied');
     await resetPeriod(page);
-    await until(async () => (await starters(page)).includes('Connor McDavid') && (await savedDays(page)) === 0, 'Reset to Optimal did not update the lineup on screen and in saved data');
+    await until(async () => (await inLineup(page)) && (await savedDays(page)) === 0, 'Reset to Optimal did not update the lineup on screen and in saved data');
     if (dialogs.at(-1) !== 'Revert lineup changes?') fail(`reset confirmation wording: ${JSON.stringify(dialogs.at(-1))}`);
     console.log('reset OK: lineup and saved data updated at once; confirmation "Revert lineup changes?"');
 
     const other = await context.newPage();
     watch(other);
     await other.goto(`${base}#lineup`, { waitUntil: 'domcontentloaded' });
-    await other.locator('.lgrid .day-btn').nth(day).click();
-    await other.locator('.day-editor').waitFor({ timeout: 30_000 });
+    await mcRow(other).locator('td.c').nth(day).waitFor({ timeout: 30_000 });
     await benchMcDavid(page);
-    await until(async () => !(await starters(other)).includes('Connor McDavid'), 'a lineup change did not reach the other open tab');
+    await until(async () => !(await inLineup(other)), 'a lineup change did not reach the other open tab');
     await resetPeriod(other);
-    await until(async () => (await starters(page)).includes('Connor McDavid') && (await savedDays(page)) === 0, 'a reset in another tab did not update this tab');
+    await until(async () => (await inLineup(page)) && (await savedDays(page)) === 0, 'a reset in another tab did not update this tab');
     // A write to the other site's storage (as its open tab would make) must not reach this page.
     await other.evaluate(([k, v]) => localStorage.setItem(k, v), [otherKey, JSON.stringify({ version: 1, roster: [] })]);
     await sleep(500);
