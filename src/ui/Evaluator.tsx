@@ -87,13 +87,14 @@ function Evaluator({ file, page, onGoRoster }: { file: SkaterStatsFile; page: Ev
     saveEvaluatorPrefs(prefs);
   }, [prefs]);
 
-  // Season (this visit only, not saved): the current season, or a completed season's static snapshot.
-  const [season, setSeason] = useState(file.season);
+  // Season (saved with the preferences; default the current season) or a completed season's static snapshot.
+  const season = prefs.season ?? file.season;
+  const setSeason = (s: string) => setPrefs((p) => ({ ...p, season: s === file.season ? null : s }));
   const historical = HISTORICAL_SEASONS.find((h) => h.season === season);
   const [histStatus, setHistStatus] = useState<StatsStatus>({ state: 'loading' });
   const [histAttempt, setHistAttempt] = useState(0);
-  // Completed seasons offer only Full season (default) and Per game; this choice isn't saved either.
-  const [histChoice, setHistChoice] = useState<BenchmarkChoice>({ kind: 'full-season' });
+  // Completed seasons offer only Full season (default) and Per game; saved separately from the current-season benchmark.
+  const histChoice = useMemo<BenchmarkChoice>(() => ({ kind: prefs.historicalBasis }), [prefs.historicalBasis]);
   useEffect(() => {
     if (!historical) return;
     let live = true;
@@ -130,7 +131,10 @@ function Evaluator({ file, page, onGoRoster }: { file: SkaterStatsFile; page: Ev
   const stale = Number.isNaN(fetched) || Date.now() - fetched > STALE_AFTER_MS;
   const when = formatShort(file.fetchedAt.slice(0, 10));
 
-  const setBenchmark = (benchmark: BenchmarkChoice) => (historical ? setHistChoice(benchmark) : setPrefs((p) => ({ ...p, benchmark })));
+  const setBenchmark = (benchmark: BenchmarkChoice) =>
+    setPrefs((p) =>
+      historical ? (benchmark.kind === 'full-season' || benchmark.kind === 'per-game' ? { ...p, historicalBasis: benchmark.kind } : p) : { ...p, benchmark },
+    );
   const removeComparison = (id: number) =>
     setPrefs((p) => ({
       ...p,
@@ -239,7 +243,7 @@ function benchmarkSource(b: Benchmark): string {
         ? `Roster max isn’t available because none of your rostered skaters have stats yet, so league max is used: the highest GP among all NHL skaters this season (${b.gamesPlayed}).`
         : `League max: the highest GP among all NHL skaters this season (${b.gamesPlayed}).`;
     case 'per-game':
-      return 'Per Game: each counting stat per game played (benchmark 1 GP).';
+      return 'Per game: each counting stat per game played (benchmark 1 GP).';
     case 'full-season':
       return 'Full season: actual season totals, not normalized.';
     case 'roster-max':
