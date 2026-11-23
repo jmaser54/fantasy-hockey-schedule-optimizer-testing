@@ -242,3 +242,74 @@ export function planIrChange(
   }
   return { manual: next, changes, before, after: total };
 }
+
+// ---------------------------------------------------------------------------
+// Replacing a starter from the bench (Lineup rebuild, 2026-11-23)
+
+export interface ReplaceOption {
+  /** The bench player who takes the starter's seat. */
+  inId: string;
+  seatKey: string;
+  seatLabel: string;
+  /** The incoming player's game (none: they add no game). */
+  gain?: Game;
+  /** The starter's game given up (none: the starter had no game). */
+  lose?: Game;
+  /** Games in the day's lineup after the swap minus before (+1, 0 or −1). */
+  net: number;
+  next: Lineup;
+}
+
+/**
+ * One-for-one replacements for a starter: every non-IR bench player who can play the starter's seat
+ * takes it and the starter goes to the bench (`moveInLineup`, nobody else moves). Works in both
+ * directions, so a swap can be reversed from either player. Best first: more games, then priority.
+ */
+export function replaceOptions(day: DayResult, starterId: string, roster: readonly LineupPlayer[], seats: readonly Seat[]): ReplaceOption[] {
+  const players = new Map(roster.map((p) => [p.id, p]));
+  const lineup = lineupOf(day);
+  const seat = seats.find((s) => lineup[s.key] === starterId);
+  if (!seat) return [];
+  const games = gamesOf(day);
+  const seated = new Set(Object.values(lineup).filter(Boolean));
+  const rank = new Map(priorityOrder(roster).map((p, i) => [p.id, i]));
+  const out: ReplaceOption[] = [];
+  for (const p of roster) {
+    if (p.onIr || seated.has(p.id) || !canPlaySeat(p, seat)) continue;
+    const next = moveInLineup(lineup, seats, players, p.id, seat.key, starterId);
+    if (!next) continue;
+    const gain = games.get(p.id);
+    const lose = games.get(starterId);
+    out.push({ inId: p.id, seatKey: seat.key, seatLabel: seat.label, gain, lose, net: Number(!!gain) - Number(!!lose), next });
+  }
+  return out.sort((a, b) => b.net - a.net || rank.get(a.inId)! - rank.get(b.inId)!);
+}
+
+// ---------------------------------------------------------------------------
+// Period overview
+
+export interface DaySummary {
+  date: ISODate;
+  usable: number;
+  scheduled: number;
+  optimal: number;
+  manual: boolean;
+  hasIssues: boolean;
+  /** Players whose game could be added without giving up another (genuine open spots). */
+  opportunities: string[];
+}
+
+/** Per-day figures for the period overview, straight from the day results (no new optimization). */
+export function summarizeDays(days: readonly DayResult[], roster: readonly LineupPlayer[], seats: readonly Seat[]): DaySummary[] {
+  const players = new Map(roster.map((p) => [p.id, p]));
+  return days.map((d) => ({
+    date: d.date,
+    usable: d.usable,
+    scheduled: d.scheduled,
+    optimal: d.optimalUsable,
+    manual: d.manual,
+    hasIssues: d.manualIssues.length > 0,
+    // Only edited days can have them (the automatic lineup is a maximum); skip the work elsewhere.
+    opportunities: d.manual ? d.players.filter((x) => x.game && !x.seatKey && gameKind(d, x.playerId, players, seats) === 'opportunity').map((x) => x.playerId) : [],
+  }));
+}

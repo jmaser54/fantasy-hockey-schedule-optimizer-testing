@@ -301,15 +301,20 @@ try {
   // 3. Reset <period> to Optimal: the screen and saved data update at once, in this tab and in
   // another open tab (which must not keep showing, or later re-save, the old lineup).
   await page.getByRole('tab', { name: 'Lineup' }).click();
-  // The week grid is the editor (Lineup redesign, 2026-11-22): McDavid's game cell on a day he starts.
-  const mcRow = (p) => p.locator('.lgrid tbody tr', { hasText: 'Connor McDavid' });
+  // Lineup (rebuild 2026-11-23): the period calendar picks the day; McDavid's row in that day's starting lineup.
+  const tiles = (p) => p.locator('.lu-day');
   const savedDays = (p) => p.evaluate((k) => Object.keys(JSON.parse(localStorage.getItem(k)).manual).length, siteKey);
-  const cells = await mcRow(page).locator('td.c').count();
+  const mcStarter = (p) => p.locator('.lu-starters .lu-row', { hasText: 'Connor McDavid' });
+  const count = await tiles(page).count();
   let day = -1;
-  for (let i = 0; i < cells && day < 0; i++) if (await mcRow(page).locator('td.c').nth(i).locator('.cell.used').count()) day = i;
-  const inLineup = async (p) => (await mcRow(p).locator('td.c').nth(day).locator('.cell.used').count()) > 0;
+  for (let i = 0; i < count && day < 0; i++) {
+    await tiles(page).nth(i).click();
+    if (await mcStarter(page).count()) day = i;
+  }
+  const inLineup = async (p) => (await mcStarter(p).count()) > 0;
   const benchMcDavid = async (p) => {
-    await mcRow(p).locator('td.c').nth(day).locator('.cell-btn').click();
+    await mcStarter(p).locator('.lu-main').click();
+    await p.locator('.sheet .lu-more summary').click();
     await p.locator('.sheet').getByRole('button', { name: /^Remove from lineup/ }).click();
     await p.locator('.sheet').getByRole('button', { name: 'Close' }).click();
   };
@@ -327,7 +332,7 @@ try {
     const other = await context.newPage();
     watch(other);
     await other.goto(`${base}#lineup`, { waitUntil: 'domcontentloaded' });
-    await mcRow(other).locator('td.c').nth(day).waitFor({ timeout: 30_000 });
+    await tiles(other).nth(day).click({ timeout: 30_000 });
     await benchMcDavid(page);
     await until(async () => !(await inLineup(other)), 'a lineup change did not reach the other open tab');
     await resetPeriod(other);

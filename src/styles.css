@@ -258,6 +258,63 @@ th.col-selected { box-shadow: inset 0 -2px 0 var(--accent); }
 .lgrid .cell-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .lgrid .name-btn { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: underline dotted var(--muted); text-underline-offset: 3px; }
 .lgrid .name-btn:hover { color: var(--accent); }
+/* Lineup (rebuild 2026-11-23): period overview calendar, then the daily lineup. */
+.lu-overview-body, .lu-daily-body { display: flex; flex-direction: column; gap: 10px; }
+.lu-facts { margin: 0; color: var(--muted); }
+.lu-open-text { color: var(--bad); font-weight: 600; }
+.lu-manual-bar { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.lu-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.lu-cal-head { text-align: center; font-size: 11px; font-weight: 700; color: var(--muted); }
+.lu-day, .lu-day-blank { min-height: 52px; border-radius: 8px; }
+.lu-day { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px 2px 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.lu-day:hover { border-color: var(--accent); }
+.lu-day[aria-pressed='true'] { border: 2px solid var(--accent); background: var(--accent-soft); }
+.lu-day.man { box-shadow: inset 0 -3px 0 var(--accent); }
+.lu-day.issue { box-shadow: inset 0 -3px 0 var(--warn); }
+.lu-day-date { font-size: 11px; color: var(--muted); line-height: 1; }
+.lu-day-count { font-size: 12px; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--muted); }
+.lu-day-count b { font-size: 15px; color: var(--text); }
+.lu-day-bar { width: 70%; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+.lu-day-bar span { display: block; height: 100%; background: var(--accent); }
+.lu-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); vertical-align: middle; }
+.lu-day-dot { position: absolute; top: 4px; right: 4px; }
+.lu-dash { display: inline-block; width: 12px; height: 3px; background: var(--accent); vertical-align: middle; }
+.lu-cal-key { margin: 0; }
+.lu-daily-head h2 { margin-right: auto; }
+.lu-day-count-text { font-weight: 400; color: var(--muted); }
+.lu-manual-note { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.lu-manual-note .section-hint { margin: 0; }
+.lu-open { border: 1px solid color-mix(in srgb, var(--bad) 35%, var(--border)); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.lu-open h3 { margin: 0; font-size: 13px; color: var(--bad); }
+.lu-open-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.lu-sub { margin: 4px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.lu-list { display: flex; flex-direction: column; }
+.lu-row { display: grid; grid-template-columns: minmax(0, 1fr) 40px; align-items: center; border-bottom: 1px solid var(--border); }
+.lu-row:last-child { border-bottom: 0; }
+.lu-main { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 42px; padding: 2px 0; border: 0; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.lu-main:hover .lu-name { color: var(--accent); }
+.lu-row.lu-benched .lu-main, .lu-row.lu-onir .lu-main { min-height: 36px; }
+.lu-pos { justify-self: start; min-width: 36px; text-align: center; font-size: 12px; font-weight: 700; padding: 3px 4px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); }
+.lu-pos.lu-benched, .lu-pos.lu-onir { background: var(--surface-2); color: var(--muted); font-weight: 600; }
+.lu-name { min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lu-row.lu-benched .lu-name, .lu-row.lu-onir .lu-name { font-weight: 500; font-size: 14px; }
+.lu-name .pos { margin-left: 4px; }
+.lu-game { font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lu-row.lu-noone { grid-template-columns: 42px minmax(0, 1fr); gap: 8px; min-height: 34px; }
+.lu-empty { color: var(--muted); font-style: italic; }
+.lu-row .star { justify-self: center; width: 36px; height: 36px; }
+.lu-nhl summary { cursor: pointer; color: var(--muted); }
+.lu-nhl .game-chips { margin-top: 6px; }
+.lu-status { margin: 0; }
+.lu-more summary { cursor: pointer; color: var(--accent); }
+.lu-more .sheet-options { margin-top: 6px; }
+.lu-star-row { display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--border); padding-top: 8px; }
+.lu-star-row .star { width: 36px; height: 36px; flex: none; }
+@media (min-width: 900px) {
+  .lu { display: grid; grid-template-columns: minmax(320px, 420px) minmax(0, 1fr); align-items: start; gap: 16px; }
+  .lu > .cards { grid-column: 1 / -1; }
+  .lu-overview { position: sticky; top: 90px; }
+}
 /* Contextual sheet: a bottom sheet on phones, a side panel on wider screens. */
 .sheet-layer { position: fixed; inset: 0; z-index: 50; }
 .sheet-backdrop { position: absolute; inset: 0; background: rgb(15 23 42 / 25%); }
@@ -432,11 +489,6 @@ h3 { font-size: 13px; margin: 16px 0 6px; }
   .team-cell .muted { display: none; }
   .table-wrap table.next-week th.sortable { white-space: normal; } /* Next Week's Team Schedules headers wrap so the table fits a phone */
   .lgrid .sticky { min-width: 128px; max-width: 150px; white-space: normal; }
-  /* Lineup grid on phones: scrolls inside its frame both ways, so player names stay pinned left and the date header pinned on top. */
-  .grid-wrap { max-height: 70vh; overflow: auto; }
-  .lgrid thead { position: sticky; top: 0; z-index: 2; }
-  .lgrid thead th { background: var(--surface); }
-  .lgrid thead th.sticky { z-index: 3; }
   th, td { padding: 6px 8px; }
   .icon-btn .small { display: none; }
 }
@@ -491,8 +543,6 @@ h3 { font-size: 13px; margin: 16px 0 6px; }
   .btn.small { min-height: 36px; padding: 4px 12px; }
   .segmented button, .mode-switch button { min-height: 40px; }
   .pos-btn { width: 52px; min-height: 44px; font-size: 13px; }
-  .lgrid .cell-btn { min-width: 34px; height: 40px; }
-  .lgrid .cell-btn .cell { width: 16px; height: 16px; }
   .seat { grid-template-columns: 52px minmax(0, 1fr); }
   .check-row input[type='checkbox'] { width: 20px; height: 20px; }
   .check-row { min-height: 44px; }

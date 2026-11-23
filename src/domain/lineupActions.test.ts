@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { initialState, reducer, type AppState } from '../state/appState.ts';
-import { addOptions, gameKind, inAutomaticLineup, lineupOf, moveOptions, overrideFor, planIrChange } from './lineupActions.ts';
+import { addOptions, gameKind, inAutomaticLineup, lineupOf, moveOptions, overrideFor, planIrChange, replaceOptions, summarizeDays } from './lineupActions.ts';
 import { expandSeats, optimizeDates, optimizeDay, type LineupPlayer } from './optimizer.ts';
 import { toLineupPlayers } from './roster.ts';
 import { player, sched, slots } from './testUtils.ts';
@@ -159,5 +159,56 @@ describe('IR changes', () => {
     expect(st.manual['2026-11-19']).toEqual(saved);
     // Automatic days pick him up again.
     expect(days(st).get('2026-11-17')!.players.find((x) => x.playerId === 'mcdavid')!.seatKey).toBeDefined();
+  });
+});
+
+describe('replacing a starter from the bench (both directions)', () => {
+  // Two D seats; three defensemen who all play on Dec 2.
+  const ds = sched([['2026-12-02', 'ANA', 'COL'], ['2026-12-02', 'SJS', 'VGK']]);
+  const D = (id: string, team: string): Player => ({ id, name: id, team, positions: ['D'], eligibilitySource: 'nhl' });
+  const dir = new Map([D('zadorov', 'ANA'), D('makar', 'COL'), D('luneau', 'SJS')].map((p) => [p.id, p]));
+  const dLeague = { rosterSize: 22, irSlots: 2, slots: slots({ D: [2, ['D']] }) };
+  const dSeats = expandSeats(dLeague.slots);
+  const r = (st: AppState) => toLineupPlayers(st.roster, dir);
+  const day = (st: AppState) => optimizeDates(['2026-12-02'], r(st), st.league, ds, st.manual).get('2026-12-02')!;
+  const put = (st: AppState, next: Record<string, string | null>) => reducer(st, { type: 'setManual', date: '2026-12-02', override: overrideFor('2026-12-02', next, r(st), dSeats, ds) });
+
+  it('Luneau/Zadorov: after Luneau replaces Zadorov, selecting Luneau offers Zadorov back, with the games gained and given up', () => {
+    let st = reducer({ ...initialState(), league: dLeague }, { type: 'addPlayers', ids: ['zadorov', 'makar', 'luneau'] });
+    expect(day(st).players.find((x) => x.playerId === 'luneau')!.seatKey).toBeUndefined(); // Luneau sits (last in roster order)
+    const swapIn = addOptions(day(st), 'luneau', r(st), dSeats).find((o) => o.outId === 'zadorov')!;
+    st = put(st, swapIn.next);
+    expect(day(st).players.find((x) => x.playerId === 'zadorov')!.seatKey).toBeUndefined();
+    // From Luneau's row: Zadorov is a replacement, net 0 (one game for another).
+    const back = replaceOptions(day(st), 'luneau', r(st), dSeats);
+    const z = back.find((o) => o.inId === 'zadorov')!;
+    expect(z).toMatchObject({ net: 0 });
+    expect(z.gain).toBe(day(st).players.find((x) => x.playerId === 'zadorov')!.game);
+    expect(z.lose).toBe(day(st).players.find((x) => x.playerId === 'luneau')!.game);
+    expect(z.next[z.seatKey]).toBe('zadorov');
+    st = put(st, z.next);
+    expect(st.manual).toEqual({}); // reversed: back to the automatic lineup
+  });
+
+  it('replacements never include IR or seated players, and put players with a game first', () => {
+    let st = reducer({ ...initialState(), league: dLeague }, { type: 'addPlayers', ids: ['zadorov', 'makar', 'luneau'] });
+    st = reducer(st, { type: 'updateEntry', id: 'luneau', patch: { onIr: true } });
+    expect(replaceOptions(day(st), 'zadorov', r(st), dSeats)).toEqual([]);
+  });
+});
+
+describe('period overview', () => {
+  it('per-day figures match the day results; open spots only on edited days', () => {
+    let st = start();
+    const summaries = () => summarizeDays([...days(st).values()], roster(st), seats);
+    for (const sm of summaries()) {
+      const d = days(st).get(sm.date)!;
+      expect(sm).toMatchObject({ usable: d.usable, scheduled: d.scheduled, optimal: d.optimalUsable, manual: false, opportunities: [] });
+    }
+    st = save(st, '2026-11-17', moveOptions(days(st).get('2026-11-17')!, 'mcdavid', roster(st), seats).find((o) => o.seatLabel === 'Bench')!.next);
+    const nov17 = summaries().find((x) => x.date === '2026-11-17')!;
+    expect(nov17.manual).toBe(true);
+    expect(nov17.opportunities).toContain('mcdavid');
+    expect(summaries().filter((x) => x.date !== '2026-11-17').every((x) => x.opportunities.length === 0)).toBe(true);
   });
 });

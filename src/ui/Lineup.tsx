@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { formatShort, weekday } from '../domain/dates.ts';
+import { addDays, easternToday, formatShort, weekday } from '../domain/dates.ts';
 import {
   addOptions,
   gameKind,
@@ -7,45 +7,63 @@ import {
   moveOptions,
   overrideFor,
   planIrChange,
-  type AddOption,
+  replaceOptions,
+  summarizeDays,
   type DayChange,
-  type GameKind,
+  type DaySummary,
   type IrPlan,
   type Lineup,
 } from '../domain/lineupActions.ts';
-import { expandSeats, type DayResult, type LineupPlayer, type UnusedReason } from '../domain/optimizer.ts';
+import { expandSeats, type DayResult, type LineupPlayer } from '../domain/optimizer.ts';
 import { opponent } from '../domain/schedule.ts';
-import type { ISODate } from '../domain/types.ts';
-import { dailyGroupCounts, lineupGroupTotals } from '../domain/capacity.ts';
+import type { Game, ISODate } from '../domain/types.ts';
+import { lineupGroupTotals } from '../domain/capacity.ts';
 import { useApp, type Window } from './context.ts';
 import { PosBadges, PreferredToggle } from './common.tsx';
 
 /**
- * Lineup page (UX redesign v1, 2026-11-22): the week grid is the whole editor. Tapping a game, a player
- * or a date opens a contextual sheet (bottom sheet on phones, side panel on desktop). Manual changes
- * are saved per date as exact lineups, as the old day editor saved them; Reset Day to Optimal and
- * Reset <period> to Optimal work as before.
+ * Lineup page (rebuild, 2026-11-23). Two connected levels:
+ * 1. Period overview: the selected period's total and every date's games in a calendar, which is
+ *    also the day selector.
+ * 2. Daily lineup for the selected date: starters by position, open spots (only when real), the bench
+ *    (always visible) and IR. Tapping a player opens their sheet: replacements both ways, position
+ *    changes, ★ priority and IR.
+ * Changes are saved for that date only, as exact lineups; Reset Day / Reset <period> to Optimal and the
+ * IR re-optimization work as before (`lineupActions.ts`).
  */
-type SheetState = { kind: 'game'; date: ISODate; playerId: string } | { kind: 'player'; playerId: string } | { kind: 'day'; date: ISODate };
+
+/** The first date in the period that is today or later (US Eastern), else the first date. */
+function firstUpcoming(dates: readonly ISODate[]): ISODate | undefined {
+  const today = easternToday();
+  return dates.find((d) => d >= today) ?? dates[0];
+}
+
+function useSeats() {
+  const { state } = useApp();
+  return useMemo(() => expandSeats(state.league.slots), [state.league.slots]);
+}
 
 export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
-  const { state, selected, lineupPlayers, dispatch, summarizeWindow, days } = useApp();
-  const [sheet, setSheet] = useState<SheetState | null>(null);
+  const { state, selected, windows, lineupPlayers } = useApp();
+  const [date, setDate] = useState<ISODate | undefined>(() => firstUpcoming(selected.dates));
+  const [sheet, setSheet] = useState<string | null>(null); // player id
   const opener = useRef<HTMLElement | null>(null);
-  const open = (s: SheetState, el?: HTMLElement | null) => {
+  useEffect(() => {
+    if (!date || !selected.dates.includes(date)) setDate(firstUpcoming(selected.dates));
+  }, [selected, date]);
+  useEffect(() => {
+    if (sheet && !lineupPlayers.some((p) => p.id === sheet)) setSheet(null);
+  }, [sheet, lineupPlayers]);
+  const openPlayer = (id: string, el?: HTMLElement | null) => {
     if (el) opener.current = el;
-    setSheet(s);
+    setSheet(id);
   };
-  // Closing returns focus (and so the reader's place) to what opened the sheet; the grid never scrolls.
+  // Closing returns focus to the row that opened the sheet; the page doesn't scroll.
   const close = () => {
     setSheet(null);
     const el = opener.current;
     requestAnimationFrame(() => el?.isConnected && el.focus({ preventScroll: true }));
   };
-  useEffect(() => {
-    if (sheet && 'date' in sheet && !selected.dates.includes(sheet.date)) setSheet(null);
-    if (sheet && 'playerId' in sheet && !lineupPlayers.some((p) => p.id === sheet.playerId)) setSheet(null);
-  }, [selected, sheet, lineupPlayers]);
 
   if (state.roster.length === 0) {
     return (
@@ -58,56 +76,17 @@ export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
     );
   }
 
-  const summary = summarizeWindow(selected);
-  const manualDates = selected.dates.filter((d) => days.get(d)?.manual);
-  const issueDates = selected.dates.filter((d) => days.get(d)?.manualIssues.length);
-
   return (
-    <div className="stack">
-      <SummaryCards />
-      <section className="panel">
-        <div className="panel-head">
-          <h2>
-            {selected.name}: {summary.usable} of {summary.scheduled} scheduled games fit your lineup
-          </h2>
-          {manualDates.length > 0 && (
-            <>
-              <span className="badge manual" title="Days where you swapped players. Other days are fully optimized.">
-                Your changes on {manualDates.length} day{manualDates.length === 1 ? '' : 's'}
-                {summary.usable < summary.optimalUsable ? ` · optimal ${summary.optimalUsable}` : ''}
-              </span>
-              {issueDates.length > 0 && (
-                <button
-                  className="badge warn"
-                  style={{ border: 0, cursor: 'pointer' }}
-                  onClick={(e) => open({ kind: 'day', date: issueDates[0]! }, e.currentTarget)}
-                  title={issueDates.map(formatShort).join(', ')}
-                >
-                  {issueDates.length} day{issueDates.length === 1 ? ' has' : 's have'} changes that no longer apply
-                </button>
-              )}
-              <button
-                className="btn small"
-                onClick={() => {
-                  if (confirm('Revert lineup changes?')) dispatch({ type: 'clearManual', dates: manualDates });
-                }}
-              >
-                Reset {selected.name} to Optimal
-              </button>
-            </>
-          )}
-        </div>
-        <Legend />
-        <p className="grid-hint small">Tap a game to change your lineup. Tap a player for player options, or a date for that day’s lineup.</p>
-        <LineupGrid window={selected} players={lineupPlayers} sheet={sheet} onOpen={open} />
-      </section>
-      {sheet && (
-        <SheetContent sheet={sheet} onOpen={open} onClose={close} />
-      )}
+    <div className="stack lu">
+      {windows.length > 1 && <SummaryCards />}
+      <PeriodOverview window={selected} date={date} onDate={setDate} />
+      {date && <DayLineup date={date} onPlayer={openPlayer} />}
+      {sheet && date && <PlayerSheet key={`${sheet}|${date}`} playerId={sheet} date={date} onClose={close} />}
     </div>
   );
 }
 
+/** The period choices with their totals (only when the mode has more than one, e.g. playoff rounds). */
 function SummaryCards() {
   const { windows, selected, dispatch, summarizeWindow, lineupPlayers } = useApp();
   const shown = windows.filter((w) => w.id !== 'custom' || selected.id === 'custom');
@@ -123,14 +102,7 @@ function SummaryCards() {
             <div className="big">
               {t.all.inLineup} <small>of {t.all.scheduled}</small>
             </div>
-            <div className="sub" title="Scheduled games of your non-IR players that are in your final daily lineups">games fit your lineup</div>
-            <div className="sub">
-              <span title={`In lineup / scheduled games in ${w.name}, summed from the player rows (players on IR excluded)`}>
-                <span style={{ whiteSpace: 'nowrap' }}>Skaters {t.skaters.inLineup}/{t.skaters.scheduled}</span> ·{' '}
-                <span style={{ whiteSpace: 'nowrap' }}>Goalies {t.goalies.inLineup}/{t.goalies.scheduled}</span>
-              </span>
-              {s.manualDays ? <> · <span className="badge manual" title={`Your changes on ${s.manualDays} day${s.manualDays === 1 ? '' : 's'}`}>edited</span></> : null}
-            </div>
+            <div className="sub">games fit your lineup</div>
             <div className="meter">
               <div style={{ width: `${pct}%` }} />
             </div>
@@ -141,236 +113,253 @@ function SummaryCards() {
   );
 }
 
-function Legend() {
-  return (
-    <div className="panel-body legend" style={{ paddingBottom: 0 }}>
-      <span>
-        <span className="cell used" /> In lineup
-      </span>
-      <span>
-        <span className="cell opp" /> Fits: can be added
-      </span>
-      <span>
-        <span className="cell unused" /> Not in lineup: another player has the spot
-      </span>
-      <span>
-        <span className="cell blocked" /> No slot for this position
-      </span>
-      <span>
-        <span className="cell ir" /> On IR
-      </span>
-      <span>
-        <span className="star" aria-hidden="true" style={{ color: 'var(--warn)' }}>★</span> Preferred: gets lineup spots first
-      </span>
-      <span>
-        <b className="count-key">Skaters, Goalies</b> rows: players with a game / active lineup slots
-      </span>
-    </div>
-  );
-}
+// ---------------------------------------------------------------------------
+// 1. Period overview
 
-const CELL_CLASS: Record<GameKind, string> = { 'in-lineup': 'used', ir: 'ir', opportunity: 'opp', priority: 'unused', constraint: 'blocked' };
-const KIND_TEXT: Record<GameKind, string> = {
-  'in-lineup': 'in lineup',
-  ir: 'on IR',
-  opportunity: 'fits, can be added',
-  priority: 'not in lineup, another player has the spot',
-  constraint: 'no lineup slot for this position',
-};
+const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+/** Monday of the date's week. */
+const mondayOf = (d: ISODate) => addDays(d, -((new Date(`${d}T12:00:00Z`).getUTCDay() + 6) % 7));
 
-function useSeats() {
-  const { state } = useApp();
-  return useMemo(() => expandSeats(state.league.slots), [state.league.slots]);
-}
-
-function LineupGrid(props: { window: Window; players: LineupPlayer[]; sheet: SheetState | null; onOpen: (s: SheetState, el?: HTMLElement | null) => void }) {
-  const { days, data, summarizeWindow, state } = useApp();
+function PeriodOverview({ window: w, date, onDate }: { window: Window; date?: ISODate; onDate: (d: ISODate) => void }) {
+  const { days, summarizeWindow, lineupPlayers, dispatch } = useApp();
   const seats = useSeats();
-  const summary = summarizeWindow(props.window);
-  const totals = new Map(summary.players.map((p) => [p.playerId, p]));
-  const byId = useMemo(() => new Map(props.players.map((p) => [p.id, p])), [props.players]);
-  const isGoalie = (p: LineupPlayer) => p.positions.every((x) => x === 'G');
-  const groups = [
-    { label: 'Skaters', rows: props.players.filter((p) => !p.onIr && !isGoalie(p)) },
-    { label: 'Goalies', rows: props.players.filter((p) => !p.onIr && isGoalie(p)) },
-    { label: 'IR', rows: props.players.filter((p) => p.onIr) },
-  ].filter((g) => g.rows.length);
-  const statusOf = (d: DayResult, id: string) => d.players.find((x) => x.playerId === id);
-  const counts = new Map(props.window.dates.map((d) => [d, dailyGroupCounts(days.get(d)!, props.players, state.league.slots)]));
-  // What each game means (in lineup, an opportunity, priority, constraint, IR), from the current lineups.
-  const kinds = useMemo(() => {
-    const m = new Map<string, GameKind>();
-    for (const d of props.window.dates) {
-      const day = days.get(d)!;
-      for (const p of props.players) {
-        const k = gameKind(day, p.id, byId, seats);
-        if (k) m.set(`${d}|${p.id}`, k);
-      }
+  const summary = summarizeWindow(w);
+  const t = lineupGroupTotals(summary.players, lineupPlayers);
+  const perDay = useMemo(() => summarizeDays(w.dates.map((d) => days.get(d)!).filter(Boolean), lineupPlayers, seats), [w.dates, days, lineupPlayers, seats]);
+  const byDate = new Map(perDay.map((d) => [d.date, d]));
+  const manualDates = perDay.filter((d) => d.manual).map((d) => d.date);
+  const openDays = perDay.filter((d) => d.opportunities.length > 0);
+  const missed = summary.scheduled - summary.usable;
+  // Calendar rows Monday–Sunday covering the period; dates outside it stay blank (e.g. gaps between rounds).
+  const weeks: (ISODate | null)[][] = [];
+  if (w.dates.length) {
+    const inWindow = new Set(w.dates);
+    for (let mon = mondayOf(w.dates[0]!); mon <= w.dates[w.dates.length - 1]!; mon = addDays(mon, 7)) {
+      weeks.push(Array.from({ length: 7 }, (_, i) => addDays(mon, i)).map((d) => (inWindow.has(d) ? d : null)));
     }
-    return m;
-  }, [props.window.dates, props.players, days, byId, seats]);
-  const s = props.sheet;
-  const selDate = s && 'date' in s ? s.date : null;
-  const selPlayer = s && 'playerId' in s ? s.playerId : null;
-  const openDay = (d: ISODate, el: HTMLElement) => props.onOpen({ kind: 'day', date: d }, el);
-  const countRow = (group: 'skaters' | 'goalies', label: string) => (
-    <tr className="count-row">
-      <th className="sticky" title={`${label} with a game that day / active ${label.toLowerCase()} lineup slots`}>
-        {label}
-      </th>
-      {props.window.dates.map((d) => {
-        const c = counts.get(d)![group];
-        return (
-          <th
-            key={d}
-            className={`cnt ${c.available > c.capacity ? 'over' : ''} ${selDate === d ? 'sel' : ''}`}
-            title={`${formatShort(d)}: ${c.available} ${label.toLowerCase()} with a game, ${c.capacity} active slots`}
-            onClick={(e) => openDay(d, e.currentTarget)}
-          >
-            {c.available}/{c.capacity}
-          </th>
-        );
-      })}
-      <th />
-    </tr>
-  );
-
-  return (
-    <div className="grid-wrap">
-      <table className="lgrid">
-        <thead>
-          {countRow('skaters', 'Skaters')}
-          {countRow('goalies', 'Goalies')}
-          <tr>
-            <th className="sticky">Player</th>
-            {props.window.dates.map((d) => (
-              <th key={d} className={`dh ${selDate === d ? 'sel' : ''} ${days.get(d)?.manualIssues.length ? 'issue' : days.get(d)?.manual ? 'man' : ''}`}>
-                <button
-                  type="button"
-                  className="day-btn"
-                  aria-pressed={s?.kind === 'day' && s.date === d}
-                  aria-label={`${weekday(d)} ${formatShort(d)}${days.get(d)?.manual ? ', your changes' : ''}`}
-                  onClick={(e) => openDay(d, e.currentTarget)}
-                  title={`${weekday(d)} ${formatShort(d)} · ${data.schedule.gamesOn(d).length} NHL games${days.get(d)?.manual ? ' · your changes' : ''}`}
-                >
-                  {weekday(d)[0]}
-                  <br />
-                  {Number(d.slice(8))}
-                </button>
-              </th>
-            ))}
-            <th className="tot" title="Games in your lineup / games scheduled for this player's team">
-              In Lineup
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {groups.map((g) => (
-            <GroupRows key={g.label} label={g.label} cols={props.window.dates.length}>
-              {g.rows.map((p) => {
-                const t = totals.get(p.id);
-                return (
-                  <tr key={p.id} className={selPlayer === p.id ? 'row-sel' : undefined}>
-                    <td className="sticky">
-                      <PreferredToggle id={p.id} name={p.name} preferred={!!p.preferred} />{' '}
-                      <button type="button" className="name-btn" onClick={(e) => props.onOpen({ kind: 'player', playerId: p.id }, e.currentTarget)} aria-label={`${p.name}: player options`}>
-                        {p.name}
-                      </button>{' '}
-                      <PosBadges positions={p.positions} />
-                    </td>
-                    {props.window.dates.map((d) => {
-                      const st = statusOf(days.get(d)!, p.id);
-                      const kind = kinds.get(`${d}|${p.id}`);
-                      let title = '';
-                      if (st?.game && kind) {
-                        const o = opponent(st.game, st.team);
-                        title = `${formatShort(d)} ${o.home ? 'vs' : '@'} ${o.team} — ${KIND_TEXT[kind]}`;
-                      }
-                      const here = s?.kind === 'game' && s.date === d && s.playerId === p.id;
-                      return (
-                        <td key={d} className={`c ${selDate === d ? 'sel' : ''} ${here ? 'here' : ''}`} title={title}>
-                          {kind && (
-                            <button
-                              type="button"
-                              className="cell-btn"
-                              aria-label={`${p.name}, ${weekday(d)} ${formatShort(d)}: ${KIND_TEXT[kind]}`}
-                              onClick={(e) => props.onOpen({ kind: 'game', date: d, playerId: p.id }, e.currentTarget)}
-                            >
-                              <span className={`cell ${CELL_CLASS[kind]}`} />
-                            </button>
-                          )}
-                        </td>
-                      );
-                    })}
-                    <td className="tot">
-                      {t?.usable ?? 0}/{t?.scheduled ?? 0}
-                    </td>
-                  </tr>
-                );
-              })}
-            </GroupRows>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td className="sticky small">In Lineup / Your Games</td>
-            {props.window.dates.map((d) => {
-              const day = days.get(d)!;
-              return (
-                <td key={d} title={`${day.usable} of ${day.scheduled} games fit your lineup${day.manual ? ` (your changes; optimal ${day.optimalUsable})` : ''}`} style={day.manual ? { color: 'var(--accent)' } : undefined}>
-                  {day.scheduled ? `${day.usable}` : '·'}
-                  <br />
-                  <span style={{ fontWeight: 400 }}>{day.scheduled || ''}</span>
-                </td>
-              );
-            })}
-            <td className="tot">
-              {summary.usable}/{summary.scheduled}
-            </td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-  );
-}
-
-function GroupRows({ label, cols, children }: { label: string; cols: number; children: React.ReactNode }) {
-  return (
-    <>
-      <tr className="group">
-        <td className="sticky" style={{ background: 'var(--surface-2)' }}>
-          {label}
-        </td>
-        <td colSpan={cols + 1} />
-      </tr>
-      {children}
-    </>
-  );
-}
-
-export function reasonText(r: UnusedReason): string {
-  switch (r.kind) {
-    case 'ir':
-      return 'on IR';
-    case 'no-slot':
-      return `no lineup slot accepts ${r.positions.join('/')}`;
-    case 'slots-full':
-      return `${r.slotLabels.join('/')} full (${r.occupants.join(', ')})`;
-    case 'benched':
-      return 'benched with an open slot';
-    case 'sat':
-      return 'sitting out by your choice';
   }
+  return (
+    <section className="panel lu-overview" aria-label="Period overview">
+      <div className="panel-head">
+        <h2>
+          {w.name}: {summary.usable} of {summary.scheduled} scheduled games fit your lineup
+        </h2>
+      </div>
+      <div className="panel-body lu-overview-body">
+        <p className="lu-facts small">
+          Skaters {t.skaters.inLineup}/{t.skaters.scheduled} · Goalies {t.goalies.inLineup}/{t.goalies.scheduled}
+          {missed > 0 && <> · {missed} not in your lineup</>}
+          {openDays.length > 0 && (
+            <>
+              {' '}
+              · <span className="lu-open-text">open spots on {openDays.length} day{openDays.length === 1 ? '' : 's'}</span>
+            </>
+          )}
+        </p>
+        {manualDates.length > 0 && (
+          <div className="lu-manual-bar">
+            <span className="badge manual" title="Days where you changed the lineup. Other days are fully optimized.">
+              Your changes on {manualDates.length} day{manualDates.length === 1 ? '' : 's'}
+              {summary.usable < summary.optimalUsable ? ` · optimal ${summary.optimalUsable}` : ''}
+            </span>
+            {perDay.some((d) => d.hasIssues) && (
+              <button className="badge warn" style={{ border: 0, cursor: 'pointer' }} onClick={() => onDate(perDay.find((d) => d.hasIssues)!.date)}>
+                {perDay.filter((d) => d.hasIssues).length} day{perDay.filter((d) => d.hasIssues).length === 1 ? ' has' : 's have'} changes that no longer apply
+              </button>
+            )}
+            <button
+              className="btn small"
+              onClick={() => {
+                if (confirm('Revert lineup changes?')) dispatch({ type: 'clearManual', dates: manualDates });
+              }}
+            >
+              Reset {w.name} to Optimal
+            </button>
+          </div>
+        )}
+        <div className="lu-cal" role="group" aria-label={`Days in ${w.name}`}>
+          {WEEKDAYS.map((x, i) => (
+            <div key={`h${i}`} className="lu-cal-head" aria-hidden="true">
+              {x}
+            </div>
+          ))}
+          {weeks.flat().map((d, i) => (d ? <DayTile key={d} s={byDate.get(d)!} selected={d === date} onClick={() => onDate(d)} /> : <div key={`e${i}`} className="lu-day-blank" />))}
+        </div>
+        <p className="lu-cal-key small muted">
+          Each day: games in your lineup / games scheduled. <span className="lu-dot" /> open spot · <span className="lu-dash" /> your changes
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function DayTile({ s, selected, onClick }: { s: DaySummary; selected: boolean; onClick: () => void }) {
+  const pct = s.scheduled ? Math.round((s.usable / s.scheduled) * 100) : 0;
+  const label = `${weekday(s.date)} ${formatShort(s.date)}: ${s.scheduled ? `${s.usable} of ${s.scheduled} games fit your lineup` : 'no games'}${s.opportunities.length ? `, ${s.opportunities.length} open spot${s.opportunities.length === 1 ? '' : 's'}` : ''}${s.manual ? ', your changes' : ''}`;
+  return (
+    <button type="button" className={`lu-day ${s.manual ? 'man' : ''} ${s.hasIssues ? 'issue' : ''}`} aria-pressed={selected} aria-label={label} title={label} onClick={onClick}>
+      <span className="lu-day-date">{Number(s.date.slice(8))}</span>
+      <span className="lu-day-count">
+        {s.scheduled ? (
+          <>
+            <b>{s.usable}</b>/{s.scheduled}
+          </>
+        ) : (
+          '–'
+        )}
+      </span>
+      <span className="lu-day-bar">
+        <span style={{ width: `${pct}%` }} />
+      </span>
+      {s.opportunities.length > 0 && <span className="lu-dot lu-day-dot" aria-hidden="true" />}
+    </button>
+  );
 }
 
 // ---------------------------------------------------------------------------
-// Sheets: a bottom sheet on phones, a side panel on desktop (CSS). Escape and the backdrop close them.
+// 2. Daily lineup
+
+const matchupOf = (day: DayResult, id: string): { text: string; game?: Game } => {
+  const st = day.players.find((x) => x.playerId === id);
+  if (!st?.game) return { text: 'No game' };
+  const o = opponent(st.game, st.team);
+  return { text: `${o.home ? 'vs' : '@'} ${o.team}`, game: st.game };
+};
+
+/** Saves one date's new lineup (only that date changes), as before. */
+function useSaveDay() {
+  const { state, dispatch, lineupPlayers, data, toast } = useApp();
+  const seats = useSeats();
+  return (date: ISODate, next: Lineup) => {
+    dispatch({ type: 'setManual', date, override: overrideFor(date, next, lineupPlayers, seats, data.schedule, state.manual[date]?.notes) });
+    toast('Lineup saved.');
+  };
+}
+
+function DayLineup({ date, onPlayer }: { date: ISODate; onPlayer: (id: string, el: HTMLElement) => void }) {
+  const { days, lineupPlayers, dispatch, data, teams } = useApp();
+  const seats = useSeats();
+  const save = useSaveDay();
+  const day = days.get(date);
+  if (!day) return null;
+  const byId = new Map(lineupPlayers.map((p) => [p.id, p]));
+  const seated = new Set(day.seats.flatMap((x) => (x.playerId ? [x.playerId] : [])));
+  const bench = lineupPlayers.filter((p) => !p.onIr && !seated.has(p.id));
+  // Bench players with a game first, then those without.
+  bench.sort((a, b) => Number(!matchupOf(day, a.id).game) - Number(!matchupOf(day, b.id).game));
+  const ir = lineupPlayers.filter((p) => p.onIr);
+  const players = new Map(lineupPlayers.map((p) => [p.id, p]));
+  const open = day.manual
+    ? bench.filter((p) => gameKind(day, p.id, players, seats) === 'opportunity').map((p) => ({ p, option: addOptions(day, p.id, lineupPlayers, seats).find((o) => o.kind === 'open') }))
+    : [];
+  const nhlGames = data.schedule.gamesOn(date);
+
+  const row = (p: LineupPlayer, posLabel: string, kind: 'starter' | 'bench' | 'ir') => {
+    const cls = { starter: 'lu-starter', bench: 'lu-benched', ir: 'lu-onir' }[kind];
+    const m = matchupOf(day, p.id);
+    return (
+      <div key={`${kind}-${p.id}-${posLabel}`} className={`lu-row ${cls}`}>
+        <button type="button" className="lu-main" onClick={(e) => onPlayer(p.id, e.currentTarget)} aria-label={`${p.name}, ${posLabel}, ${m.text}: details and replacements`}>
+          <span className={`lu-pos ${cls}`}>{posLabel}</span>
+          <span className="lu-name">
+            {p.name}
+            {kind !== 'starter' && <PosBadges positions={p.positions} />}
+          </span>
+          <span className={`lu-game ${m.game ? '' : 'muted'}`}>{m.text}</span>
+        </button>
+        <PreferredToggle id={p.id} name={p.name} preferred={!!p.preferred} />
+      </div>
+    );
+  };
+
+  return (
+    <section className="panel lu-daily" aria-label={`Lineup for ${weekday(date)} ${formatShort(date)}`}>
+      <div className="panel-head lu-daily-head">
+        <h2>
+          Lineup for {weekday(date)} {formatShort(date)}
+          <span className="lu-day-count-text">
+            {' '}
+            · {day.usable} of {day.scheduled} games fit
+          </span>
+        </h2>
+        {day.manual ? <span className="badge manual">Your Changes</span> : <span className="badge good">Optimized</span>}
+      </div>
+      <div className="panel-body lu-daily-body">
+        {day.manualIssues.length > 0 && <div className="notice">Some of your changes for this day no longer apply and are being ignored: {day.manualIssues.join(' ')}</div>}
+        {day.manual && (
+          <div className="lu-manual-note">
+            <p className="section-hint">This day keeps your saved lineup; starring or unstarring players won’t change it. Choose Reset Day to Optimal to follow current stars.</p>
+            <button className="btn small" onClick={() => dispatch({ type: 'setManual', date, override: null })}>
+              Reset Day to Optimal
+            </button>
+          </div>
+        )}
+        {open.length > 0 && (
+          <div className="lu-open" aria-label="Open spots">
+            <h3>Open spots</h3>
+            {open.map(({ p, option }) => (
+              <div key={p.id} className="lu-open-row">
+                <span>
+                  <b>{p.name}</b> {matchupOf(day, p.id).text}
+                  {option ? <span className="small muted"> · fits at {option.seatLabel}</span> : null}
+                </span>
+                {option && (
+                  <button className="btn small primary" onClick={() => save(date, option.next)} aria-label={`Add ${p.name} at ${option.seatLabel}`}>
+                    Add
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="lu-list lu-starters" aria-label="Starting lineup">
+          {day.seats.map(({ seat, playerId }) => {
+            const p = playerId ? byId.get(playerId) : undefined;
+            return p ? (
+              row(p, seat.label, 'starter')
+            ) : (
+              <div key={seat.key} className="lu-row lu-starter lu-noone">
+                <span className="lu-pos lu-starter">{seat.label}</span>
+                <span className="lu-empty">Empty</span>
+              </div>
+            );
+          })}
+        </div>
+        <h3 className="lu-sub">Bench</h3>
+        <div className="lu-list lu-bench" aria-label="Bench">
+          {bench.length ? bench.map((p) => row(p, 'BN', 'bench')) : <div className="muted small">Everyone is in the lineup.</div>}
+        </div>
+        {ir.length > 0 && (
+          <>
+            <h3 className="lu-sub">IR</h3>
+            <div className="lu-list lu-ir" aria-label="On IR">
+              {ir.map((p) => row(p, 'IR', 'ir'))}
+            </div>
+          </>
+        )}
+        <details className="lu-nhl">
+          <summary className="small">NHL games this day ({nhlGames.length})</summary>
+          <div className="game-chips">
+            {nhlGames.map((g) => (
+              <span key={g.id} className="game-chip" title={`${teams.get(g.away)?.name} at ${teams.get(g.home)?.name}`}>
+                {g.away} @ {g.home}
+              </span>
+            ))}
+            {nhlGames.length === 0 && <span className="muted small">No NHL games.</span>}
+          </div>
+        </details>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Player sheet: a bottom sheet on phones, a side panel on desktop.
 
 function Sheet({ label, title, onClose, children }: { label: string; title: ReactNode; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
-  // Focus the sheet once when it opens (not on every update); Escape closes it.
   useEffect(() => {
     ref.current?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current();
@@ -390,190 +379,6 @@ function Sheet({ label, title, onClose, children }: { label: string; title: Reac
         <div className="sheet-body">{children}</div>
       </section>
     </div>
-  );
-}
-
-function SheetContent({ sheet, onOpen, onClose }: { sheet: SheetState; onOpen: (s: SheetState) => void; onClose: () => void }) {
-  if (sheet.kind === 'game') return <GameSheet key={`${sheet.date}|${sheet.playerId}`} date={sheet.date} playerId={sheet.playerId} onOpen={onOpen} onClose={onClose} />;
-  if (sheet.kind === 'player') return <PlayerSheet key={sheet.playerId} playerId={sheet.playerId} onClose={onClose} />;
-  return <DaySheet date={sheet.date} onOpen={onOpen} onClose={onClose} />;
-}
-
-/** Saves one date's new lineup (only that date changes), as the old day editor did. */
-function useSaveDay() {
-  const { state, dispatch, lineupPlayers, data, toast } = useApp();
-  const seats = useSeats();
-  return (date: ISODate, next: Lineup) => {
-    dispatch({ type: 'setManual', date, override: overrideFor(date, next, lineupPlayers, seats, data.schedule, state.manual[date]?.notes) });
-    toast('Lineup saved.');
-  };
-}
-
-function useMatchup(day: DayResult) {
-  return (id: string) => {
-    const st = day.players.find((x) => x.playerId === id);
-    if (!st?.game) return 'No game';
-    const o = opponent(st.game, st.team);
-    return `${o.home ? 'vs' : '@'} ${o.team}`;
-  };
-}
-
-/** The date's status line with Reset Day to Optimal (unchanged behavior: clears that day's changes). */
-function DayStatus({ day }: { day: DayResult }) {
-  const { dispatch } = useApp();
-  return (
-    <div className="sheet-day">
-      <div className="small">
-        {weekday(day.date)} {formatShort(day.date)}: {day.usable} of {day.scheduled} games fit your lineup{' '}
-        {day.manual ? <span className="badge manual">Your Changes</span> : <span className="badge good">Optimized</span>}
-      </div>
-      {day.manual && (
-        <>
-          <p className="section-hint">This day keeps your saved lineup; starring or unstarring players won’t change it. Choose Reset Day to Optimal to follow current stars.</p>
-          <button className="btn small" onClick={() => dispatch({ type: 'setManual', date: day.date, override: null })}>
-            Reset Day to Optimal
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
-
-function GameSheet({ date, playerId, onOpen, onClose }: { date: ISODate; playerId: string; onOpen: (s: SheetState) => void; onClose: () => void }) {
-  const { days, lineupPlayers, data } = useApp();
-  const seats = useSeats();
-  const save = useSaveDay();
-  const [confirming, setConfirming] = useState<AddOption | null>(null);
-  const day = days.get(date)!;
-  const byId = new Map(lineupPlayers.map((p) => [p.id, p]));
-  const p = byId.get(playerId)!;
-  const matchup = useMatchup(day);
-  const kind = gameKind(day, playerId, byId, seats);
-  const name = (id?: string) => (id ? (byId.get(id)?.name ?? id) : '');
-  const seatLabel = day.seats.find((x) => x.playerId === playerId)?.seat.label;
-  const options = kind === 'opportunity' || kind === 'priority' ? addOptions(day, playerId, lineupPlayers, seats) : [];
-  const title = (
-    <>
-      <b>{p.name}</b> <PosBadges positions={p.positions} />
-      <div className="small muted">
-        {weekday(date)} {formatShort(date)} · {matchup(playerId)}
-      </div>
-    </>
-  );
-
-  let body: ReactNode;
-  if (confirming) {
-    const o = confirming;
-    body = (
-      <div className="stack">
-        <p>
-          Replace <b>{name(o.outId)}</b> with <b>{p.name}</b> at {o.seatLabel} on {weekday(date)} {formatShort(date)}?
-        </p>
-        <ul className="trade-list">
-          <li className="gain">Gain: {p.name} {matchup(playerId)}</li>
-          <li className="lose">Give up: {name(o.outId)} {matchup(o.outId!)}</li>
-        </ul>
-        <p className="small muted">Only this day changes. The day still has {day.usable} games in your lineup.</p>
-        <div className="sheet-actions">
-          <button
-            className="btn primary"
-            onClick={() => {
-              save(date, o.next);
-              setConfirming(null);
-            }}
-          >
-            Replace
-          </button>
-          <button className="btn" onClick={() => setConfirming(null)}>
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  } else if (kind === 'in-lineup') {
-    const moves = moveOptions(day, playerId, lineupPlayers, seats);
-    const bench = moves.find((m) => !m.seatKey);
-    body = (
-      <div className="stack">
-        <p>
-          In your lineup at <b>{seatLabel}</b>.
-        </p>
-        {moves.some((m) => m.seatKey) && (
-          <div className="sheet-options" aria-label="Change position">
-            {moves
-              .filter((m) => m.seatKey)
-              .map((m) => (
-                <button key={m.seatKey} className="option-btn" onClick={() => save(date, m.next)}>
-                  Move to {m.seatLabel}
-                  {m.withId ? <span className="small muted"> · swap with {name(m.withId)}</span> : null}
-                </button>
-              ))}
-          </div>
-        )}
-        {bench && (
-          <button className="option-btn lose" onClick={() => save(date, bench.next)}>
-            Remove from lineup <span className="small muted">· gives up this game</span>
-          </button>
-        )}
-      </div>
-    );
-  } else if (kind === 'ir') {
-    body = (
-      <div className="stack">
-        <p>{p.name} is on IR, so this game can’t count.</p>
-        <button className="option-btn" onClick={() => onOpen({ kind: 'player', playerId })}>
-          Player options…
-        </button>
-      </div>
-    );
-  } else if (kind === 'constraint') {
-    body = <p>No lineup slot in your league accepts {p.positions.join('/') || 'this player'}, so this game can’t count.</p>;
-  } else if (kind === 'opportunity') {
-    const fromChanges = day.manual && inAutomaticLineup(date, playerId, lineupPlayers, seats, data.schedule);
-    body = (
-      <div className="stack">
-        <p>{fromChanges ? 'Your changes for this day left this game out. It fits without giving up another game.' : 'This game fits your lineup without giving up another game.'}</p>
-        <div className="sheet-options">
-          {options
-            .filter((o) => o.kind === 'open')
-            .map((o) => (
-              <button key={o.seatKey} className="option-btn gain" onClick={() => save(date, o.next)}>
-                Add at {o.seatLabel}
-                {o.outId ? <span className="small muted"> · {name(o.outId)} (no game) goes to the bench</span> : null}
-              </button>
-            ))}
-        </div>
-      </div>
-    );
-  } else if (kind === 'priority') {
-    const replace = options.filter((o) => o.kind === 'replace');
-    body = (
-      <div className="stack">
-        <p>Every lineup spot {p.name} can play is held by a player with a game{day.manual ? '' : ' (★ stars and roster order decide who starts)'}. Adding this game means giving up another.</p>
-        {replace.length > 0 && (
-          <div className="sheet-options" aria-label="Replacement options">
-            {replace.map((o) => (
-              <button key={o.outId} className="option-btn" onClick={() => setConfirming(o)}>
-                <span>
-                  Start at {o.seatLabel} instead of <b>{name(o.outId)}</b>
-                  {o.suggested && <span className="badge good" style={{ marginLeft: 6 }}>Suggested</span>}
-                </span>
-                <span className="small">
-                  <span className="gain-text">Gain {matchup(playerId)}</span> · <span className="lose-text">Give up {name(o.outId)} {matchup(o.outId!)}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <Sheet label={`${p.name}, ${weekday(date)} ${formatShort(date)}`} title={title} onClose={onClose}>
-      {body}
-      <DayStatus day={day} />
-    </Sheet>
   );
 }
 
@@ -604,27 +409,65 @@ function ChangeList({ changes, emptyText }: { changes: DayChange[]; emptyText: s
   );
 }
 
-function PlayerSheet({ playerId, onClose }: { playerId: string; onClose: () => void }) {
-  const { state, dispatch, lineupPlayers, selected, summarizeWindow, data, teams, toast } = useApp();
+type Pending = { inId: string; outId: string; seatLabel: string; gain?: Game; lose?: Game; next: Lineup };
+type IrStep = { kind: 'confirm' | 'done'; plan: IrPlan; toIr: boolean };
+
+function PlayerSheet({ playerId, date, onClose }: { playerId: string; date: ISODate; onClose: () => void }) {
+  const { state, days, dispatch, lineupPlayers, selected, summarizeWindow, data, teams, toast } = useApp();
   const seats = useSeats();
-  const [step, setStep] = useState<{ kind: 'confirm'; plan: IrPlan; toIr: boolean } | { kind: 'done'; plan: IrPlan; toIr: boolean } | null>(null);
-  const p = lineupPlayers.find((x) => x.id === playerId);
-  if (!p) return null;
-  const t = summarizeWindow(selected).players.find((x) => x.playerId === playerId);
+  const save = useSaveDay();
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [irStep, setIrStep] = useState<IrStep | null>(null);
+  const day = days.get(date)!;
+  const byId = new Map(lineupPlayers.map((x) => [x.id, x]));
+  const p = byId.get(playerId);
+  if (!p || !day) return null;
+  const name = (id: string) => byId.get(id)?.name ?? id;
+  const m = matchupOf(day, playerId);
+  const seat = day.seats.find((x) => x.playerId === playerId)?.seat;
+  const totals = summarizeWindow(selected).players.find((x) => x.playerId === playerId);
   const irCount = state.roster.filter((e) => e.onIr).length;
   const activeCount = state.roster.length - irCount;
   const irFull = irCount >= state.league.irSlots;
-  const ask = (toIr: boolean) => setStep({ kind: 'confirm', toIr, plan: planIrChange(playerId, toIr, lineupPlayers, selected.dates, seats, data.schedule, state.manual) });
+  const when = `${weekday(date)} ${formatShort(date)}`;
   const title = (
     <>
       <b>{p.name}</b> <PosBadges positions={p.positions} />
-      <div className="small muted">{teams.get(p.team)?.name ?? p.team}</div>
+      <div className="small muted">
+        {teams.get(p.team)?.name ?? p.team} · {when}: {m.text}
+      </div>
     </>
   );
-
   let body: ReactNode;
-  if (step?.kind === 'confirm') {
-    const { plan, toIr } = step;
+  if (pending) {
+    body = (
+      <div className="stack">
+        <p>
+          Start <b>{name(pending.inId)}</b> at {pending.seatLabel} instead of <b>{name(pending.outId)}</b> on {when}?
+        </p>
+        <ul className="trade-list">
+          <li className={pending.gain ? 'gain' : ''}>{pending.gain ? `Gain: ${name(pending.inId)} ${matchupOf(day, pending.inId).text}` : `${name(pending.inId)} has no game`}</li>
+          <li className={pending.lose ? 'lose' : ''}>{pending.lose ? `Give up: ${name(pending.outId)} ${matchupOf(day, pending.outId).text}` : `${name(pending.outId)} has no game`}</li>
+        </ul>
+        <p className="small muted">Only this day changes.</p>
+        <div className="sheet-actions">
+          <button
+            className="btn primary"
+            onClick={() => {
+              save(date, pending.next);
+              setPending(null);
+            }}
+          >
+            Confirm
+          </button>
+          <button className="btn" onClick={() => setPending(null)}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  } else if (irStep?.kind === 'confirm') {
+    const { plan, toIr } = irStep;
     body = (
       <div className="stack">
         {toIr ? (
@@ -646,20 +489,20 @@ function PlayerSheet({ playerId, onClose }: { playerId: string; onClose: () => v
             className="btn primary"
             onClick={() => {
               dispatch({ type: 'applyIrChange', id: playerId, onIr: toIr, manual: plan.manual });
-              setStep({ kind: 'done', plan, toIr });
+              setIrStep({ kind: 'done', plan, toIr });
               toast(toIr ? `${p.name} moved to IR.` : `${p.name} moved off IR.`);
             }}
           >
             {toIr ? 'Move to IR' : 'Move off IR'}
           </button>
-          <button className="btn" onClick={() => setStep(null)}>
+          <button className="btn" onClick={() => setIrStep(null)}>
             Cancel
           </button>
         </div>
       </div>
     );
-  } else if (step?.kind === 'done') {
-    const { plan, toIr } = step;
+  } else if (irStep?.kind === 'done') {
+    const { plan, toIr } = irStep;
     body = (
       <div className="stack">
         <p>
@@ -675,98 +518,149 @@ function PlayerSheet({ playerId, onClose }: { playerId: string; onClose: () => v
       </div>
     );
   } else {
+    const kind = gameKind(day, playerId, byId, seats);
+    const replacements = seat ? replaceOptions(day, playerId, lineupPlayers, seats) : [];
+    const moves = seat ? moveOptions(day, playerId, lineupPlayers, seats).filter((x) => x.seatKey) : [];
+    const bench = seat ? moveOptions(day, playerId, lineupPlayers, seats).find((x) => !x.seatKey) : undefined;
+    const adds = !seat && !p.onIr && m.game ? addOptions(day, playerId, lineupPlayers, seats) : [];
+    const fromChanges = kind === 'opportunity' && day.manual && inAutomaticLineup(date, playerId, lineupPlayers, seats, data.schedule);
     body = (
       <div className="stack">
-        <div className="small">
-          Status: <b>{p.onIr ? 'On IR' : 'Active'}</b> · Eligible: {p.positions.join(', ') || 'none'}
-        </div>
-        <div className="small">
-          {selected.name}: in your lineup for {t?.usable ?? 0} of {t?.scheduled ?? 0} games
-        </div>
-        <div className="small">
-          <PreferredToggle id={p.id} name={p.name} preferred={!!p.preferred} /> {p.preferred ? 'Preferred: gets lineup spots first' : 'Not preferred'}
-        </div>
-        {p.onIr ? (
-          <button className="option-btn" onClick={() => ask(false)}>
-            Move off IR
-          </button>
-        ) : (
-          <>
-            <button className="option-btn" disabled={irFull} onClick={() => ask(true)}>
-              Move to IR
-            </button>
-            {irFull && (
-              <p className="small muted">
-                Your IR slots are full ({irCount} of {state.league.irSlots}).
-              </p>
+        <p className="lu-status">
+          {p.onIr ? 'On IR.' : seat ? (
+            <>
+              Starting at <b>{seat.label}</b>.
+            </>
+          ) : (
+            'On the bench.'
+          )}{' '}
+          <span className="small muted">
+            {selected.name}: in your lineup for {totals?.usable ?? 0} of {totals?.scheduled ?? 0} games
+          </span>
+        </p>
+
+        {seat && (
+          <div>
+            <h3 className="sheet-sub">Replace with a bench player</h3>
+            {replacements.length === 0 ? (
+              <p className="small muted">No bench player can play {seat.label}.</p>
+            ) : (
+              <div className="sheet-options">
+                {replacements.map((o) => (
+                  <button
+                    key={o.inId}
+                    className="option-btn"
+                    onClick={() => setPending({ inId: o.inId, outId: playerId, seatLabel: o.seatLabel, gain: o.gain, lose: o.lose, next: o.next })}
+                  >
+                    <span>
+                      <b>{name(o.inId)}</b> <span className="small muted">{matchupOf(day, o.inId).text}</span>
+                    </span>
+                    <span className="small">
+                      {o.gain ? <span className="gain-text">Gain {matchupOf(day, o.inId).text}</span> : <span className="muted">No game gained</span>} ·{' '}
+                      {o.lose ? <span className="lose-text">Give up {m.text}</span> : <span className="muted">no game given up</span>}
+                      {o.net !== 0 && <b className={o.net > 0 ? 'gain-text' : 'lose-text'}> ({o.net > 0 ? '+1' : '−1'} game)</b>}
+                    </span>
+                  </button>
+                ))}
+              </div>
             )}
-          </>
+          </div>
         )}
+
+        {!seat && !p.onIr && (
+          <div>
+            {!m.game ? (
+              <p className="small muted">No game on {when}.</p>
+            ) : kind === 'constraint' ? (
+              <p className="small muted">No lineup slot in your league accepts {p.positions.join('/')}.</p>
+            ) : (
+              <>
+                <h3 className="sheet-sub">{kind === 'opportunity' ? 'Add to the lineup' : 'Start instead of'}</h3>
+                {kind === 'opportunity' && <p className="small">{fromChanges ? 'Your changes for this day left this game out. It fits without giving up another game.' : 'This game fits without giving up another game.'}</p>}
+                <div className="sheet-options">
+                  {adds.map((o) =>
+                    o.kind === 'open' ? (
+                      <button key={`o-${o.seatKey}`} className="option-btn gain" onClick={() => save(date, o.next)}>
+                        Add at {o.seatLabel}
+                        {o.outId ? <span className="small muted"> · {name(o.outId)} (no game) goes to the bench</span> : null}
+                      </button>
+                    ) : (
+                      <button
+                        key={`r-${o.outId}`}
+                        className="option-btn"
+                        onClick={() => setPending({ inId: playerId, outId: o.outId!, seatLabel: o.seatLabel, gain: o.gain, lose: o.lose, next: o.next })}
+                      >
+                        <span>
+                          <b>{name(o.outId!)}</b> at {o.seatLabel}
+                          {o.suggested && <span className="badge good" style={{ marginLeft: 6 }}>Suggested</span>}
+                        </span>
+                        <span className="small">
+                          <span className="gain-text">Gain {m.text}</span> · <span className="lose-text">Give up {matchupOf(day, o.outId!).text}</span>
+                        </span>
+                      </button>
+                    ),
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {seat && (moves.length > 0 || bench) && (
+          <details className="lu-more">
+            <summary className="small">Change position or remove</summary>
+            <div className="sheet-options">
+              {moves.map((x) => (
+                <button key={x.seatKey} className="option-btn" onClick={() => save(date, x.next)}>
+                  Move to {x.seatLabel}
+                  {x.withId ? <span className="small muted"> · swap with {name(x.withId)}</span> : null}
+                </button>
+              ))}
+              {bench && (
+                <button className="option-btn lose" onClick={() => save(date, bench.next)}>
+                  Remove from lineup <span className="small muted">· {m.game ? 'gives up this game' : 'no game'}</span>
+                </button>
+              )}
+            </div>
+          </details>
+        )}
+
+        <div className="lu-star-row">
+          <PreferredToggle id={p.id} name={p.name} preferred={!!p.preferred} />
+          <span className="small">
+            {p.preferred ? <b>Preferred</b> : 'Not preferred'}: starred players get lineup spots first on optimized days.
+            {day.manual && ' This day has your changes, so a star change won’t affect it until you reset it.'}
+          </span>
+        </div>
+
+        <div className="lu-ir-row">
+          {p.onIr ? (
+            <button className="option-btn" onClick={() => setIrStep({ kind: 'confirm', toIr: false, plan: planIrChange(playerId, false, lineupPlayers, selected.dates, seats, data.schedule, state.manual) })}>
+              Move off IR
+            </button>
+          ) : (
+            <>
+              <button
+                className="option-btn"
+                disabled={irFull}
+                onClick={() => setIrStep({ kind: 'confirm', toIr: true, plan: planIrChange(playerId, true, lineupPlayers, selected.dates, seats, data.schedule, state.manual) })}
+              >
+                Move to IR
+              </button>
+              {irFull && (
+                <p className="small muted">
+                  Your IR slots are full ({irCount} of {state.league.irSlots}).
+                </p>
+              )}
+            </>
+          )}
+        </div>
       </div>
     );
   }
   return (
-    <Sheet label={`${p.name}: player options`} title={title} onClose={onClose}>
+    <Sheet label={`${p.name}: details and replacements`} title={title} onClose={onClose}>
       {body}
-    </Sheet>
-  );
-}
-
-function DaySheet({ date, onOpen, onClose }: { date: ISODate; onOpen: (s: SheetState) => void; onClose: () => void }) {
-  const { days, lineupPlayers, data, teams, selected } = useApp();
-  const day = days.get(date)!;
-  const byId = new Map(lineupPlayers.map((p) => [p.id, p]));
-  const matchup = useMatchup(day);
-  const idx = selected.dates.indexOf(date);
-  const seated = new Set(day.seats.flatMap((x) => (x.playerId ? [x.playerId] : [])));
-  const bench = lineupPlayers.filter((p) => !p.onIr && !seated.has(p.id));
-  const ir = lineupPlayers.filter((p) => p.onIr && day.players.find((x) => x.playerId === p.id)?.game);
-  const nhlGames = data.schedule.gamesOn(date);
-  const row = (label: string, p?: LineupPlayer) => (
-    <button key={`${label}-${p?.id ?? 'empty'}`} className="day-row" disabled={!p} onClick={() => p && onOpen({ kind: 'game', date, playerId: p.id })}>
-      <span className="day-row-pos">{label}</span>
-      {p ? (
-        <span>
-          <b>{p.name}</b> <PosBadges positions={p.positions} /> <span className={`small ${day.players.find((x) => x.playerId === p.id)?.game ? '' : 'muted'}`}>{matchup(p.id)}</span>
-        </span>
-      ) : (
-        <span className="empty-seat">Empty</span>
-      )}
-    </button>
-  );
-  const title = (
-    <>
-      <b>
-        Lineup for {weekday(date)} {formatShort(date)}
-      </b>
-      <div className="day-nav">
-        <button className="icon-btn" disabled={idx <= 0} onClick={() => onOpen({ kind: 'day', date: selected.dates[idx - 1]! })} aria-label="Previous day">
-          ←
-        </button>
-        <button className="icon-btn" disabled={idx >= selected.dates.length - 1} onClick={() => onOpen({ kind: 'day', date: selected.dates[idx + 1]! })} aria-label="Next day">
-          →
-        </button>
-      </div>
-    </>
-  );
-  return (
-    <Sheet label={`Lineup for ${weekday(date)} ${formatShort(date)}`} title={title} onClose={onClose}>
-      {day.manualIssues.length > 0 && <div className="notice">Some of your changes for this day no longer apply and are being ignored: {day.manualIssues.join(' ')}</div>}
-      <DayStatus day={day} />
-      <h3 className="sheet-sub">In Lineup</h3>
-      <div className="day-rows">{day.seats.map(({ seat, playerId }) => row(seat.label, playerId ? byId.get(playerId) : undefined))}</div>
-      <h3 className="sheet-sub">Bench</h3>
-      <div className="day-rows">{bench.length ? bench.map((p) => row('BN', p)) : <div className="muted small">Everyone is in the lineup.</div>}</div>
-      {ir.length > 0 && <div className="small muted">On IR: {ir.map((p) => p.name).join(', ')}</div>}
-      <h3 className="sheet-sub">NHL games ({nhlGames.length})</h3>
-      <div className="game-chips">
-        {nhlGames.map((g) => (
-          <span key={g.id} className="game-chip" title={`${teams.get(g.away)?.name} at ${teams.get(g.home)?.name}`}>
-            {g.away} @ {g.home}
-          </span>
-        ))}
-        {nhlGames.length === 0 && <span className="muted small">No NHL games.</span>}
-      </div>
     </Sheet>
   );
 }
