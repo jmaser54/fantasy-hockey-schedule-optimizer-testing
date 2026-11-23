@@ -325,9 +325,16 @@ th.col-selected { box-shadow: inset 0 -2px 0 var(--accent); }
 .sg-table { table-layout: fixed; border-collapse: separate; border-spacing: 0; width: calc(var(--sg-name) + var(--sg-cols) * var(--sg-col)); }
 .sg-col-name { width: var(--sg-name); }
 .sg-col-date { width: var(--sg-col); }
-.sg-head { position: sticky; z-index: 4; overflow: hidden; background: var(--surface); border-bottom: 1px solid var(--border); }
-.sg-body { overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
-.sg-name { position: sticky; left: 0; z-index: 2; background: var(--surface); text-align: left; padding: 4px 6px 4px 0; border-right: 1px solid var(--border); }
+.sg { --sg-top: 78px; }
+/* One native scroll container: header sticky on top, player column sticky on the left (both kept aligned
+   by the browser). Never taller than the screen below the tab bar (svh: stable while Safari's toolbar
+   collapses), so the sticky edges stay visible; short grids don't scroll vertically. Sideways overscroll
+   doesn't chain to the page; vertical overscroll continues to the page as usual. */
+.sg-scroll { overflow: auto; max-height: calc(100vh - var(--sg-top) - var(--sg-below, 0px)); max-height: calc(100svh - var(--sg-top) - var(--sg-below, 0px)); overscroll-behavior-x: contain; border-top: 1px solid var(--border); }
+.sg-scroll:not([data-pinned]) { overflow-y: hidden; }
+.sg-table thead th { position: sticky; top: 0; z-index: 2; background: var(--surface); border-bottom: 1px solid var(--border); }
+.sg-table thead th.sg-corner { z-index: 4; }
+.sg-name { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; padding: 4px 6px 4px 0; border-right: 1px solid var(--border); }
 .sg-corner { font-size: 11px; font-weight: 700; color: var(--muted); vertical-align: bottom; padding-bottom: 6px; }
 .sg-date { padding: 4px 0 6px; text-align: center; font-weight: 400; line-height: 1.15; }
 .sg-date span { display: block; }
@@ -337,6 +344,11 @@ th.col-selected { box-shadow: inset 0 -2px 0 var(--accent); }
 .sg-fit { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
 .sg-fit.man { color: var(--accent); font-weight: 700; }
 .sg-row > * { border-bottom: 1px solid var(--border); }
+/* Section breaks: Skaters, Goalies, IR. The label stays pinned with the player column. */
+.sg-group-row > * { background: var(--surface-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.sg-group-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 5px 8px; height: 26px; }
+.sg-group-count { font-weight: 600; opacity: 0.8; margin-left: 2px; }
+tbody.sg-group + tbody.sg-group .sg-group-row > * { border-top: 6px solid var(--surface); box-shadow: inset 0 1px 0 var(--border); }
 .sg-name-in { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .sg-name-in .star { flex: none; width: 26px; height: 36px; }
 .sg-player { display: flex; flex-direction: column; min-width: 0; }
