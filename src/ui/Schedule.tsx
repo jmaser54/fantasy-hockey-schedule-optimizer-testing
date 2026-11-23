@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type CSSProperties } from 'react';
+import type { CSSProperties } from 'react';
 import { formatShort, weekday } from '../domain/dates.ts';
 import { playerSchedule } from '../domain/lineupActions.ts';
 import type { LineupPlayer } from '../domain/optimizer.ts';
@@ -14,20 +14,18 @@ import { PosBadges, PreferredToggle } from './common.tsx';
  * agree; tapping a game opens the shared player sheet for that date. Rows are grouped Skaters,
  * Goalies, IR (roster order within each group).
  *
- * Scrolling (fixed 2026-11-23): the whole grid is ONE native scroll container holding one table.
- * The date header is `position: sticky; top: 0` and the player column `sticky; left: 0` inside it, so
- * the browser keeps them aligned with the cells on its own (no JavaScript syncing, which lagged and
- * misaligned on iOS during momentum scrolling and edge bounce). The container is never taller than the
- * visible screen below the tab bar, so both sticky edges stay on screen; a short grid doesn't scroll
- * vertically at all and the page scrolls as usual.
+ * Scrolling (simplified 2026-11-23): the grid scrolls horizontally only and shows its full height; the
+ * page does all vertical scrolling. The player column is `position: sticky; left: 0` inside that one
+ * horizontal scroller (native, no JavaScript). The date header is the table's first row, so it always
+ * lines up with its columns; it isn't sticky (a header that sticks to the page while its columns scroll
+ * sideways would need JavaScript syncing, which misbehaved on iOS). Each section row repeats the day
+ * numbers so dates stay readable further down.
  */
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const isGoalie = (p: LineupPlayer) => p.positions.length > 0 && p.positions.every((x) => x === 'G');
 
 export function ScheduleGrid({ window: w, active, onCell }: { window: Window; active?: { playerId: string; date: ISODate }; onCell: (playerId: string, date: ISODate, el: HTMLElement) => void }) {
   const { days, lineupPlayers } = useApp();
-  const root = useRef<HTMLDivElement>(null);
-  const scroller = useRef<HTMLDivElement>(null);
   const list = w.dates.map((d) => days.get(d)!).filter(Boolean);
   const groups = [
     { label: 'Skaters', rows: lineupPlayers.filter((p) => !p.onIr && !isGoalie(p)) },
@@ -40,48 +38,13 @@ export function ScheduleGrid({ window: w, active, onCell }: { window: Window; ac
   // Vertical swipes go to the page until the grid reaches the top of the screen (or while its rows are
   // already scrolled), so the page never gets "stuck" behind a half-visible grid; then the grid scrolls
   // its rows under its sticky header, and at its ends the page continues.
-  // Content below the grid (panel padding, footer) is subtracted from its height limit, so at the
-  // page's furthest scroll the grid's top sits exactly under the tab bar and its header never hides.
-  const measureBelow = () => {
-    const el = scroller.current;
-    if (!el) return;
-    const below = Math.max(0, document.documentElement.scrollHeight - (el.getBoundingClientRect().bottom + window.scrollY));
-    root.current?.style.setProperty('--sg-below', `${Math.round(below)}px`);
-  };
-  useLayoutEffect(measureBelow);
-  useLayoutEffect(() => {
-    let bar = 0;
-    const pin = () => {
-      const el = scroller.current;
-      if (!el) return;
-      const pinned = el.getBoundingClientRect().top <= bar + 1 || el.scrollTop > 0;
-      if (pinned !== el.hasAttribute('data-pinned')) el.toggleAttribute('data-pinned', pinned);
-    };
-    const place = () => {
-      bar = Math.round(document.querySelector('.tabbar')?.getBoundingClientRect().height ?? 0);
-      root.current?.style.setProperty('--sg-top', `${bar}px`);
-      measureBelow();
-      pin();
-    };
-    place();
-    window.addEventListener('resize', place);
-    window.addEventListener('scroll', pin, { passive: true });
-    const el = scroller.current;
-    el?.addEventListener('scroll', pin, { passive: true });
-    return () => {
-      window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', pin);
-      el?.removeEventListener('scroll', pin);
-    };
-  }, []);
-
   return (
-    <div className="sg" style={style} ref={root}>
+    <div className="sg" style={style}>
       <p className="sg-key small">
         <span className="sg-cell on sg-sample">TEAM</span> In lineup <span className="sg-cell off sg-sample">TEAM</span> Not in lineup
         <span className="muted">@ = away game. Tap a game for options.</span>
       </p>
-      <div className="sg-scroll" ref={scroller}>
+      <div className="sg-scroll">
         <table className="sg-table">
           <colgroup>
             <col className="sg-col-name" />
@@ -113,7 +76,11 @@ export function ScheduleGrid({ window: w, active, onCell }: { window: Window; ac
                 <th scope="colgroup" className="sg-name sg-group-label">
                   {g.label} <span className="sg-group-count">{g.rows.length}</span>
                 </th>
-                <td className="sg-group-fill" colSpan={list.length} />
+                {list.map((d) => (
+                  <td key={d.date} className="sg-group-day" aria-hidden="true">
+                    {Number(d.date.slice(8))}
+                  </td>
+                ))}
               </tr>
               {g.rows.map((p) => {
                 const cells = playerSchedule(list, p.id);
