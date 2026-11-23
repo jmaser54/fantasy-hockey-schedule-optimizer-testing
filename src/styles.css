@@ -315,6 +315,46 @@ th.col-selected { box-shadow: inset 0 -2px 0 var(--accent); }
   .lu > .cards { grid-column: 1 / -1; }
   .lu-overview { position: sticky; top: 90px; }
 }
+/* Schedule / Lineup switcher (2026-11-23) and the Schedule grid. */
+.plan-views { justify-self: start; }
+.plan-views button { min-width: 96px; padding: 6px 14px; font-weight: 600; }
+.lu > .plan-views { grid-column: 1 / -1; }
+.sg { --sg-name: 150px; --sg-col: 48px; }
+.sg-panel-body { padding-top: 10px; }
+.sg-key { margin: 0 0 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.sg-table { table-layout: fixed; border-collapse: separate; border-spacing: 0; width: calc(var(--sg-name) + var(--sg-cols) * var(--sg-col)); }
+.sg-col-name { width: var(--sg-name); }
+.sg-col-date { width: var(--sg-col); }
+.sg-head { position: sticky; z-index: 4; overflow: hidden; background: var(--surface); border-bottom: 1px solid var(--border); }
+.sg-body { overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+.sg-name { position: sticky; left: 0; z-index: 2; background: var(--surface); text-align: left; padding: 4px 6px 4px 0; border-right: 1px solid var(--border); }
+.sg-corner { font-size: 11px; font-weight: 700; color: var(--muted); vertical-align: bottom; padding-bottom: 6px; }
+.sg-date { padding: 4px 0 6px; text-align: center; font-weight: 400; line-height: 1.15; }
+.sg-date span { display: block; }
+.sg-month { font-size: 10px; font-weight: 700; color: var(--accent); }
+.sg-wd { font-size: 10px; color: var(--muted); }
+.sg-dn { font-size: 13px; font-weight: 700; }
+.sg-fit { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.sg-fit.man { color: var(--accent); font-weight: 700; }
+.sg-row > * { border-bottom: 1px solid var(--border); }
+.sg-name-in { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.sg-name-in .star { flex: none; width: 26px; height: 36px; }
+.sg-player { display: flex; flex-direction: column; min-width: 0; }
+.sg-pname { white-space: normal; overflow-wrap: anywhere; font-size: 13px; font-weight: 600; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.sg-meta { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 1px; }
+.sg-meta .pos, .sg-meta .badge { font-size: 9px; padding: 0 4px; }
+.sg-ir .sg-pname { color: var(--muted); }
+.sg-td { padding: 3px 2px; text-align: center; height: 44px; }
+.sg-cell { display: inline-flex; align-items: center; justify-content: center; width: 100%; min-height: 34px; padding: 0 1px; border-radius: 7px; font: inherit; font-size: 11px; font-weight: 700; letter-spacing: -0.02em; cursor: pointer; }
+.sg-cell.on { background: var(--accent); border: 1px solid var(--accent); color: #fff; }
+.sg-cell.off { background: var(--surface); border: 1px solid var(--border); color: var(--muted); font-weight: 600; }
+.sg-cell:hover { filter: brightness(0.95); }
+.sg-cell.here { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px; }
+.sg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sg-sample { width: auto; min-height: 22px; padding: 0 6px; cursor: default; }
+@media (max-width: 600px) {
+  .sg { --sg-name: 112px; --sg-col: 44px; }
+}
 /* Contextual sheet: a bottom sheet on phones, a side panel on wider screens. */
 .sheet-layer { position: fixed; inset: 0; z-index: 50; }
 .sheet-backdrop { position: absolute; inset: 0; background: rgb(15 23 42 / 25%); }

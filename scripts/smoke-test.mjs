@@ -345,6 +345,27 @@ try {
     await other.close();
     console.log('two tabs OK: changes and resets show in every open tab at once');
   }
+  // Schedule view (2026-11-23): the same lineup as the Lineup view. Taking McDavid out from his Schedule
+  // cell shows in Lineup, and Reset <period> in Lineup puts him back in the Schedule.
+  if (day >= 0) {
+    await page.getByRole('button', { name: 'Schedule', exact: true }).click();
+    await page.locator('.sg-body').waitFor({ timeout: 30_000 });
+    const assigned = page.locator('.sg-body .sg-row', { hasText: 'Connor McDavid' }).locator('.sg-cell.on').first();
+    if (!(await assigned.count())) fail('Schedule view shows no in-lineup game for Connor McDavid');
+    await assigned.click();
+    await page.locator('.sheet').getByText('Starting at').waitFor();
+    await page.locator('.sheet .lu-more summary').click();
+    await page.locator('.sheet').getByRole('button', { name: /^Remove from lineup/ }).click();
+    await page.locator('.sheet').getByRole('button', { name: 'Close' }).click();
+    await until(async () => (await savedDays(page)) === 1 && (await page.locator('.sg-body .sg-row', { hasText: 'Connor McDavid' }).locator('.sg-cell.off').count()) > 0, 'a change from the Schedule view was not saved');
+    await page.getByRole('button', { name: 'Lineup', exact: true }).click();
+    await page.locator('.lu-daily').waitFor();
+    await resetPeriod(page);
+    await page.getByRole('button', { name: 'Schedule', exact: true }).click();
+    await until(async () => (await savedDays(page)) === 0 && (await page.locator('.sg-body .sg-row', { hasText: 'Connor McDavid' }).locator('.sg-cell.off').count()) === 0, 'Reset in the Lineup view did not reach the Schedule view');
+    await page.getByRole('button', { name: 'Lineup', exact: true }).click();
+    console.log('schedule OK: a change from the Schedule view is saved, and Reset in Lineup shows in Schedule');
+  }
   const otherNow = await page.evaluate((k) => localStorage.getItem(k), otherKey);
   if (otherNow !== otherSiteData) fail(`this site changed the other site's saved data (${otherKey})`);
   console.log(`storage isolation OK: ${siteKey} used; ${otherKey} untouched`);

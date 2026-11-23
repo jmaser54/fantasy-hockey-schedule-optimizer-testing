@@ -313,3 +313,21 @@ export function summarizeDays(days: readonly DayResult[], roster: readonly Lineu
     opportunities: d.manual ? d.players.filter((x) => x.game && !x.seatKey && gameKind(d, x.playerId, players, seats) === 'opportunity').map((x) => x.playerId) : [],
   }));
 }
+
+// ---------------------------------------------------------------------------
+// Schedule view (2026-11-23): one player's games across the period, from the same day results
+
+export interface ScheduleCell {
+  date: ISODate;
+  /** The player's NHL game that date (none: empty cell). */
+  game?: Game;
+  /** The game is in the current lineup (automatic or your saved lineup for that date). */
+  assigned: boolean;
+}
+
+export function playerSchedule(days: readonly DayResult[], playerId: string): ScheduleCell[] {
+  return days.map((d) => {
+    const st = d.players.find((x) => x.playerId === playerId);
+    return { date: d.date, game: st?.game, assigned: !!st?.game && !!st.seatKey };
+  });
+}

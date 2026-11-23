@@ -20,6 +20,26 @@ import type { Game, ISODate } from '../domain/types.ts';
 import { lineupGroupTotals } from '../domain/capacity.ts';
 import { useApp, type Window } from './context.ts';
 import { PosBadges, PreferredToggle } from './common.tsx';
+import { ScheduleGrid } from './Schedule.tsx';
+import { STORAGE_KEY } from '../state/appState.ts';
+
+/** Which view of the Lineup tab is shown: remembered for the browser tab, per site (sessionStorage). */
+type PlanView = 'lineup' | 'schedule';
+const VIEW_KEY = `${STORAGE_KEY}:view`;
+function loadView(): PlanView {
+  try {
+    return globalThis.sessionStorage?.getItem(VIEW_KEY) === 'schedule' ? 'schedule' : 'lineup';
+  } catch {
+    return 'lineup';
+  }
+}
+function saveView(v: PlanView) {
+  try {
+    globalThis.sessionStorage?.setItem(VIEW_KEY, v);
+  } catch {
+    /* private mode: the choice just isn't remembered */
+  }
+}
 
 /**
  * Lineup page (rebuild, 2026-11-23). Two connected levels:
@@ -45,15 +65,22 @@ function useSeats() {
 
 export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
   const { state, selected, windows, lineupPlayers } = useApp();
+  const [view, setViewState] = useState<PlanView>(loadView);
+  const setView = (v: PlanView) => {
+    setViewState(v);
+    saveView(v);
+  };
   const [date, setDate] = useState<ISODate | undefined>(() => firstUpcoming(selected.dates));
-  const [sheet, setSheet] = useState<string | null>(null); // player id
+  // The open player sheet: a player on a date (the Lineup view's selected day, or a Schedule cell's date).
+  const [sheetAt, setSheetAt] = useState<{ playerId: string; date: ISODate } | null>(null);
+  const setSheet = (id: string | null) => setSheetAt(id && date ? { playerId: id, date } : null);
   const opener = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (!date || !selected.dates.includes(date)) setDate(firstUpcoming(selected.dates));
   }, [selected, date]);
   useEffect(() => {
-    if (sheet && !lineupPlayers.some((p) => p.id === sheet)) setSheet(null);
-  }, [sheet, lineupPlayers]);
+    if (sheetAt && (!lineupPlayers.some((p) => p.id === sheetAt.playerId) || !selected.dates.includes(sheetAt.date))) setSheetAt(null);
+  }, [sheetAt, lineupPlayers, selected]);
   const openPlayer = (id: string, el?: HTMLElement | null) => {
     if (el) opener.current = el;
     setSheet(id);
@@ -76,12 +103,58 @@ export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
     );
   }
 
+  const switcher = (
+    <div className="segmented plan-views" role="group" aria-label="View: Schedule or Lineup">
+      {(['schedule', 'lineup'] as const).map((v) => (
+        <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>
+          {v === 'schedule' ? 'Schedule' : 'Lineup'}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (view === 'schedule') {
+    return (
+      <div className="stack sg-view">
+        {switcher}
+        {windows.length > 1 && <SummaryCards />}
+        <PeriodOverview window={selected} date={date} onDate={setDate} calendar={false} />
+        <section className="panel sg-panel" aria-label={`Schedule for ${selected.name}`}>
+          <div className="panel-body sg-panel-body">
+            <ScheduleGrid
+              window={selected}
+              active={sheetAt ?? undefined}
+              onCell={(playerId, d, el) => {
+                opener.current = el;
+                setSheetAt({ playerId, date: d });
+              }}
+            />
+          </div>
+        </section>
+        {sheetAt && (
+          <PlayerSheet
+            key={`${sheetAt.playerId}|${sheetAt.date}`}
+            playerId={sheetAt.playerId}
+            date={sheetAt.date}
+            onClose={close}
+            onOpenInLineup={() => {
+              setDate(sheetAt.date);
+              setSheetAt(null);
+              setView('lineup');
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="stack lu">
+      {switcher}
       {windows.length > 1 && <SummaryCards />}
       <PeriodOverview window={selected} date={date} onDate={setDate} />
       {date && <DayLineup date={date} onPlayer={openPlayer} />}
-      {sheet && date && <PlayerSheet key={`${sheet}|${date}`} playerId={sheet} date={date} onClose={close} />}
+      {sheetAt && <PlayerSheet key={`${sheetAt.playerId}|${sheetAt.date}`} playerId={sheetAt.playerId} date={sheetAt.date} onClose={close} />}
     </div>
   );
 }
@@ -120,7 +193,7 @@ const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 /** Monday of the date's week. */
 const mondayOf = (d: ISODate) => addDays(d, -((new Date(`${d}T12:00:00Z`).getUTCDay() + 6) % 7));
 
-function PeriodOverview({ window: w, date, onDate }: { window: Window; date?: ISODate; onDate: (d: ISODate) => void }) {
+function PeriodOverview({ window: w, date, onDate, calendar = true }: { window: Window; date?: ISODate; onDate: (d: ISODate) => void; calendar?: boolean }) {
   const { days, summarizeWindow, lineupPlayers, dispatch } = useApp();
   const seats = useSeats();
   const summary = summarizeWindow(w);
@@ -177,6 +250,8 @@ function PeriodOverview({ window: w, date, onDate }: { window: Window; date?: IS
             </button>
           </div>
         )}
+        {calendar && (
+          <>
         <div className="lu-cal" role="group" aria-label={`Days in ${w.name}`}>
           {WEEKDAYS.map((x, i) => (
             <div key={`h${i}`} className="lu-cal-head" aria-hidden="true">
@@ -188,6 +263,8 @@ function PeriodOverview({ window: w, date, onDate }: { window: Window; date?: IS
         <p className="lu-cal-key small muted">
           Each day: games in your lineup / games scheduled. <span className="lu-dot" /> open spot · <span className="lu-dash" /> your changes
         </p>
+          </>
+        )}
       </div>
     </section>
   );
@@ -412,7 +489,12 @@ function ChangeList({ changes, emptyText }: { changes: DayChange[]; emptyText: s
 type Pending = { inId: string; outId: string; seatLabel: string; gain?: Game; lose?: Game; next: Lineup };
 type IrStep = { kind: 'confirm' | 'done'; plan: IrPlan; toIr: boolean };
 
-function PlayerSheet({ playerId, date, onClose }: { playerId: string; date: ISODate; onClose: () => void }) {
+/**
+ * The player sheet. From the Schedule view (`onOpenInLineup`) it is the compact version: the same
+ * assignment, replacement and position options for that date, without the ★ and IR rows (★ is on the
+ * grid row; IR belongs to the Lineup view), plus a way to open that day in the Lineup view.
+ */
+function PlayerSheet({ playerId, date, onClose, onOpenInLineup }: { playerId: string; date: ISODate; onClose: () => void; onOpenInLineup?: () => void }) {
   const { state, days, dispatch, lineupPlayers, selected, summarizeWindow, data, teams, toast } = useApp();
   const seats = useSeats();
   const save = useSaveDay();
@@ -625,6 +707,12 @@ function PlayerSheet({ playerId, date, onClose }: { playerId: string; date: ISOD
           </details>
         )}
 
+        {onOpenInLineup ? (
+          <button className="btn small" onClick={onOpenInLineup}>
+            Open {when} in Lineup
+          </button>
+        ) : (
+          <>
         <div className="lu-star-row">
           <PreferredToggle id={p.id} name={p.name} preferred={!!p.preferred} />
           <span className="small">
@@ -655,6 +743,8 @@ function PlayerSheet({ playerId, date, onClose }: { playerId: string; date: ISOD
             </>
           )}
         </div>
+          </>
+        )}
       </div>
     );
   }

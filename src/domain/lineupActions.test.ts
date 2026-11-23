@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { initialState, reducer, type AppState } from '../state/appState.ts';
-import { addOptions, gameKind, inAutomaticLineup, lineupOf, moveOptions, overrideFor, planIrChange, replaceOptions, summarizeDays } from './lineupActions.ts';
+import { addOptions, gameKind, inAutomaticLineup, lineupOf, moveOptions, overrideFor, planIrChange, playerSchedule, replaceOptions, summarizeDays } from './lineupActions.ts';
 import { expandSeats, optimizeDates, optimizeDay, type LineupPlayer } from './optimizer.ts';
 import { toLineupPlayers } from './roster.ts';
 import { player, sched, slots } from './testUtils.ts';
@@ -210,5 +210,28 @@ describe('period overview', () => {
     expect(nov17.manual).toBe(true);
     expect(nov17.opportunities).toContain('mcdavid');
     expect(summaries().filter((x) => x.date !== '2026-11-17').every((x) => x.opportunities.length === 0)).toBe(true);
+  });
+});
+
+describe('schedule view cells', () => {
+  it('show every game, assigned exactly when it is in the lineup, and follow saved changes', () => {
+    let st = start();
+    const list = () => [...days(st).values()];
+    const total = (id: string) => summarizeRange(id);
+    function summarizeRange(id: string) {
+      return list().reduce((n, d) => n + Number(!!d.players.find((x) => x.playerId === id && x.game && x.seatKey)), 0);
+    }
+    for (const p of roster(st)) {
+      const cells = playerSchedule(list(), p.id);
+      expect(cells.map((c) => c.date)).toEqual(DATES);
+      expect(cells.filter((c) => c.assigned).length).toBe(total(p.id));
+      for (const c of cells) if (!c.game) expect(c.assigned).toBe(false); // no game: empty cell
+    }
+    // A change saved for Nov 17 (as the Lineup view saves it) shows in the schedule at once.
+    st = save(st, '2026-11-17', moveOptions(days(st).get('2026-11-17')!, 'mcdavid', roster(st), seats).find((o) => o.seatLabel === 'Bench')!.next);
+    const mc = playerSchedule(list(), 'mcdavid');
+    expect(mc.find((c) => c.date === '2026-11-17')).toMatchObject({ assigned: false });
+    expect(mc.find((c) => c.date === '2026-11-17')!.game).toBeDefined();
+    expect(mc.find((c) => c.date === '2026-11-18')).toMatchObject({ assigned: true });
   });
 });
