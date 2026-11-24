@@ -6,6 +6,7 @@ import { opponent } from '../domain/schedule.ts';
 import type { ISODate } from '../domain/types.ts';
 import { useApp, type Window } from './context.ts';
 import { PosBadges, PreferredToggle } from './common.tsx';
+import { StickyHeadTable } from './StickyHead.tsx';
 
 /**
  * Schedule view (2026-11-23): every roster player × every date of the selected period, with the
@@ -14,12 +15,9 @@ import { PosBadges, PreferredToggle } from './common.tsx';
  * agree; tapping a game opens the shared player sheet for that date. Rows are grouped Skaters,
  * Goalies, IR (roster order within each group).
  *
- * Scrolling (simplified 2026-11-23): the grid scrolls horizontally only and shows its full height; the
- * page does all vertical scrolling. The player column is `position: sticky; left: 0` inside that one
- * horizontal scroller (native, no JavaScript). The date header is the table's first row, so it always
- * lines up with its columns; it isn't sticky (a header that sticks to the page while its columns scroll
- * sideways would need JavaScript syncing, which misbehaved on iOS). Each section row repeats the day
- * numbers so dates stay readable further down.
+ * Scrolling (2026-11-24): `StickyHeadTable` — the page scrolls vertically, the grid only sideways, the
+ * player column is sticky left, and the date header stays visible under the tab bar, following the grid
+ * through a CSS scroll-driven animation (see StickyHead.tsx).
  */
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const isGoalie = (p: LineupPlayer) => p.positions.length > 0 && p.positions.every((x) => x === 'G');
@@ -44,16 +42,20 @@ export function ScheduleGrid({ window: w, active, onCell }: { window: Window; ac
         <span className="sg-cell on sg-sample">TEAM</span> In lineup <span className="sg-cell off sg-sample">TEAM</span> Not in lineup
         <span className="muted">@ = away game. Tap a game for options.</span>
       </p>
-      <div className="sg-scroll">
-        <table className="sg-table">
+      <StickyHeadTable
+        tableClass="sg-table"
+        scrollClass="sg-scroll"
+        fixedLayout
+        colgroup={
           <colgroup>
             <col className="sg-col-name" />
             {list.map((d) => (
               <col key={d.date} className="sg-col-date" />
             ))}
           </colgroup>
-          <thead>
-            <tr>
+        }
+        head={
+          <tr>
               <th className="sg-name sg-corner">Player</th>
               {list.map((d, i) => {
                 const showMonth = i === 0 || d.date.slice(8) === '01';
@@ -69,18 +71,16 @@ export function ScheduleGrid({ window: w, active, onCell }: { window: Window; ac
                 );
               })}
             </tr>
-          </thead>
+        }
+      >
+
           {groups.map((g) => (
             <tbody key={g.label} className="sg-group">
               <tr className="sg-group-row">
                 <th scope="colgroup" className="sg-name sg-group-label">
                   {g.label} <span className="sg-group-count">{g.rows.length}</span>
                 </th>
-                {list.map((d) => (
-                  <td key={d.date} className="sg-group-day" aria-hidden="true">
-                    {Number(d.date.slice(8))}
-                  </td>
-                ))}
+                <td className="sg-group-fill" colSpan={list.length} />
               </tr>
               {g.rows.map((p) => {
                 const cells = playerSchedule(list, p.id);
@@ -122,8 +122,8 @@ export function ScheduleGrid({ window: w, active, onCell }: { window: Window; ac
               })}
             </tbody>
           ))}
-        </table>
-      </div>
+
+      </StickyHeadTable>
     </div>
   );
 }

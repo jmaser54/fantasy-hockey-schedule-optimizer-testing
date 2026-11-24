@@ -20,6 +20,7 @@ import type { Player } from '../domain/types.ts';
 import { clearComparisons, loadEvaluatorPrefs, saveEvaluatorPrefs, type EvaluatorPrefs } from '../state/evaluatorPrefs.ts';
 import { useApp } from './context.ts';
 import { InfoTip } from './common.tsx';
+import { StickyHeadTable } from './StickyHead.tsx';
 import { adjustedDecimals, formatAdjusted, formatStat, mergeComparisons, POSITION_SHORT, searchSkaters, seasonLabel, sortRows, STAT_GROUPS, STAT_SHORT, type StatGroupId } from './evaluatorFormat.ts';
 
 /**
@@ -573,20 +574,21 @@ function RosterPanel(props: {
         </div>
       ) : null}
       {(!props.emptyRoster || props.comparisons.length > 0) && (
-        <div className="table-wrap">
-          <table className="eval-table">
-            <thead>
-              <tr>
-                <th className="sticky">Player</th>
-                <th className="n" title="Games played (actual)">
-                  GP
-                </th>
-                <StatHeaders stats={stats} sort={sort} onSort={onSort} />
-              </tr>
-            </thead>
-            <tbody>{rows.map(row)}</tbody>
-          </table>
-        </div>
+        <StickyHeadTable
+          tableClass="eval-table"
+          scrollClass="table-wrap"
+          head={
+            <tr>
+              <th className="sticky">Player</th>
+              <th className="n" title="Games played (actual)">
+                GP
+              </th>
+              <StatHeaders stats={stats} sort={sort} onSort={onSort} />
+            </tr>
+          }
+        >
+          <tbody>{rows.map(row)}</tbody>
+        </StickyHeadTable>
       )}
       <div className="eval-foot">
         {props.footer}
@@ -779,18 +781,20 @@ function RankingsPanel(props: {
         <div className="empty">Choose a benchmark above to rank on {LABEL.get(stat)?.toLowerCase()}.</div>
       ) : (
         <>
-          <div className="table-wrap">
-            <table className="eval-table rank-table">
-              <thead>
-                <tr>
-                  <th className="n rk">#</th>
-                  <th className="sticky">Player</th>
-                  <th className="n" title="Games played (actual)">
-                    GP
-                  </th>
-                  <StatHeaders stats={stats} sort={{ key: stat, dir: direction }} onSort={onSort} />
-                </tr>
-              </thead>
+          <StickyHeadTable
+            tableClass="eval-table rank-table"
+            scrollClass="table-wrap"
+            head={
+              <tr>
+                <th className="n rk">#</th>
+                <th className="sticky">Player</th>
+                <th className="n" title="Games played (actual)">
+                  GP
+                </th>
+                <StatHeaders stats={stats} sort={{ key: stat, dir: direction }} onSort={onSort} />
+              </tr>
+            }
+          >
               <tbody>
                 {rows.slice(0, shown).map((r) => {
                   const line = byId.get(r.nhlId)!;
@@ -814,8 +818,7 @@ function RankingsPanel(props: {
                   );
                 })}
               </tbody>
-            </table>
-          </div>
+          </StickyHeadTable>
           {rows.length === 0 && <div className="empty">No skaters match these filters.</div>}
           {rows.length > shown && (
             <div className="rank-more">

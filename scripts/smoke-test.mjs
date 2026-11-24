@@ -289,6 +289,32 @@ try {
   await page.locator('.rank-table tbody tr.roster-row', { hasText: 'Connor McDavid' }).waitFor({ timeout: 30_000 });
   if ((await page.evaluate((k) => localStorage.getItem(k), siteKey)) !== rosterSaved) fail('Player Rankings changed the saved roster');
   console.log(`evaluator OK: "${bench.trim()}"; Player Rankings lists the roster player, shaded`);
+  // Persistent table header (2026-11-24): scrolled down and sideways, the header stays under the tab bar
+  // and lines up with its columns (scroll-driven; browsers without it show the normal header row).
+  const head = await page.evaluate(async () => {
+    const supported = CSS.supports('animation-timeline: scroll()');
+    const sc = document.querySelector('.sh-scroll .rank-table')?.closest('.sh-scroll');
+    if (!sc) return { error: 'no persistent-header table on Player Rankings' };
+    window.scrollTo(0, sc.getBoundingClientRect().top + window.scrollY + 300);
+    sc.scrollLeft = Math.min(120, sc.scrollWidth - sc.clientWidth);
+    await new Promise((r) => setTimeout(r, 300));
+    const bar = document.querySelector('.tabbar').getBoundingClientRect().bottom;
+    const strip = sc.parentElement.querySelector('.sh-strip');
+    const under = sc.querySelector('.sh-under');
+    const scR = sc.getBoundingClientRect();
+    let off = 0;
+    [...strip.tHead.rows[0].cells].forEach((c, i) => {
+      const u = under.rows[0].cells[i].getBoundingClientRect();
+      if (u.right > scR.left + 1 && u.left < scR.right - 1) off = Math.max(off, Math.abs(c.getBoundingClientRect().x - u.x));
+    });
+    const top = strip.getBoundingClientRect().top;
+    sc.scrollLeft = 0;
+    window.scrollTo(0, 0);
+    return { supported, stuck: Math.abs(top - bar) < 2, off: Math.round(off) };
+  });
+  if (head.error) fail(head.error);
+  if (head.supported && (!head.stuck || head.off > 1)) fail(`persistent header: stuck ${head.stuck}, misaligned by ${head.off}px`);
+  console.log(head.supported ? `persistent header OK: stays under the tab bar, columns aligned (${head.off}px)` : 'persistent header skipped: this browser has no scroll-driven animations (normal header row shown)');
   await checkHistoricalSeasons(rosterSaved);
   await page.getByRole('button', { name: 'Games Optimizer', exact: true }).click();
   if (await page.getByRole('tab', { name: 'Roster Evaluation' }).count()) fail('Player Evaluator destinations still shown in Playoff Planner');
