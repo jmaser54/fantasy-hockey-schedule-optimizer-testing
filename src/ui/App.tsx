@@ -13,16 +13,18 @@ import { AboutView } from './About.tsx';
 import { EvaluatorView } from './Evaluator.tsx';
 import { ContactForm } from './Contact.tsx';
 import { LineupView } from './Lineup.tsx';
-import { RankingsView } from './Rankings.tsx';
+import { GridView, RankingsView } from './Rankings.tsx';
 import { RosterView } from './Roster.tsx';
 import { SettingsModal } from './Settings.tsx';
 import { TradesView } from './Trades.tsx';
 
 const TABS = [
-  { id: 'rankings', label: 'Team Schedules', short: 'Schedules' },
-  { id: 'roster', label: 'Roster' },
+  // Order and labels: owner decision 2026-11-24 (Schedules and Grid were one "Team Schedules" page).
+  { id: 'rankings', label: 'Schedules' },
+  { id: 'grid', label: 'Grid' },
   { id: 'lineup', label: 'Lineup' },
   { id: 'trades', label: 'Trade Lab' },
+  { id: 'roster', label: 'Roster' },
 ] as const;
 /** Player Evaluator's destinations (no period bar). */
 const EVALUATOR_TABS = [
@@ -157,17 +159,8 @@ export function App() {
           {area === 'planner' ? (
             <nav className="tabs planner-tabs" role="tablist" aria-label="Games Optimizer">
               {TABS.map((t) => (
-                <button key={t.id} role="tab" className="tab" aria-selected={!about && tab === t.id} aria-label={'short' in t ? t.label : undefined} onClick={() => go(t.id)}>
-                  {'short' in t ? (
-                    <>
-                      <span className="label-full">{t.label}</span>
-                      <span className="label-short" aria-hidden="true">
-                        {t.short}
-                      </span>
-                    </>
-                  ) : (
-                    t.label
-                  )}
+                <button key={t.id} role="tab" className="tab" aria-selected={!about && tab === t.id} onClick={() => go(t.id)}>
+                  {t.label}
                   {t.id === 'roster' && state.roster.length > 0 && <span className="count">{state.roster.length}</span>}
                 </button>
               ))}
@@ -206,6 +199,7 @@ export function App() {
           >
             {about && <AboutView />}
             {!about && tab === 'rankings' && <RankingsView onGoRoster={() => go('roster')} />}
+            {!about && tab === 'grid' && <GridView />}
             {!about && tab === 'roster' && <RosterView onGoLineup={() => go('lineup')} />}
             {!about && tab === 'lineup' && <LineupView onGoRoster={() => go('roster')} />}
             {!about && tab === 'trades' && <TradesView onGoRoster={() => go('roster')} />}

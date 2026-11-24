@@ -235,6 +235,17 @@ try {
   const chip = await page.locator('.data-status').innerText();
   if (!/NHL data/.test(chip)) fail(`unexpected data status: ${chip}`);
   console.log(`rankings OK: ${rows} teams; status "${chip.trim()}"`);
+  // Grid tab (2026-11-24: the Schedule Grid has its own tab after Schedules).
+  const order = (await page.locator('.planner-tabs .tab').allInnerTexts()).map((t) => t.replace(/\s*\d+$/, '').trim());
+  if (order.join('|') !== 'Schedules|Grid|Lineup|Trade Lab|Roster') fail(`Games Optimizer tab order: ${order.join(', ')}`);
+  await page.getByRole('tab', { name: 'Grid', exact: true }).click();
+  await page.locator('.sh-scroll .sgrid tbody tr').first().waitFor({ timeout: 30_000 });
+  const gridRows = await page.locator('.sh-scroll .sgrid tbody tr').count();
+  if (gridRows !== live.teams.length) fail(`Grid shows ${gridRows} teams, expected ${live.teams.length}`);
+  if ((await page.locator('.sh-scroll .table-wrap table, .sh-scroll table:not(.sgrid)').count()) > 0) fail('the team schedules table is still on the Grid tab');
+  console.log(`grid OK: tabs ${order.join(' | ')}; Grid tab shows ${gridRows} teams on its own`);
+  await page.getByRole('tab', { name: 'Schedules', exact: true }).click();
+  await page.locator('.table-wrap table tbody tr').first().waitFor({ timeout: 30_000 });
 
   await page.getByRole('tab', { name: /^Roster(\s*\d+)?$/ }).click();
   if (!(await page.getByLabel('Paste player names').isVisible())) fail('paste mode is not the default on the roster page');

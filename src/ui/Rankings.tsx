@@ -6,12 +6,21 @@ import { gridCell, matchupsOn, nextSort, rosterPlayersByTeam, sortTeamRows, type
 import type { ISODate, TeamId } from '../domain/types.ts';
 import { useApp, type Window } from './context.ts';
 import { PosBadges } from './common.tsx';
+import { StickyHeadTable } from './StickyHead.tsx';
 
-/** Team Schedules page: Games per Night, NHL Team Schedules and the Schedule Grid, all governed by the selected date range. */
+/** Schedules tab: Games per Night and the NHL Team Schedules table, governed by the selected date range. */
 export function RankingsView({ onGoRoster }: { onGoRoster: () => void }) {
   return (
     <div className="stack">
       <TeamRankings onGoRoster={onGoRoster} />
+    </div>
+  );
+}
+
+/** Grid tab: the Schedule Grid, governed by the selected date range (its own tab since 2026-11-24). */
+export function GridView() {
+  return (
+    <div className="stack">
       <ScheduleGrid />
     </div>
   );
@@ -112,9 +121,10 @@ function TeamRankings({ onGoRoster }: { onGoRoster: () => void }) {
             {selected.name}, {formatShort(selected.start)} – {formatShort(selected.end)}. Click a team to view game dates.
           </span>
         </div>
-        <div className="table-wrap">
-          <table className={selected.id === 'week' ? 'next-week' : undefined}>
-            <thead>
+        <StickyHeadTable
+          tableClass={`team-table ${selected.id === 'week' ? 'next-week' : ''}`}
+          scrollClass="table-wrap"
+          head={
               <tr>
                 <th className="n">#</th>
                 {sortTh('team', 'Team', 'Team name')}
@@ -125,7 +135,8 @@ function TeamRankings({ onGoRoster }: { onGoRoster: () => void }) {
                 {summaryCol && sortTh(summaryCol.key, summaryCol.label, summaryCol.title, 'summary-col')}
                 {sortTh('mine', 'Your Players', 'Players on your roster from this team. Click a count to see them')}
               </tr>
-            </thead>
+          }
+        >
             <tbody>
               {sorted.map((r, idx) => {
                 const players = byTeam.get(r.team) ?? [];
@@ -176,8 +187,7 @@ function TeamRankings({ onGoRoster }: { onGoRoster: () => void }) {
                 );
               })}
             </tbody>
-          </table>
-        </div>
+        </StickyHeadTable>
       </section>
     </>
   );
@@ -350,9 +360,11 @@ function ScheduleGrid() {
           {selected.name}, {formatShort(selected.start)} – {formatShort(selected.end)}
         </span>
       </div>
-      <div className="grid-wrap">
-        <table className="sgrid">
-          <thead>
+      <StickyHeadTable
+        tableClass="sgrid"
+        scrollClass="grid-wrap"
+        head={
+          <>
             <tr className="nightly">
               <th className="sticky" title="NHL games scheduled league-wide on each date">
                 NHL Games
@@ -379,7 +391,9 @@ function ScheduleGrid() {
               ))}
               {head('games', 'Games', 'n')}
             </tr>
-          </thead>
+          </>
+        }
+      >
           <tbody>
             {rows.map((r) => (
               <tr key={r.team}>
@@ -402,8 +416,7 @@ function ScheduleGrid() {
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
+      </StickyHeadTable>
     </section>
   );
 }

@@ -21,8 +21,8 @@ Last reviewed against commit `2430b9662da3bc7de067f465d79edbeb1feff43a` (2026-11
 
 Live site: https://jmaser54.github.io/fantasy-hockey-schedule-optimizer/ (GitHub Pages).
 
-Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). The site opens on Team Schedules (no hash or an unknown hash → `#rankings`; owner decision, round 2):
-1. **Team Schedules** (`src/ui/Rankings.tsx`, short label "Schedules" on phones): which NHL teams play the most, and on light nights, in the selected window.
+Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). **Testing repo, owner decision 2026-11-24:** the Games Optimizer tabs are exactly **Schedules · Grid · Lineup · Trade Lab · Roster** (same labels and order on phones and desktop); Schedules and Grid were one "Team Schedules" page (the list below is in the older order and still describes the live repo). The site opens on Schedules / Team Schedules (no hash or an unknown hash → `#rankings`; owner decision, round 2):
+1. **Team Schedules** (`src/ui/Rankings.tsx`, short label "Schedules" on phones): which NHL teams play the most, and on light nights, in the selected window. In the testing repo this is the **Schedules** tab (`#rankings`: Games per Night, roster shortcut, NHL Team Schedules), and the Schedule Grid is its own **Grid** tab (`#grid`, `GridView`).
 2. **Roster** (`src/ui/Roster.tsx`): paste or search players. Set position eligibility, Active/IR and ★ Preferred, then remove or clear. No period toggle here; its Games column is always next week.
 3. **Lineup** (`src/ui/Lineup.tsx`): the optimizer's results.
    - A period overview (the period's total and a calendar of its days) and the selected day's lineup with the bench (Lineup rebuild, testing 2026-11-23; §B "Lineup rebuild"). The ESPN-style day editor and the grid were removed in testing.
@@ -163,11 +163,12 @@ Replaces the grid-based redesign v1 (testing `869929f`, reviewed on an iPhone an
 
 ### Persistent table headers (owner request 2026-11-24; Implemented in the testing repo only, not live)
 
-Used by Schedule (Lineup tab), Roster Evaluation and Player Rankings (`StickyHeadTable` in `src/ui/StickyHead.tsx`). **Confirmed (owner):** headers must stay visible; scrolling must feel natural on iPhone Safari; no JavaScript syncing of separate scroll areas; no awkward handoffs; no page-wide horizontal scroll.
+Used by Schedule (Lineup tab), Roster Evaluation, Player Rankings, and since 2026-11-24 the NHL Team Schedules table (Schedules tab, no pinned column, as before) and the Schedule Grid (Grid tab, Team column pinned, two header rows) (`StickyHeadTable` in `src/ui/StickyHead.tsx`). **Confirmed (owner):** headers must stay visible; scrolling must feel natural on iPhone Safari; no JavaScript syncing of separate scroll areas; no awkward handoffs; no page-wide horizontal scroll.
 - **One vertical scroller, the page.** The table area (`.sh-scroll`) scrolls horizontally only (`overflow-x: auto; overflow-y: hidden`), so there is never a second vertical scroller. Sideways edge bounce is off (`overscroll-behavior-x: none`).
 - **Pinned columns** (Schedule's player column; Evaluation's Player; Rankings' # and Player) are native `position: sticky; left` cells inside it.
 - **The header** is a copy of the table's header row in a strip (`.sh-head`) that is page-sticky under the tab bar. It follows the table sideways through a CSS scroll-driven animation: `scroll-timeline` on the scroller, `animation-timeline` on the strip (`sh-slide`, translateX 0 → −max scroll), and the opposite animation on its pinned cells (`sh-hold`). Browsers run these with the scroll itself (Safari 26+, accelerated since about 26.3), so the header can't lag. The strip is the visible, clickable header (Rankings and Evaluation sort from it); the table's own header row stays in place but invisible, keeping widths and space. The strip has the header's real height with a matching negative margin, so it leaves together with the table's last row.
 - **JavaScript only measures** on layout changes (ResizeObserver, resize), never on scroll: the tab bar height, the scroll distance, the strip height, and for auto-width tables (Evaluation, Rankings) the column widths copied onto the strip. Schedule's columns have fixed CSS widths.
+- **The header strip's clip box is `overflow: clip`** (with `hidden` as fallback): a `hidden` box can still be scrolled by code (`scrollIntoView`, find-in-page), which shifted the copy off its columns (found 2026-11-24 when a click on an off-screen header scrolled it); `clip` can't be scrolled.
 - **Fallback:** without scroll-driven animations (`@supports not (animation-timeline: scroll())`, e.g. iOS 18 and older) the strip is hidden and the table's own header row shows: aligned, not sticky.
 - **Open:** not yet checked on a real iPhone; the header strip itself isn't swipeable sideways (swipes on the table body are).
 
@@ -188,7 +189,7 @@ Used by Schedule (Lineup tab), Roster Evaluation and Player Rankings (`StickyHea
 - All dates are `YYYY-MM-DD` in the NHL's Eastern game-date convention. No local-time `Date` math; "today" for Next Week is the Eastern date (`easternToday`).
 - Light night = at most half the teams play, i.e. ≤8 games with 32 teams (`src/domain/rankings.ts` `isLightNight`).
 - Team Schedules:
-  - The tab always shows, in order: "Games per Night", "NHL Team Schedules", then "Schedule Grid". The old "Team Rankings / Schedule Grid" toggle is gone (owner decision, 2026-11-12). Rankings are consistent with the selected window; columns sort ascending and descending.
+  - The tab always shows, in order: "Games per Night", "NHL Team Schedules", then "Schedule Grid" (testing repo since 2026-11-24: the Schedule Grid is on its own Grid tab; Schedules keeps the first two). The old "Team Rankings / Schedule Grid" toggle is gone (owner decision, 2026-11-12). Rankings are consistent with the selected window; columns sort ascending and descending.
   - The Schedule Grid covers the selected window: 7 days in Next Week, the full window in Playoffs or Custom.
   - NHL Team Schedules shows a "Full Playoffs" context column for a single round or a Custom period, but **not in Next Week** (owner decision, round 8). In Next Week the table (`table.next-week`) lets its headers wrap on phones so every column, Your Players included, fits at 360px. The Full Playoffs view itself (rounds + Total) is unchanged.
   - **Roster indicator:** teams with at least one roster player show the blue `mine-dot` beside the team code. The light-blue row shading (`tr.mine-row`) was removed at the owner's request on 2026-11-21, restoring the plain rows; other grid formatting is unchanged.
@@ -382,6 +383,7 @@ Each rule below is enforced by the code or tests named; keep them true.
     - the Lineup heading matches `/of \d+ scheduled games fit your lineup/`;
     - the roster persists across a reload;
     - Roster Evaluation loads the published skater stats and shows the roster with a "Normalized to N GP" benchmark; Player Rankings lists the roster player with roster shading; neither changes the saved roster;
+    - Games Optimizer tabs (testing repo, 2026-11-24): exactly Schedules, Grid, Lineup, Trade Lab, Roster; the Grid tab shows the Schedule Grid (32 teams) without the team schedules table;
     - persistent header (testing repo, 2026-11-24): on Player Rankings, scrolled down and sideways, the header copy sits under the tab bar and lines up with its columns (skipped where scroll-driven animations aren't supported);
     - historical seasons (2026-11-22; seasons read from `HISTORICAL_SEASONS` in `src/data/format.ts`): each `data/skater-stats-<season>.json` is served (3 tries) and is that season's complete regular-season snapshot; the Season select lists every season on Roster Evaluation and Player Rankings and is absent from the Games Optimizer (Roster, Lineup); a new visitor starts on the current season; for each completed season Player Rankings shows "(final)", offers exactly Full season / Per game, Full season shows totals with the snapshot's points leader first and Per game shows 3-decimal values with the snapshot's points-per-game leader first (leaders computed from the fetched file, ties allowed, min 10 GP); the season and Per game are saved and survive a reload, and Roster Evaluation shows the roster player's GP from that season; switching back restores the current season's benchmark options and choice and saves `season: null`; the saved roster is never changed. No exact rankings, values or timestamps are hard-coded, and the snapshots don't change when a refresh deploys on top;
     - Reset <period> to Optimal updates the visible lineup and saved data at once (testing repo: the day where McDavid starts is picked in the period calendar, and he is removed through his row's sheet, "Remove from lineup"), and a change or reset in one tab shows in another open tab without a reload (skipped if McDavid has no game that week);
@@ -417,7 +419,8 @@ Each rule below is enforced by the code or tests named; keep them true.
    - the "Paste player names" label;
    - the "Upload Image" tab and "Choose Screenshots" button, and the `ocr/` file names;
    - the "NHL data" status chip;
-   - the Team Schedules table selector (`.table-wrap table`) and the `#rankings` start URL.
+   - the Team Schedules table selector (`.table-wrap table`) and the `#rankings` start URL;
+   - (testing repo) the Games Optimizer tab names and order "Schedules|Grid|Lineup|Trade Lab|Roster" and the Grid table `.sh-scroll .sgrid`.
 
    - the persistent-header classes `.sh-scroll`, `.sh-strip`, `.sh-under` (Player Rankings check, testing repo);
    - the Schedule / Lineup switcher buttons ("Schedule", "Lineup", exact) and the Schedule grid's `.sg-body .sg-row`, `.sg-cell.on` / `.sg-cell.off` (testing repo);
@@ -431,7 +434,7 @@ Each rule below is enforced by the code or tests named; keep them true.
 5. **Dark mode.**
    - A leftover `prefers-color-scheme: dark` block made phones render dark after the theme was reverted.
    - Keep `color-scheme: only light`; add no dark-mode rules.
-6. **Accessible names.** Hiding text with CSS for mobile (`label-full`/`label-short`) removes it from the accessibility tree. The Schedules tab needs `aria-label`. The League Settings button now shows its label at every width, so it needs no `aria-label`.
+6. **Accessible names.** Hiding text with CSS for mobile (`label-full`/`label-short`) removes it from the accessibility tree. The Schedules tab needs `aria-label` (live repo; in the testing repo every tab shows one label at all widths, so none is needed). The League Settings button now shows its label at every width, so it needs no `aria-label`.
 7. **ID migration must keep fields.** An older `replacePlayer` rebuilt entries as `{playerId, onIr}`, dropping other fields. It now spreads the entry. Keep that, and keep remapping IDs in `manual`.
 8. **Priorities rely on Kuhn order** (§D.2). Keep `priorityOrder` stable and keep starts first in `optimizeDay`.
 9. **IR simplicity.** Don't reintroduce injury-eligibility checks, an injured flag or an IR eligibility setting. The data has no injury statuses (ESPN returns none).

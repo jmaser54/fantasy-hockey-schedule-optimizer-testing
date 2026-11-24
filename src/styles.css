@@ -534,7 +534,7 @@ h3 { font-size: 13px; margin: 16px 0 6px; }
   main { padding: 12px; }
   .brand { font-size: 14px; }
   .team-cell .muted { display: none; }
-  .table-wrap table.next-week th.sortable { white-space: normal; } /* Next Week's Team Schedules headers wrap so the table fits a phone */
+  table.team-table.next-week th.sortable { white-space: normal; } /* Next Week's team schedule headers wrap so the table fits a phone (also in the persistent header copy) */
   .lgrid .sticky { min-width: 128px; max-width: 150px; white-space: normal; }
   th, td { padding: 6px 8px; }
   .icon-btn .small { display: none; }
@@ -697,7 +697,9 @@ input[aria-invalid='true'] { border-color: var(--bad); }
 .sh-head { display: none; }
 @supports (animation-timeline: scroll()) {
   .sh-head { display: block; position: sticky; top: var(--sh-top, 0px); height: var(--sh-h, 0px); margin-bottom: calc(-1 * var(--sh-h, 0px)); z-index: 6; }
-  .sh-clip { overflow: hidden; background: var(--surface); box-shadow: 0 1px 0 var(--border); }
+  /* overflow: clip, not hidden: a hidden box can still be scrolled by code (scrollIntoView, find-in-page),
+     which would shift the header copy off its columns; clip can't be scrolled at all. */
+  .sh-clip { overflow: hidden; overflow: clip; background: var(--surface); box-shadow: 0 1px 0 var(--border); }
   .sh-strip { table-layout: fixed; animation: sh-slide linear both; animation-timeline: var(--sh-tl); }
   .sh-strip .sticky, .sh-strip .rk, .sh-strip .sg-name { animation: sh-hold linear both; animation-timeline: var(--sh-tl); }
   .sh-under { visibility: hidden; }
