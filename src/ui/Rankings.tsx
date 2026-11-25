@@ -129,7 +129,7 @@ function TeamRankings({ onGoRoster }: { onGoRoster: () => void }) {
                 <th className="n">#</th>
                 {sortTh('team', 'Team', 'Team name')}
                 {gameCols.map((c) => (
-                  <Fragment key={c.key}>{sortTh(c.key, c.label, c.title, c.key === 'games' ? 'col-selected' : '')}</Fragment>
+                  <Fragment key={c.key}>{sortTh(c.key, c.label, c.title)}</Fragment>
                 ))}
                 {sortTh('light', 'Light-Night Games', `Games on nights with 8 or fewer NHL games, in ${selected.name}. Those games compete with fewer of your other players for lineup spots`)}
                 {summaryCol && sortTh(summaryCol.key, summaryCol.label, summaryCol.title, 'summary-col')}

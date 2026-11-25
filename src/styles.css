@@ -157,6 +157,9 @@ th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--s
 th.sortable { cursor: pointer; user-select: none; }
 th.sortable:hover { color: var(--text); }
 th.active { color: var(--accent); }
+/* NHL Team Schedules (2026-11-25): the sorted column keeps the plain header colour; its arrow shows the sort. */
+table.team-table th.sortable.active { color: var(--muted); }
+table.team-table th.sortable.active:hover { color: var(--text); }
 td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 tr:last-child td { border-bottom: 0; }
 tbody tr:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
@@ -269,17 +272,15 @@ th.col-selected { box-shadow: inset 0 -2px 0 var(--accent); }
 .lu-day { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px 2px 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
 .lu-day:hover { border-color: var(--accent); }
 .lu-day[aria-pressed='true'] { border: 2px solid var(--accent); background: var(--accent-soft); }
-.lu-day.man { box-shadow: inset 0 -3px 0 var(--accent); }
 .lu-day.issue { box-shadow: inset 0 -3px 0 var(--warn); }
 .lu-day-date { font-size: 11px; color: var(--muted); line-height: 1; }
 .lu-day-count { font-size: 12px; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--muted); }
 .lu-day-count b { font-size: 15px; color: var(--text); }
 .lu-day-bar { width: 70%; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
 .lu-day-bar span { display: block; height: 100%; background: var(--accent); }
-.lu-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); vertical-align: middle; }
+/* Red alert dot (2026-11-25): a genuine open lineup spot that needs attention. */
+.lu-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #dc2626; vertical-align: middle; }
 .lu-day-dot { position: absolute; top: 4px; right: 4px; }
-.lu-dash { display: inline-block; width: 12px; height: 3px; background: var(--accent); vertical-align: middle; }
-.lu-cal-key { margin: 0; }
 .lu-daily-head h2 { margin-right: auto; }
 .lu-day-count-text { font-weight: 400; color: var(--muted); }
 .lu-manual-note { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }

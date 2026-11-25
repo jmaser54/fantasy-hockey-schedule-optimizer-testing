@@ -274,9 +274,6 @@ function PeriodOverview({ window: w, date, onDate, calendar = true }: { window: 
           ))}
           {weeks.flat().map((d, i) => (d ? <DayTile key={d} s={byDate.get(d)!} selected={d === date} onClick={() => onDate(d)} /> : <div key={`e${i}`} className="lu-day-blank" />))}
         </div>
-        <p className="lu-cal-key small muted">
-          Each day: games in your lineup / games scheduled. <span className="lu-dot" /> open spot · <span className="lu-dash" /> your changes
-        </p>
           </>
         )}
       </div>
@@ -288,7 +285,7 @@ function DayTile({ s, selected, onClick }: { s: DaySummary; selected: boolean; o
   const pct = s.scheduled ? Math.round((s.usable / s.scheduled) * 100) : 0;
   const label = `${weekday(s.date)} ${formatShort(s.date)}: ${s.scheduled ? `${s.usable} of ${s.scheduled} games fit your lineup` : 'no games'}${s.opportunities.length ? `, ${s.opportunities.length} open spot${s.opportunities.length === 1 ? '' : 's'}` : ''}${s.manual ? ', your changes' : ''}`;
   return (
-    <button type="button" className={`lu-day ${s.manual ? 'man' : ''} ${s.hasIssues ? 'issue' : ''}`} aria-pressed={selected} aria-label={label} title={label} onClick={onClick}>
+    <button type="button" className={`lu-day ${s.hasIssues ? 'issue' : ''}`} aria-pressed={selected} aria-label={label} title={label} onClick={onClick}>
       <span className="lu-day-date">{Number(s.date.slice(8))}</span>
       <span className="lu-day-count">
         {s.scheduled ? (
