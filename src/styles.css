@@ -560,6 +560,9 @@ h3 { font-size: 13px; margin: 16px 0 6px; }
   .tab .label-full { display: none; }
   .tab .label-short { display: inline; }
   .tab .count { margin-left: 3px; }
+  /* Games Optimizer tabs (2026-11-25): natural label widths, equal padding, packed from the left,
+     so the gap between labels is the same whatever their length (not equal-width boxes). */
+  .planner-tabs .tab { flex: 0 0 auto; padding: 10px clamp(5px, calc((100vw - 300px) / 10), 10px); }
   .mode-switch.modes-3 button { padding: 8px 4px; }
   /* Import review on phones: the choices go on their own full-width line under the name. */
   .review-row { grid-template-columns: 22px minmax(0, 1fr); }
@@ -578,6 +581,10 @@ h3 { font-size: 13px; margin: 16px 0 6px; }
   .roster-table .r-elig { grid-area: elig; white-space: normal; }
   .roster-table .r-status { grid-area: status; justify-self: end; }
   .roster-table .r-remove { grid-area: remove; }
+}
+/* Very narrow phones (≤ 340px): the Games Optimizer tabs still fit on one line. */
+@media (max-width: 340px) {
+  .planner-tabs .tab { font-size: 12px; }
 }
 
 /* Touch screens: comfortable tap targets. Icons keep their size; the tappable area grows. */
