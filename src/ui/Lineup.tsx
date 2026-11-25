@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { addDays, easternToday, formatShort, weekday } from '../domain/dates.ts';
 import {
   addOptions,
+  fillCandidates,
   gameKind,
   inAutomaticLineup,
   moveOptions,
   overrideFor,
+  placeOptions,
   planIrChange,
   replaceOptions,
   summarizeDays,
@@ -85,6 +87,17 @@ export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
     if (el) opener.current = el;
     setSheet(id);
   };
+  // Filling an empty lineup slot (2026-11-24): any eligible bench player, with or without a game.
+  const [fillAt, setFillAt] = useState<{ date: ISODate; seatKey: string } | null>(null);
+  const openFill = (seatKey: string, el: HTMLElement) => {
+    opener.current = el;
+    if (date) setFillAt({ date, seatKey });
+  };
+  const closeFill = () => {
+    setFillAt(null);
+    const el = opener.current;
+    requestAnimationFrame(() => el?.isConnected && el.focus({ preventScroll: true }));
+  };
   // Closing returns focus to the row that opened the sheet; the page doesn't scroll.
   const close = () => {
     setSheet(null);
@@ -153,8 +166,9 @@ export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
       {switcher}
       {windows.length > 1 && <SummaryCards />}
       <PeriodOverview window={selected} date={date} onDate={setDate} />
-      {date && <DayLineup date={date} onPlayer={openPlayer} />}
+      {date && <DayLineup date={date} onPlayer={openPlayer} onFill={openFill} />}
       {sheetAt && <PlayerSheet key={`${sheetAt.playerId}|${sheetAt.date}`} playerId={sheetAt.playerId} date={sheetAt.date} onClose={close} />}
+      {fillAt && <FillSheet key={`${fillAt.date}|${fillAt.seatKey}`} date={fillAt.date} seatKey={fillAt.seatKey} onClose={closeFill} />}
     </div>
   );
 }
@@ -313,7 +327,7 @@ function useSaveDay() {
   };
 }
 
-function DayLineup({ date, onPlayer }: { date: ISODate; onPlayer: (id: string, el: HTMLElement) => void }) {
+function DayLineup({ date, onPlayer, onFill }: { date: ISODate; onPlayer: (id: string, el: HTMLElement) => void; onFill: (seatKey: string, el: HTMLElement) => void }) {
   const { days, lineupPlayers, dispatch, data, teams } = useApp();
   const seats = useSeats();
   const save = useSaveDay();
@@ -335,7 +349,7 @@ function DayLineup({ date, onPlayer }: { date: ISODate; onPlayer: (id: string, e
     const cls = { starter: 'lu-starter', bench: 'lu-benched', ir: 'lu-onir' }[kind];
     const m = matchupOf(day, p.id);
     return (
-      <div key={`${kind}-${p.id}-${posLabel}`} className={`lu-row ${cls}`}>
+      <div key={`${kind}-${p.id}-${posLabel}`} className={`lu-row ${cls} ${kind === 'starter' && !m.game ? 'lu-idle' : ''}`}>
         <button type="button" className="lu-main" onClick={(e) => onPlayer(p.id, e.currentTarget)} aria-label={`${p.name}, ${posLabel}, ${m.text}: details and replacements`}>
           <span className={`lu-pos ${cls}`}>{posLabel}</span>
           <span className="lu-name">
@@ -395,10 +409,22 @@ function DayLineup({ date, onPlayer }: { date: ISODate; onPlayer: (id: string, e
             return p ? (
               row(p, seat.label, 'starter')
             ) : (
-              <div key={seat.key} className="lu-row lu-starter lu-noone">
-                <span className="lu-pos lu-starter">{seat.label}</span>
-                <span className="lu-empty">Empty</span>
-              </div>
+              // A genuinely empty slot: says whether the roster has anyone who could fill it.
+              fillCandidates(day, seat.key, lineupPlayers, seats).length > 0 ? (
+                <button key={seat.key} type="button" className="lu-row lu-starter lu-noone lu-fill" onClick={(e) => onFill(seat.key, e.currentTarget)} aria-label={`Empty ${seat.label} slot: choose a bench player`}>
+                  <span className="lu-pos lu-starter">{seat.label}</span>
+                  <span className="lu-empty">
+                    Empty <span className="small">· tap to fill</span>
+                  </span>
+                </button>
+              ) : (
+                <div key={seat.key} className="lu-row lu-starter lu-noone">
+                  <span className="lu-pos lu-starter">{seat.label}</span>
+                  <span className="lu-empty">
+                    Empty <span className="small">· no eligible player on your roster</span>
+                  </span>
+                </div>
+              )
             );
           })}
         </div>
@@ -652,7 +678,35 @@ function PlayerSheet({ playerId, date, onClose, onOpenInLineup }: { playerId: st
         {!seat && !p.onIr && (
           <div>
             {!m.game ? (
-              <p className="small muted">No game on {when}.</p>
+              <>
+                <p className="small muted">No game on {when}. You can still put {p.name} in the lineup; it adds no game.</p>
+                <div className="sheet-options" aria-label="Put in the lineup">
+                  {placeOptions(day, playerId, lineupPlayers, seats).map((o) =>
+                    o.lose ? (
+                      <button
+                        key={o.seatKey}
+                        className="option-btn"
+                        onClick={() => setPending({ inId: playerId, outId: o.outId!, seatLabel: o.seatLabel, gain: o.gain, lose: o.lose, next: o.next })}
+                      >
+                        <span>
+                          At {o.seatLabel} instead of <b>{name(o.outId!)}</b>
+                        </span>
+                        <span className="small">
+                          <span className="lose-text">Give up {matchupOf(day, o.outId!).text}</span> <b className="lose-text">(−1 game)</b>
+                        </span>
+                      </button>
+                    ) : (
+                      <button key={o.seatKey} className="option-btn" onClick={() => save(date, o.next)}>
+                        <span>
+                          At {o.seatLabel}
+                          {o.outId ? <> instead of <b>{name(o.outId)}</b></> : ' (empty slot)'}
+                        </span>
+                        <span className="small muted">{o.outId ? `${name(o.outId)} has no game either` : 'Fills the slot; no game'}</span>
+                      </button>
+                    ),
+                  )}
+                </div>
+              </>
             ) : kind === 'constraint' ? (
               <p className="small muted">No lineup slot in your league accepts {p.positions.join('/')}.</p>
             ) : (
@@ -751,6 +805,50 @@ function PlayerSheet({ playerId, date, onClose, onOpenInLineup }: { playerId: st
   return (
     <Sheet label={`${p.name}: details and replacements`} title={title} onClose={onClose}>
       {body}
+    </Sheet>
+  );
+}
+
+/** Fill an empty lineup slot with any eligible bench player (2026-11-24); players with a game first. */
+function FillSheet({ date, seatKey, onClose }: { date: ISODate; seatKey: string; onClose: () => void }) {
+  const { days, lineupPlayers } = useApp();
+  const seats = useSeats();
+  const save = useSaveDay();
+  const day = days.get(date);
+  const seat = seats.find((s) => s.key === seatKey);
+  if (!day || !seat) return null;
+  const byId = new Map(lineupPlayers.map((p) => [p.id, p]));
+  const filled = day.seats.find((x) => x.seat.key === seatKey)?.playerId;
+  const candidates = filled ? [] : fillCandidates(day, seatKey, lineupPlayers, seats);
+  return (
+    <Sheet label={`Fill the ${seat.label} slot`} title={<b>Fill the {seat.label} slot · {weekday(date)} {formatShort(date)}</b>} onClose={onClose}>
+      {filled ? (
+        <p>This slot is now filled by {byId.get(filled)?.name}.</p>
+      ) : candidates.length === 0 ? (
+        <p className="small muted">No bench player on your roster can play {seat.label}.</p>
+      ) : (
+        <div className="sheet-options">
+          {candidates.map(({ playerId, option }) => {
+            const p = byId.get(playerId)!;
+            const m = matchupOf(day, playerId);
+            return (
+              <button
+                key={playerId}
+                className={`option-btn ${option.gain ? 'gain' : ''}`}
+                onClick={() => {
+                  save(date, option.next);
+                  onClose();
+                }}
+              >
+                <span>
+                  <b>{p.name}</b> <PosBadges positions={p.positions} /> <span className={`small ${m.game ? '' : 'muted'}`}>{m.text}</span>
+                </span>
+                <span className="small">{option.gain ? <span className="gain-text">Adds a game (+1)</span> : <span className="muted">No game: fills the slot only</span>}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </Sheet>
   );
 }

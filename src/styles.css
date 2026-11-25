@@ -302,6 +302,10 @@ th.col-selected { box-shadow: inset 0 -2px 0 var(--accent); }
 .lu-game { font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .lu-row.lu-noone { grid-template-columns: 42px minmax(0, 1fr); gap: 8px; min-height: 34px; }
 .lu-empty { color: var(--muted); font-style: italic; }
+/* Empty slot that can be filled (button), and starters without a game that day (2026-11-24). */
+button.lu-fill { width: 100%; border: 0; border-bottom: 1px solid var(--border); background: none; font: inherit; text-align: left; cursor: pointer; align-items: center; }
+button.lu-fill:hover .lu-empty { color: var(--accent); }
+.lu-row.lu-idle .lu-name { color: var(--muted); font-weight: 500; }
 .lu-row .star { justify-self: center; width: 36px; height: 36px; }
 .lu-nhl summary { cursor: pointer; color: var(--muted); }
 .lu-nhl .game-chips { margin-top: 6px; }

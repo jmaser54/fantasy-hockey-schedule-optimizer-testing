@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { initialState, reducer, type AppState } from '../state/appState.ts';
-import { addOptions, gameKind, inAutomaticLineup, lineupOf, moveOptions, overrideFor, planIrChange, playerSchedule, replaceOptions, summarizeDays } from './lineupActions.ts';
+import { addOptions, gameKind, inAutomaticLineup, lineupOf, moveOptions, overrideFor, fillCandidates, planIrChange, placeOptions, playerSchedule, replaceOptions, summarizeDays } from './lineupActions.ts';
 import { expandSeats, optimizeDates, optimizeDay, type LineupPlayer } from './optimizer.ts';
 import { toLineupPlayers } from './roster.ts';
 import { player, sched, slots } from './testUtils.ts';
@@ -233,5 +233,74 @@ describe('schedule view cells', () => {
     expect(mc.find((c) => c.date === '2026-11-17')).toMatchObject({ assigned: false });
     expect(mc.find((c) => c.date === '2026-11-17')!.game).toBeDefined();
     expect(mc.find((c) => c.date === '2026-11-18')).toMatchObject({ assigned: true });
+  });
+});
+
+describe('filling empty slots with players without a game (ESPN-style, 2026-11-24)', () => {
+  // Two G seats, two C seats. Dec 9: only EDM plays.
+  const gs = sched([['2026-12-09', 'EDM', 'CGY']]);
+  const gLeague = { rosterSize: 22, irSlots: 2, slots: slots({ C: [2, ['C']], G: [2, ['G']] }) };
+  const gSeats = expandSeats(gLeague.slots);
+  const day = (r: LineupPlayer[], o?: Parameters<typeof optimizeDay>[4]) => optimizeDay('2026-12-09', r, gSeats, gs, o);
+  const seated = (d: ReturnType<typeof day>, id: string) => d.seats.some((x) => x.playerId === id);
+
+  it('one rostered goalie fills one goalie slot; the other stays genuinely empty', () => {
+    const d = day([player('skinner', 'TOR', ['G']), player('mcdavid', 'EDM', ['C'])]);
+    const g = d.seats.filter((x) => x.seat.slotId === 'G');
+    expect(g.filter((x) => x.playerId).map((x) => x.playerId)).toEqual(['skinner']); // no game, still in the lineup
+    expect(g.filter((x) => !x.playerId)).toHaveLength(1); // the roster has no second goalie
+    expect(d.usable).toBe(1); // only McDavid's game counts
+  });
+
+  it('two goalies, only one playing: both goalie slots are occupied, the idle one adds no game', () => {
+    const d = day([player('skinner', 'EDM', ['G']), player('stolarz', 'TOR', ['G'])]);
+    expect(seated(d, 'skinner') && seated(d, 'stolarz')).toBe(true);
+    expect(d.usable).toBe(1);
+    expect(d.goalieUsable).toBe(1);
+    expect(d.players.find((x) => x.playerId === 'stolarz')!.game).toBeUndefined();
+  });
+
+  it('never changes who plays or how many games count (random rosters)', () => {
+    const teams = ['EDM', 'TOR', 'COL', 'ANA', 'BOS', 'NYR'];
+    const pos: Position[][] = [['C'], ['LW'], ['RW'], ['D'], ['C', 'LW'], ['G'], ['LW', 'RW']];
+    const rs = sched([['2026-12-01', 'EDM', 'TOR'], ['2026-12-01', 'COL', 'ANA']]);
+    const full = expandSeats(slots({ C: [2, ['C']], LW: [2, ['LW']], RW: [2, ['RW']], D: [2, ['D']], UTIL: ['C', 'LW', 'RW', 'D'], G: [2, ['G']] }));
+    let seed = 11;
+    const rnd = (n: number) => ((seed = (seed * 9301 + 49297) % 233280), Math.floor((seed / 233280) * n));
+    for (let t = 0; t < 80; t++) {
+      const r: LineupPlayer[] = Array.from({ length: 6 + rnd(16) }, (_, i) => ({ ...player(`p${i}`, teams[rnd(teams.length)]!, pos[rnd(pos.length)]!, rnd(9) === 0), preferred: rnd(4) === 0 }));
+      const d = optimizeDay('2026-12-01', r, full, rs);
+      // Players with a game: the same set as the lineup of playing players alone would seat.
+      const playingOnly = optimizeDay('2026-12-01', r.filter((p) => d.players.find((x) => x.playerId === p.id)!.game), full, rs);
+      const withGame = (x: typeof d) => x.players.filter((s) => s.seatKey && s.game).map((s) => s.playerId).sort();
+      expect(withGame(d)).toEqual(withGame(playingOnly));
+      expect(d.usable).toBe(d.optimalUsable);
+      // No seat is left empty while an eligible non-IR player sits on the bench.
+      for (const { seat, playerId } of d.seats) {
+        if (playerId) continue;
+        const benchFits = r.some((p) => !p.onIr && !d.seats.some((x) => x.playerId === p.id) && p.positions.some((x) => seat.accepts.includes(x)));
+        expect(benchFits).toBe(false);
+      }
+    }
+  });
+
+  it('a saved lineup keeps its empty slot (never refilled automatically); the user can fill it with a player without a game', () => {
+    const r = [player('skinner', 'TOR', ['G']), player('stolarz', 'BOS', ['G']), player('mcdavid', 'EDM', ['C'])];
+    const auto = day(r);
+    const gSeat = auto.seats.find((x) => x.playerId === 'stolarz')!.seat.key;
+    const saved = { ...lineupOf(auto), [gSeat]: null };
+    const d = day(r, { start: [], sit: [], lineup: saved });
+    expect(d.seats.find((x) => x.seat.key === gSeat)!.playerId).toBeUndefined(); // as you saved it
+    const cands = fillCandidates(d, gSeat, r, gSeats);
+    expect(cands.map((c) => c.playerId)).toEqual(['stolarz']); // no game, still offered
+    expect(cands[0]!.option).toMatchObject({ net: 0, gain: undefined, lose: undefined });
+    expect(cands[0]!.option.next[gSeat]).toBe('stolarz');
+    // A bench player without a game can also take a seat held by a player with one (costs that game).
+    const swap = placeOptions(day(r), 'stolarz', r, gSeats);
+    expect(swap).toEqual([]); // already in the lineup automatically
+    const idleBench = [...r, player('pickard', 'VAN', ['G'])]; // no game, and both goalie seats are taken
+    const opts = placeOptions(day(idleBench), 'pickard', idleBench, gSeats);
+    expect(opts.length).toBeGreaterThan(0);
+    expect(opts.every((o) => o.gain === undefined)).toBe(true);
   });
 });

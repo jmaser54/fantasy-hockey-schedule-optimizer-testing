@@ -223,8 +223,11 @@ export function planIrChange(
         const seatedIds = new Set(Object.values(lineup).filter(Boolean));
         const bench = priorityOrder(after.filter((p) => !p.onIr && !seatedIds.has(p.id) && games.has(p.id)));
         const open = seats.filter((s) => vacated.includes(s.key));
-        const m = maxBipartiteMatching(bench.length, open.length, bench.map((p) => open.flatMap((s, i) => (canPlaySeat(p, s) ? [i] : []))));
-        m.leftToRight.forEach((si, i) => si >= 0 && (lineup[open[si]!.key] = bench[i]!.id));
+        // Bench players with a game first, then (2026-11-24) players without one, so the seat isn't left empty.
+        const idle = priorityOrder(after.filter((p) => !p.onIr && !seatedIds.has(p.id) && !games.has(p.id)));
+        const candidates = [...bench, ...idle];
+        const m = maxBipartiteMatching(candidates.length, open.length, candidates.map((p) => open.flatMap((s, i) => (canPlaySeat(p, s) ? [i] : []))));
+        m.leftToRight.forEach((si, i) => si >= 0 && (lineup[open[si]!.key] = candidates[i]!.id));
         const saved = overrideFor(date, lineup, after, seats, schedule, o.notes);
         next[date] = saved;
         override = saved ?? undefined;
@@ -330,4 +333,58 @@ export function playerSchedule(days: readonly DayResult[], playerId: string): Sc
     const st = d.players.find((x) => x.playerId === playerId);
     return { date: d.date, game: st?.game, assigned: !!st?.game && !!st.seatKey };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Placing any bench player (2026-11-24): with or without a game
+
+export interface PlaceOption {
+  seatKey: string;
+  seatLabel: string;
+  /** The player who goes to the bench (none: the seat was empty). */
+  outId?: string;
+  /** The placed player's game (none: they add no game). */
+  gain?: Game;
+  /** The game given up by the player who leaves (none: they had none, or the seat was empty). */
+  lose?: Game;
+  /** Games in the day's lineup after minus before (+1, 0 or −1). */
+  net: number;
+  next: Lineup;
+}
+
+/**
+ * Every seat a non-IR bench player can take (strict eligibility, `canPlaySeat`), with or without a game,
+ * via `moveInLineup` (nobody else moves): empty seats first, then seats held by players without a game,
+ * then by players with one. `onlySeat` limits it to one seat (filling an empty slot). Users may arrange
+ * the lineup however they like, so options that add no game (or cost one) are included.
+ */
+export function placeOptions(day: DayResult, playerId: string, roster: readonly LineupPlayer[], seats: readonly Seat[], onlySeat?: string): PlaceOption[] {
+  const players = new Map(roster.map((p) => [p.id, p]));
+  const p = players.get(playerId);
+  const lineup = lineupOf(day);
+  if (!p || p.onIr || Object.values(lineup).includes(playerId)) return [];
+  const games = gamesOf(day);
+  const out: PlaceOption[] = [];
+  for (const seat of seats) {
+    if ((onlySeat && seat.key !== onlySeat) || !canPlaySeat(p, seat)) continue;
+    const occupant = lineup[seat.key] ?? undefined;
+    const next = moveInLineup(lineup, seats, players, playerId, seat.key, occupant);
+    if (!next) continue;
+    const gain = games.get(playerId);
+    const lose = occupant ? games.get(occupant) : undefined;
+    out.push({ seatKey: seat.key, seatLabel: seat.label, outId: occupant, gain, lose, net: Number(!!gain) - Number(!!lose), next });
+  }
+  const rank = (o: PlaceOption) => (!o.outId ? 0 : !o.lose ? 1 : 2);
+  return out.sort((a, b) => rank(a) - rank(b));
+}
+
+/** Bench players who could fill one (empty) seat: players with a game first, then priority order. */
+export function fillCandidates(day: DayResult, seatKey: string, roster: readonly LineupPlayer[], seats: readonly Seat[]): { playerId: string; option: PlaceOption }[] {
+  const games = gamesOf(day);
+  return priorityOrder(roster)
+    .flatMap((p) => {
+      const option = placeOptions(day, p.id, roster, seats, seatKey)[0];
+      return option ? [{ playerId: p.id, option }] : [];
+    })
+    .sort((a, b) => Number(!games.has(a.playerId)) - Number(!games.has(b.playerId)));
 }
