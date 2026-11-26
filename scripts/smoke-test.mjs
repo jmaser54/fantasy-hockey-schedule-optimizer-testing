@@ -161,7 +161,7 @@ async function checkHistoricalSeasons(rosterSaved) {
   };
 
   // Player Rankings (where the evaluator check left off): a new visitor starts on the current season.
-  for (const tab of ['Player Rankings', 'Roster Evaluation']) {
+  for (const tab of ['Player Rankings', 'My Players']) {
     await page.getByRole('tab', { name: tab }).click();
     await select.waitFor({ timeout: 30_000 });
     const labels = await options(select);
@@ -201,14 +201,14 @@ async function checkHistoricalSeasons(rosterSaved) {
   await page.locator('.eval-head', { hasText: `NHL ${seasonLabel(last)} regular season (final)` }).waitFor({ timeout: 30_000 });
   if ((await select.inputValue()) !== last || (await benchSelect.inputValue()) !== 'per-game') fail(`after reload: ${await select.inputValue()} / ${await benchSelect.inputValue()}`);
 
-  // Roster Evaluation follows the same season; the roster player's GP is that season's.
-  await page.getByRole('tab', { name: 'Roster Evaluation' }).click();
+  // My Players follows the same season; the roster player's GP is that season's.
+  await page.getByRole('tab', { name: 'My Players' }).click();
   await page.locator('.eval-table tbody tr', { hasText: 'Connor McDavid' }).waitFor({ timeout: 30_000 });
-  if ((await select.inputValue()) !== last) fail(`Roster Evaluation shows ${await select.inputValue()}, not the saved ${last}`);
+  if ((await select.inputValue()) !== last) fail(`My Players shows ${await select.inputValue()}, not the saved ${last}`);
   const line = files.get(last).skaters.find((x) => x.name === 'Connor McDavid');
   const gp = (await page.locator('.eval-table tbody tr', { hasText: 'Connor McDavid' }).locator('td').first().innerText()).trim();
   if (line ? gp !== String(line.gamesPlayed) : !/No NHL games/.test(await page.locator('.eval-table tbody tr', { hasText: 'Connor McDavid' }).innerText())) {
-    fail(`Roster Evaluation ${last}: McDavid shows "${gp}", snapshot has ${line?.gamesPlayed ?? 'no games'}`);
+    fail(`My Players ${last}: McDavid shows "${gp}", snapshot has ${line?.gamesPlayed ?? 'no games'}`);
   }
   console.log(`historical persistence OK: ${seasonLabel(last)} and Per game kept after reload, on both pages`);
 
@@ -300,7 +300,7 @@ try {
   // Two product areas; each shows only its own destinations.
   await page.getByRole('button', { name: 'Player Normalizer', exact: true }).click();
   if (await page.getByRole('tab', { name: 'Lineup' }).count()) fail('Playoff Planner destinations still shown in Player Evaluator');
-  await page.getByRole('tab', { name: 'Roster Evaluation' }).click();
+  await page.getByRole('tab', { name: 'My Players' }).click();
   await page.locator('.eval-table tbody tr', { hasText: 'Connor McDavid' }).waitFor({ timeout: 30_000 });
   const bench = (await page.locator('.bench-main').innerText()).replace(/\s+/g, ' ');
   if (!/Normalized to \d+ GP/.test(bench)) fail(`evaluator benchmark unexpected: ${bench}`);
@@ -337,7 +337,7 @@ try {
   console.log(head.supported ? `persistent header OK: stays under the tab bar, columns aligned (${head.off}px)` : 'persistent header skipped: this browser has no scroll-driven animations (normal header row shown)');
   await checkHistoricalSeasons(rosterSaved);
   await page.getByRole('button', { name: 'Games Optimizer', exact: true }).click();
-  if (await page.getByRole('tab', { name: 'Roster Evaluation' }).count()) fail('Player Evaluator destinations still shown in Playoff Planner');
+  if (await page.getByRole('tab', { name: 'My Players' }).count()) fail('Player Evaluator destinations still shown in Playoff Planner');
   for (const tab of ['Roster', 'Lineup']) {
     await page.getByRole('tab', { name: tab === 'Roster' ? /^Roster(\s*\d+)?$/ : tab }).click();
     if (await page.locator('#season-select').count()) fail(`season selector shown in the Games Optimizer (${tab})`);

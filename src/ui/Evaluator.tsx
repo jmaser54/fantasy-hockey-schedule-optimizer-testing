@@ -153,17 +153,18 @@ function Evaluator({ file, page, onGoRoster }: { file: SkaterStatsFile; page: Ev
     <div className="stack evaluator">
       <div className="eval-head">
         <div>
-          <h2 className="eval-title">{page === 'roster' ? 'Roster Evaluation' : 'Player Rankings'}</h2>
-          <p className="eval-sub">
-            {page === 'roster' ? 'Your skaters’ production, normalized to the same number of games.' : 'Every NHL skater’s production, normalized to your benchmark.'}
-          </p>
+          <h2 className="eval-title">{page === 'roster' ? 'My Players' : 'Player Rankings'}</h2>
+          <p className="eval-sub">{page === 'roster' ? 'Your skaters’ stats, normalized to a benchmark.' : 'NHL skater stats, normalized to your benchmark.'}</p>
         </div>
+        {/* The "NHL stats updated <date>" line was removed (2026-11-26): the footer shows the data date. The stale warning stays. */}
         {historical ? (
           <span className="small muted">NHL {label} regular season (final)</span>
         ) : (
-          <span className={stale ? 'badge warn' : 'small muted'} title={`NHL regular-season stats, fetched ${file.fetchedAt.replace('T', ' ').slice(0, 16)} UTC`}>
-            {stale ? `Stats from ${when}, may be outdated` : `NHL stats updated ${when}`}
-          </span>
+          stale && (
+            <span className="badge warn" title={`NHL regular-season stats, fetched ${file.fetchedAt.replace('T', ' ').slice(0, 16)} UTC`}>
+              Stats from {when}, may be outdated
+            </span>
+          )
         )}
       </div>
 
@@ -565,7 +566,6 @@ function RosterPanel(props: {
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2>Your roster</h2>
         {!props.totals && <SortBasisMenu value={props.sortBasis} onChange={props.onSortBasis} />}
         <StatGroupToggle group={group} onChange={setGroup} />
       </div>
@@ -643,7 +643,7 @@ function ComparisonSearch(props: { skaters: readonly SkaterStatLine[]; exclude: 
     <div className="search ev-search">
       <input
         value={q}
-        placeholder="Compare an NHL skater…"
+        placeholder="Compare a player…"
         aria-label="Add a comparison player"
         onChange={(e) => {
           setQ(e.target.value);
@@ -745,14 +745,13 @@ function RankingsPanel(props: {
 
   return (
     <div className="panel">
-      <div className="panel-head">
+      <div className="panel-head no-rule">
         <h2>All NHL skaters</h2>
         {!props.totals && <SortBasisMenu value={props.sortBasis} onChange={props.onSortBasis} />}
         <StatGroupToggle group={group} onChange={setGroup} />
       </div>
       <div className="panel-body rank-controls">
         <div className="field">
-          <span className="small muted">Position</span>
           <div className="segmented" role="group" aria-label="Position">
             {POSITION_FILTERS.map((p) => (
               <button key={p.id} aria-pressed={position === p.id} onClick={() => setPosition(p.id)}>

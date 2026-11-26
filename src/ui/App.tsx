@@ -28,7 +28,7 @@ const TABS = [
 ] as const;
 /** Player Evaluator's destinations (no period bar). */
 const EVALUATOR_TABS = [
-  { id: 'evaluator', label: 'Roster Evaluation' },
+  { id: 'evaluator', label: 'My Players' },
   { id: 'player-rankings', label: 'Player Rankings' },
 ] as const;
 const ALL_TABS = [...TABS, ...EVALUATOR_TABS];

@@ -665,6 +665,9 @@ input[aria-invalid='true'] { border-color: var(--bad); }
 .eval-table tbody th.sticky { border-right: 1px solid var(--border); }
 .ev-name { display: flex; align-items: center; gap: 6px; font-weight: 600; }
 .ev-meta { display: block; font-size: 11px; color: var(--muted); }
+/* Stat values (2026-11-26): 12.5px, down from the 14px body size, so more columns fit on phones. Normalized
+   values stay bold and clearly above the 11px muted actual totals beneath them. */
+.eval-table td.n { font-size: 12.5px; }
 .ev-cell b { display: block; font-weight: 700; }
 .ev-actual { display: block; font-size: 11px; color: var(--muted); }
 .ev-reason { color: var(--muted); font-size: 12px; white-space: normal; }
@@ -694,6 +697,9 @@ input[aria-invalid='true'] { border-color: var(--bad); }
 .ev-legend { margin: 0; }
 .rank-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 16px; border-bottom: 1px solid var(--border); }
 .rank-controls .field { gap: 2px; }
+/* Player Rankings (2026-11-26): no divider or "Position" label between the stat groups and the filters. */
+.panel-head.no-rule { border-bottom: 0; padding-bottom: 2px; }
+.panel-head.no-rule + .rank-controls { padding-top: 6px; }
 .rank-table .rk { position: sticky; left: 0; z-index: 1; width: 40px; min-width: 40px; background: var(--surface); }
 .rank-table th.sticky { left: 40px; }
 .rank-more { padding: 10px 14px; border-top: 1px solid var(--border); }
@@ -723,8 +729,8 @@ input[aria-invalid='true'] { border-color: var(--bad); }
   .rank-table th.sticky { left: 30px; }
 }
 @media (max-width: 400px) {
-  .eval-table th, .eval-table td { padding: 6px 4px; }
-  .eval-table tbody th.sticky { min-width: 100px; max-width: 112px; padding-left: 6px; }
+  .eval-table th, .eval-table td { padding: 6px 3px; }
+  .eval-table tbody th.sticky { min-width: 92px; max-width: 108px; padding-left: 6px; }
 }
 
 /* Persistent table headers (StickyHeadTable, 2026-11-24): the page scrolls vertically; the table area
