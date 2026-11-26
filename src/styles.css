@@ -385,7 +385,8 @@ tbody.sg-group + tbody.sg-group .sg-group-row > * { border-top: 6px solid var(--
 .sg-td { padding: 3px 2px; text-align: center; height: 44px; }
 .sg-cell { display: inline-flex; align-items: center; justify-content: center; width: 100%; min-height: 34px; padding: 0 1px; border-radius: 7px; font: inherit; font-size: 11px; font-weight: 700; letter-spacing: -0.02em; cursor: pointer; }
 .sg-cell.on { background: var(--accent); border: 1px solid var(--accent); color: #fff; }
-.sg-cell.off { background: var(--surface); border: 1px solid var(--border); color: var(--muted); font-weight: 600; }
+/* Not in lineup (2026-11-26): white with a crimson rounded border (was grey). */
+.sg-cell.off { background: var(--surface); border: 1px solid #be123c; color: var(--muted); font-weight: 600; }
 .sg-cell:hover { filter: brightness(0.95); }
 .sg-cell.here { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px; }
 .sg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

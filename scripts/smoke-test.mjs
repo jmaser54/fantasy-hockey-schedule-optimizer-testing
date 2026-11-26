@@ -347,6 +347,8 @@ try {
   // 3. Reset <period> to Optimal: the screen and saved data update at once, in this tab and in
   // another open tab (which must not keep showing, or later re-save, the old lineup).
   await page.getByRole('tab', { name: 'Lineup' }).click();
+  // The Lineup tab opens on Team Schedule (2026-11-26); the reset checks use Set Lineup.
+  await page.getByRole('button', { name: 'Set Lineup', exact: true }).click();
   // Lineup (rebuild 2026-11-23): the period calendar picks the day; McDavid's row in that day's starting lineup.
   const tiles = (p) => p.locator('.lu-day');
   const savedDays = (p) => p.evaluate((k) => Object.keys(JSON.parse(localStorage.getItem(k)).manual).length, siteKey);
@@ -378,6 +380,7 @@ try {
     const other = await context.newPage();
     watch(other);
     await other.goto(`${base}#lineup`, { waitUntil: 'domcontentloaded' });
+    await other.getByRole('button', { name: 'Set Lineup', exact: true }).click({ timeout: 30_000 });
     await tiles(other).nth(day).click({ timeout: 30_000 });
     await benchMcDavid(page);
     await until(async () => !(await inLineup(other)), 'a lineup change did not reach the other open tab');
@@ -394,7 +397,7 @@ try {
   // Schedule view (2026-11-23): the same lineup as the Lineup view. Taking McDavid out from his Schedule
   // cell shows in Lineup, and Reset <period> in Lineup puts him back in the Schedule.
   if (day >= 0) {
-    await page.getByRole('button', { name: 'Schedule', exact: true }).click();
+    await page.getByRole('button', { name: 'Team Schedule', exact: true }).click();
     await page.locator('.sg-scroll').waitFor({ timeout: 30_000 });
     const assigned = page.locator('.sg-scroll .sg-row', { hasText: 'Connor McDavid' }).locator('.sg-cell.on').first();
     if (!(await assigned.count())) fail('Schedule view shows no in-lineup game for Connor McDavid');
@@ -402,12 +405,12 @@ try {
     await page.locator('.sheet').getByRole('button', { name: /^Remove from lineup/ }).click();
     await page.locator('.sheet').waitFor({ state: 'detached', timeout: 10_000 });
     await until(async () => (await savedDays(page)) === 1 && (await page.locator('.sg-scroll .sg-row', { hasText: 'Connor McDavid' }).locator('.sg-cell.off').count()) > 0, 'a change from the Schedule view was not saved');
-    await page.getByRole('button', { name: 'Lineup', exact: true }).click();
+    await page.getByRole('button', { name: 'Set Lineup', exact: true }).click();
     await page.locator('.lu-daily').waitFor();
     await resetPeriod(page);
-    await page.getByRole('button', { name: 'Schedule', exact: true }).click();
+    await page.getByRole('button', { name: 'Team Schedule', exact: true }).click();
     await until(async () => (await savedDays(page)) === 0 && (await page.locator('.sg-scroll .sg-row', { hasText: 'Connor McDavid' }).locator('.sg-cell.off').count()) === 0, 'Reset in the Lineup view did not reach the Schedule view');
-    await page.getByRole('button', { name: 'Lineup', exact: true }).click();
+    await page.getByRole('button', { name: 'Set Lineup', exact: true }).click();
     console.log('schedule OK: a change from the Schedule view is saved, and Reset in Lineup shows in Schedule');
   }
   const otherNow = await page.evaluate((k) => localStorage.getItem(k), otherKey);

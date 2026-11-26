@@ -24,25 +24,13 @@ import { lineupGroupTotals } from '../domain/capacity.ts';
 import { useApp, type Window } from './context.ts';
 import { PosBadges, PreferredToggle } from './common.tsx';
 import { ScheduleGrid } from './Schedule.tsx';
-import { STORAGE_KEY } from '../state/appState.ts';
 
-/** Which view of the Lineup tab is shown: remembered for the browser tab, per site (sessionStorage). */
+/**
+ * Which view of the Lineup tab is shown: "Team Schedule" (schedule) or "Set Lineup" (lineup). Since
+ * 2026-11-26 entering the tab always opens Team Schedule; the choice then holds while the user stays in
+ * the tab (switching days, periods or views), and is no longer remembered in sessionStorage.
+ */
 type PlanView = 'lineup' | 'schedule';
-const VIEW_KEY = `${STORAGE_KEY}:view`;
-function loadView(): PlanView {
-  try {
-    return globalThis.sessionStorage?.getItem(VIEW_KEY) === 'schedule' ? 'schedule' : 'lineup';
-  } catch {
-    return 'lineup';
-  }
-}
-function saveView(v: PlanView) {
-  try {
-    globalThis.sessionStorage?.setItem(VIEW_KEY, v);
-  } catch {
-    /* private mode: the choice just isn't remembered */
-  }
-}
 
 /**
  * Lineup page (rebuild, 2026-11-23). Two connected levels:
@@ -68,11 +56,7 @@ function useSeats() {
 
 export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
   const { state, selected, windows, lineupPlayers, openSettings } = useApp();
-  const [view, setViewState] = useState<PlanView>(loadView);
-  const setView = (v: PlanView) => {
-    setViewState(v);
-    saveView(v);
-  };
+  const [view, setView] = useState<PlanView>('schedule');
   const [date, setDate] = useState<ISODate | undefined>(() => firstUpcoming(selected.dates));
   // The open player sheet: a player on a date (the Lineup view's selected day, or a Schedule cell's date).
   const [sheetAt, setSheetAt] = useState<{ playerId: string; date: ISODate } | null>(null);
@@ -129,10 +113,10 @@ export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
   }
 
   const switcher = (
-    <div className="segmented plan-views" role="group" aria-label="View: Schedule or Lineup">
+    <div className="segmented plan-views" role="group" aria-label="View: Team Schedule or Set Lineup">
       {(['schedule', 'lineup'] as const).map((v) => (
         <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>
-          {v === 'schedule' ? 'Schedule' : 'Lineup'}
+          {v === 'schedule' ? 'Team Schedule' : 'Set Lineup'}
         </button>
       ))}
     </div>
@@ -765,7 +749,7 @@ function PlayerSheet({ playerId, date, onClose, onOpenInLineup }: { playerId: st
         {!seat && !p.onIr && m.game && kind === 'constraint' && <p className="small muted">No lineup slot in your league accepts {p.positions.join('/')}.</p>}
         {onOpenInLineup && (
           <button className="btn small" onClick={onOpenInLineup}>
-            Open {when} in Lineup
+            Open {when} in Set Lineup
           </button>
         )}
       </div>
