@@ -2,10 +2,9 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { formatShort, weekday } from '../domain/dates.ts';
 import { isLightNight, rankTeams } from '../domain/rankings.ts';
 import { opponent } from '../domain/schedule.ts';
-import { gridCell, matchupsOn, nextSort, rosterPlayersByTeam, sortTeamRows, type RosteredPlayer, type SortState, type TeamRow } from '../domain/teamSchedules.ts';
+import { formatRosterList, gridCell, rosterListParts, matchupsOn, nextSort, rosterPlayersByTeam, sortTeamRows, type RosteredPlayer, type SortState, type TeamRow } from '../domain/teamSchedules.ts';
 import type { ISODate, TeamId } from '../domain/types.ts';
 import { useApp, type Window } from './context.ts';
-import { PosBadges } from './common.tsx';
 import { StickyHeadTable } from './StickyHead.tsx';
 
 /** Schedules tab: Games per Night and the NHL Team Schedules table, governed by the selected date range. */
@@ -160,7 +159,7 @@ function TeamRankings({ onGoRoster }: { onGoRoster: () => void }) {
                                 }}
                               >
                                 <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
-                                  <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                  <path d="M3.5 6 8 10.5 12.5 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                                 </svg>
                               </button>
                             );
@@ -338,18 +337,11 @@ function TeamGames({ team }: { team: string }) {
   );
 }
 
+/** The team's rostered players as one compact line, e.g. "(Connor Bedard C RW IR)" (2026-11-26: no heading). */
 function TeamPlayers({ team, players }: { team: TeamId; players: RosteredPlayer[] }) {
   return (
-    <div className="team-players">
-      <b>
-        Your Players on {team} ({players.length})
-      </b>
-      {players.map((p) => (
-        <span key={p.id} className="team-player">
-          {p.name} <PosBadges positions={p.positions} />
-          {p.onIr && <span className="badge">IR</span>}
-        </span>
-      ))}
+    <div className="team-players" aria-label={`Your players on ${team}`}>
+      {formatRosterList(players)}
     </div>
   );
 }
@@ -399,6 +391,7 @@ function ScheduleGrid() {
                 </th>
               ))}
               <th />
+              <th />
             </tr>
             <tr>
               {head('team', 'Team', 'sticky')}
@@ -413,6 +406,9 @@ function ScheduleGrid() {
                   {formatShort(d).replace(' ', ' ')}
                 </th>
               ))}
+              <th className="sg-mine" title="Your players on each team">
+                Your Players
+              </th>
               {head('games', 'Games', 'n')}
             </tr>
           </>
@@ -436,6 +432,18 @@ function ScheduleGrid() {
                     </td>
                   );
                 })}
+                {/* Your players on this team (2026-11-26), same compact format as Team Schedules. */}
+                <td className="sg-mine">
+                  {byTeam.get(r.team)?.length ? (
+                    rosterListParts(byTeam.get(r.team)!).map((t) => (
+                      <span key={t} className="sg-mine-p">
+                        {t}{' '}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="muted">–</span>
+                  )}
+                </td>
                 <td className="n">{r.values.games}</td>
               </tr>
             ))}

@@ -91,3 +91,18 @@ export function rosterPlayersByTeam(
   for (const list of out.values()) list.sort((a, b) => a.name.localeCompare(b.name));
   return out;
 }
+
+/**
+ * Compact list of a team's rostered players (2026-11-26): "(Connor Bedard C RW IR)", several joined by
+ * commas: "(Connor Bedard C RW, Sam Rinzel D)". Used under Team Schedules rows and in the Grid.
+ */
+export function formatRosterList(players: readonly RosteredPlayer[]): string {
+  return rosterListParts(players).join(' ');
+}
+
+/** The same list split per player, punctuation included ("(Connor Bedard C RW,", "Sam Rinzel D)"), so a
+ *  narrow column can break between players but never inside one. */
+export function rosterListParts(players: readonly RosteredPlayer[]): string[] {
+  const n = players.length;
+  return players.map((p, i) => `${i === 0 ? '(' : ''}${[p.name, ...p.positions, ...(p.onIr ? ['IR'] : [])].join(' ')}${i === n - 1 ? ')' : ','}`);
+}

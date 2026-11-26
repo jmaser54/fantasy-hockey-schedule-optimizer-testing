@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { rankTeams } from './rankings.ts';
-import { defaultDir, gridCell, matchupsOn, nextSort, rosterPlayersByTeam, sortTeamRows } from './teamSchedules.ts';
+import { defaultDir, formatRosterList, gridCell, rosterListParts, matchupsOn, nextSort, rosterPlayersByTeam, sortTeamRows } from './teamSchedules.ts';
 import { sched } from './testUtils.ts';
 import type { Player } from './types.ts';
 
@@ -89,5 +89,24 @@ describe('roster players by team', () => {
     expect(m.get('NYR')).toBeUndefined(); // teams with no rostered players have no entry
     // Removing a player updates the grouping.
     expect(rosterPlayersByTeam(entries.slice(1), resolve).get('TOR')?.map((p) => p.id)).toEqual(['b']);
+  });
+});
+
+describe('compact rostered-player list (2026-11-26)', () => {
+  it('names, positions and IR in parentheses, several joined by commas', () => {
+    expect(formatRosterList([])).toBe('');
+    expect(formatRosterList([{ id: 'a', name: 'Connor Bedard', positions: ['C', 'RW'], onIr: true }])).toBe('(Connor Bedard C RW IR)');
+    expect(
+      formatRosterList([
+        { id: 'a', name: 'Connor Bedard', positions: ['C', 'RW'], onIr: false },
+        { id: 'b', name: 'Sam Rinzel', positions: ['D'], onIr: false },
+      ]),
+    ).toBe('(Connor Bedard C RW, Sam Rinzel D)');
+    expect(
+      rosterListParts([
+        { id: 'a', name: 'Connor Bedard', positions: ['C', 'RW'], onIr: true },
+        { id: 'b', name: 'Sam Rinzel', positions: ['D'], onIr: false },
+      ]),
+    ).toEqual(['(Connor Bedard C RW IR,', 'Sam Rinzel D)']);
   });
 });
