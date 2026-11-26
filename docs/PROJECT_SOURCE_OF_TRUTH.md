@@ -440,7 +440,7 @@ Each rule below is enforced by the code or tests named; keep them true.
 
    - the persistent-header classes `.sh-scroll`, `.sh-strip`, `.sh-under` (Player Rankings check, testing repo);
    - the Schedule / Lineup switcher buttons ("Schedule", "Lineup", exact) and the Schedule grid's `.sg-body .sg-row`, `.sg-cell.on` / `.sg-cell.off` (testing repo);
-   - the Lineup selectors used by the reset and two-tab checks (testing repo): the day tiles `.lu-day`, the starting lineup `.lu-starters .lu-row` with "Connor McDavid" and its `.lu-main` button, the sheet's `.lu-more` disclosure, "Remove from lineup" and "Close";
+   - the Lineup selectors used by the reset and two-tab checks (testing repo): the day tiles `.lu-day`, the starting lineup `.lu-starters .lu-row` with "Connor McDavid" and its `.lu-main` button, and the sheet's "Remove from lineup" (since 2026-11-26 a direct action; the check waits for the sheet to close itself);
    - the product-area buttons "Games Optimizer" and "Player Normalizer" (exact accessible names), the Player Evaluator tab names "Roster Evaluation" (testing repo: "My Players") and "Player Rankings", and the `.planner-tabs` group.
 
    Renaming these without updating `scripts/smoke-test.mjs` fails the post-deploy job.
