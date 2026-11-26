@@ -99,6 +99,8 @@ main { max-width: 1200px; margin: 0 auto; padding: 16px; }
    8px to Clear Roster (left, under the toggle), 12px to the paste or search content. */
 .panel-body.roster-body { gap: 12px; padding-top: 8px; }
 .clear-roster-row { display: flex; justify-content: flex-start; margin-top: -4px; }
+/* Done folds the entry tools away again once the roster has players (2026-11-26). */
+.clear-roster-row .entry-done { margin-left: auto; }
 .clear-roster-btn {
   padding: 4px 10px; border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent); border-radius: 8px;
   background: var(--surface); color: var(--bad); font-size: 13px; font-weight: 600; white-space: nowrap;

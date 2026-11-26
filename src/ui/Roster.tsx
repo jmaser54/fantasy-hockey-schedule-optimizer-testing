@@ -36,6 +36,17 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
   const { state, dispatch, resolve, toast } = useApp();
   const [mode, setMode] = useState<InputMode>('paste');
   const [outcome, setOutcome] = useState<ImportOutcome | null>(null);
+  // Entry tools (2026-11-26): always shown while the roster is empty; once it has players they fold into one
+  // "Add Players" button, and reopen until Done or a paste/screenshot import that fully succeeds.
+  const [entryOpen, setEntryOpen] = useState(() => state.roster.length === 0);
+  useEffect(() => {
+    if (state.roster.length === 0) setEntryOpen(true);
+  }, [state.roster.length]);
+  const showEntry = entryOpen || state.roster.length === 0;
+  const closeEntry = () => {
+    setEntryOpen(false);
+    setOutcome(null);
+  };
   const { data } = useApp();
   const index = usePlayerIndex();
   const teamIds = useMemo(() => new Set(data.teams.map((t) => t.id)), [data.teams]);
@@ -78,6 +89,11 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
       ignored: r.ignored,
     };
     if (fresh.length) toast(`Added ${fresh.length} player${fresh.length === 1 ? '' : 's'}`);
+    // A fully successful import (players added, nothing to review, no unrecognized names) folds the tools away.
+    if (fresh.length > 0 && result.review.length === 0 && result.unrecognized.length === 0) {
+      closeEntry();
+      return result;
+    }
     setOutcome(result);
     return result;
   };
@@ -95,44 +111,61 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
           )}
         </div>
         <div className="panel-body stack roster-body">
-          <div className="mode-switch modes-3" role="tablist" aria-label="Add players">
-            {INPUT_MODES.map((m) => (
-              <button key={m.id} role="tab" aria-selected={mode === m.id} onClick={() => setMode(m.id)}>
-                {/* One word per line, so all three labels are two lines; the space keeps the accessible name. */}
-                {m.label.split(' ').map((w, i) => (
-                  <Fragment key={i}>
-                    {i > 0 && ' '}
-                    <span className="mode-word">{w}</span>
-                  </Fragment>
-                ))}
+          {!showEntry && (
+            <div>
+              <button className="btn primary" onClick={() => setEntryOpen(true)}>
+                Add Players
               </button>
-            ))}
-          </div>
-          {state.roster.length > 0 && (
-            <div className="clear-roster-row">
-              <ClearRosterButton />
             </div>
           )}
-          {mode === 'search' && (
-            <div className="add-bar">
-              <PlayerSearch onPick={add} exclude={onRoster} placeholder="Add a player by name…" />
+          {showEntry && (
+            <>
+            <div className="mode-switch modes-3" role="tablist" aria-label="Add players">
+              {INPUT_MODES.map((m) => (
+                <button key={m.id} role="tab" aria-selected={mode === m.id} onClick={() => setMode(m.id)}>
+                  {/* One word per line, so all three labels are two lines; the space keeps the accessible name. */}
+                  {m.label.split(' ').map((w, i) => (
+                    <Fragment key={i}>
+                      {i > 0 && ' '}
+                      <span className="mode-word">{w}</span>
+                    </Fragment>
+                  ))}
+                </button>
+              ))}
             </div>
-          )}
-          {mode === 'paste' && <PasteBox onImport={importText} />}
-          {mode === 'image' && <ImageBox onImport={importText} />}
-          {outcome && mode !== 'search' && (
-            <ImportReview
-              outcome={outcome}
-              onChange={(review) => setOutcome({ ...outcome, review })}
-              onDone={(ids) => {
-                if (ids.length) {
-                  dispatch({ type: 'addPlayers', ids });
-                  toast(`Added ${ids.length} player${ids.length === 1 ? '' : 's'}`);
-                }
-                setOutcome(null);
-              }}
-              onRoster={onRoster}
-            />
+            {state.roster.length > 0 && (
+              <div className="clear-roster-row">
+                <ClearRosterButton />
+                <button className="btn small entry-done" onClick={closeEntry}>
+                  Done
+                </button>
+              </div>
+            )}
+            {mode === 'search' && (
+              <div className="add-bar">
+                <PlayerSearch onPick={add} exclude={onRoster} placeholder="Add a player by name…" />
+              </div>
+            )}
+            {mode === 'paste' && <PasteBox onImport={importText} />}
+            {mode === 'image' && <ImageBox onImport={importText} />}
+            {outcome && mode !== 'search' && (
+              <ImportReview
+                outcome={outcome}
+                onChange={(review) => setOutcome({ ...outcome, review })}
+                onDone={(ids) => {
+                  if (ids.length) {
+                    dispatch({ type: 'addPlayers', ids });
+                    toast(`Added ${ids.length} player${ids.length === 1 ? '' : 's'}`);
+                  }
+                  // The import is finished once its review is: with players on the roster, Done here folds the tools
+                  // away like the Done beside Clear Roster (both mean "finished adding").
+                  if (ids.length > 0 || state.roster.length > 0) closeEntry();
+                  else setOutcome(null);
+                }}
+                onRoster={onRoster}
+              />
+            )}
+            </>
           )}
           {issues.length > 0 && (
             <div className="notice" role="alert">

@@ -283,6 +283,14 @@ try {
   await page.getByRole('tab', { name: 'Search Players' }).click();
   await page.getByLabel('Search players').fill('Connor McDavid');
   await page.locator('.suggest li').first().click();
+  // My Roster entry tools (2026-11-26): Search keeps them open; Done folds them into one Add Players button.
+  if (!(await page.getByLabel('Search players').isVisible())) fail('the entry tools closed after adding a player by search');
+  await page.locator('.clear-roster-row').getByRole('button', { name: 'Done', exact: true }).click();
+  if ((await page.locator('.mode-switch').count()) || !(await page.locator('.roster-body').getByRole('button', { name: 'Add Players', exact: true }).isVisible())) fail('Done did not fold the entry tools into Add Players');
+  await page.locator('.roster-body').getByRole('button', { name: 'Add Players', exact: true }).click();
+  if (!(await page.locator('.mode-switch').isVisible())) fail('Add Players did not reopen the entry tools');
+  await page.locator('.clear-roster-row').getByRole('button', { name: 'Done', exact: true }).click();
+  console.log('roster entry OK: open after a search add, Done folds it, Add Players reopens it');
   // New users (2026-11-26) start with blank league settings: the League Settings tab (and My Team) keep
   // their amber mark until the settings are complete; the My Roster mark clears once the roster has a player.
   const mark = (sel) => page.locator(`${sel} .needs-mark`).count();
