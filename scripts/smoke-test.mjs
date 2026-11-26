@@ -290,8 +290,8 @@ try {
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.locator('.panel-head h2', { hasText: /of \d+ scheduled games fit your lineup/ }).first().waitFor({ timeout: 30_000 });
   await page.getByRole('tab', { name: /^Roster(\s*\d+)?$/ }).click();
-  const counts = await page.locator('.counts').innerText();
-  if (!/Roster\s+1\//.test(counts)) fail(`roster not restored after reload: ${counts}`);
+  // The Roster box no longer shows "Roster N/limit" (2026-11-26): the restored player itself is the check.
+  if (!(await page.locator('.roster-table', { hasText: 'Connor McDavid' }).count())) fail('roster not restored after reload');
   console.log('persistence OK');
 
   // Player Evaluator: loads the published skater stats on opening, reads the saved roster and

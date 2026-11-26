@@ -1,4 +1,4 @@
-import { createContext, useContext, type Dispatch, type ReactNode } from 'react';
+import { createContext, useContext, type Dispatch } from 'react';
 import type { Dataset } from '../data/load.ts';
 import type { DayResult, LineupPlayer, RangeResult } from '../domain/optimizer.ts';
 import type { ISODate, Player, Team } from '../domain/types.ts';
@@ -32,8 +32,6 @@ export interface AppCtx {
   toast: (msg: string) => void;
   /** Opens League Settings. */
   openSettings: () => void;
-  /** The setup line, when the page shows it itself (Roster: under its heading row). */
-  setupLine?: ReactNode;
 }
 
 export const Ctx = createContext<AppCtx | null>(null);

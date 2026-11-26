@@ -4,7 +4,7 @@ import { takeContactReturn } from '../contact.ts';
 import { buildPlayerLookup, isStale, loadDataset, type DataStatus } from '../data/load.ts';
 import { dayCount, eachDate, formatRange, formatShort, isValidISODate, easternToday, nextWeek } from '../domain/dates.ts';
 import { expandSeats, freezeOverride, optimizeDates, summarize, type DayResult, type LineupPlayer } from '../domain/optimizer.ts';
-import { activeSlotCount, isLeagueComplete } from '../domain/league.ts';
+import { isLeagueComplete } from '../domain/league.ts';
 import { toLineupPlayers } from '../domain/roster.ts';
 import type { ISODate, Player } from '../domain/types.ts';
 import { STORAGE_KEY, deserialize, loadFromStorage, reducer, saveToStorage, setupNeeds } from '../state/appState.ts';
@@ -207,7 +207,6 @@ export function App() {
             toast={toast}
             periodBar={!about && !isEvaluatorTab(tab)}
             showModes={tab !== 'roster'}
-            setupInPage={!about && tab === 'roster'}
             onOpenSettings={() => setSettingsOpen(true)}
             overlay={settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
           >
@@ -310,8 +309,6 @@ function Ready(props: {
   periodBar: boolean;
   /** False on Roster: no period toggle there (its Games column always shows next week). */
   showModes: boolean;
-  /** The page shows the setup line itself (Roster: under its heading row), so it isn't rendered above. */
-  setupInPage?: boolean;
   onOpenSettings: () => void;
   overlay: React.ReactNode;
   children: React.ReactNode;
@@ -410,7 +407,6 @@ function Ready(props: {
     summarizeWindow,
     toast,
     openSettings: props.onOpenSettings,
-    setupLine: props.periodBar && props.setupInPage ? <SetupLine mode={mode} hasWindow={!!selected} onOpen={props.onOpenSettings} /> : undefined,
   };
   const controls: PeriodControls = { mode, setMode, customPeriods, setCustomPeriods, customTotal, setCustomTotal };
   return (
@@ -420,20 +416,6 @@ function Ready(props: {
       {props.periodBar && props.showModes && !selected ? <div className="empty">Enter a start and end date for your period above.</div> : props.children}
       {props.overlay}
     </Ctx.Provider>
-  );
-}
-
-/** Quiet summary of the league setup; opens League Settings. */
-function SetupLine({ mode, hasWindow, onOpen }: { mode: Mode; hasWindow: boolean; onOpen: () => void }) {
-  const { state, selected } = useApp();
-  // Blank (new-user) fields show as "–" until League Settings is filled in.
-  const n = (x: number) => (Number.isNaN(x) ? '–' : String(x));
-  const parts = [`${n(state.league.rosterSize)} roster`, `${n(state.league.irSlots)} IR`, `${n(activeSlotCount(state.league))} starters`];
-  if (mode === 'playoffs' && hasWindow) parts.push(`${selected.name}: ${formatRange(selected.start, selected.end)}`);
-  return (
-    <button type="button" className="setup-line" onClick={onOpen} title="Open League Settings">
-      {parts.join(' · ')}
-    </button>
   );
 }
 

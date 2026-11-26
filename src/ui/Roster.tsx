@@ -33,7 +33,7 @@ const INPUT_MODES: { id: InputMode; label: string }[] = [
 ];
 
 export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
-  const { state, dispatch, resolve, toast, setupLine } = useApp();
+  const { state, dispatch, resolve, toast } = useApp();
   const [mode, setMode] = useState<InputMode>('paste');
   const [outcome, setOutcome] = useState<ImportOutcome | null>(null);
   const { data } = useApp();
@@ -89,12 +89,8 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
       <section className="panel">
         <div className="panel-head">
           <h2>Roster</h2>
+          {/* "Roster N/limit" and the league summary line were removed here (owner request 2026-11-26); IR stays. */}
           <span className="counts">
-            <span>
-              Roster <b className={active > state.league.rosterSize ? 'over' : ''}>{active}</b>
-              {/* No limit shown while League Settings is blank (new users). */}
-              {!Number.isNaN(state.league.rosterSize) && `/${state.league.rosterSize}`}
-            </span>
             <span>
               IR <b className={ir > state.league.irSlots ? 'over' : ''}>{ir}</b>
               {!Number.isNaN(state.league.irSlots) && `/${state.league.irSlots}`}
@@ -107,7 +103,6 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
           )}
         </div>
         <div className="panel-body stack roster-body">
-          {setupLine && <div className="roster-setup">{setupLine}</div>}
           <div className="mode-switch modes-3" role="tablist" aria-label="Add players">
             {INPUT_MODES.map((m) => (
               <button key={m.id} role="tab" aria-selected={mode === m.id} onClick={() => setMode(m.id)}>
@@ -179,6 +174,7 @@ function PasteBox({ onImport }: { onImport: (text: string) => ImportOutcome }) {
     <div className="stack" style={{ gap: 8 }}>
       <p className="paste-hint">Paste your roster page - player names detected automatically</p>
       <textarea
+        className="paste-box"
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder={'Connor McDavid\nQuinn Hughes, VAN\nIgor Shesterkin\n…'}
