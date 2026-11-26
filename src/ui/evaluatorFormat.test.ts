@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SkaterStatLine } from '../data/format.ts';
-import { RANKING_STATS, SCALED_STATS, UNCHANGED_STATS } from '../domain/evaluator.ts';
-import { adjustedDecimals, formatAdjusted, formatStat, mergeComparisons, searchSkaters, sortRows, STAT_GROUPS, STAT_SHORT } from './evaluatorFormat.ts';
+import { RANKING_STATS, resolveBenchmark, SCALED_STATS, UNCHANGED_STATS, type Subject } from '../domain/evaluator.ts';
+import { adjustedDecimals, formatAdjusted, normalizedMeaning, formatStat, mergeComparisons, searchSkaters, sortRows, STAT_GROUPS, STAT_SHORT } from './evaluatorFormat.ts';
 
 const s = (nhlId: number, name: string, gamesPlayed: number) => ({ nhlId, name, gamesPlayed }) as SkaterStatLine;
 
@@ -74,5 +74,36 @@ describe('Roster Evaluation row order', () => {
     ];
     expect(sortRows(diverge, 'goals', 'desc', true).map((x) => x.id)).toEqual([2, 1]);
     expect(sortRows(diverge, 'goals', 'desc', false).map((x) => x.id)).toEqual([1, 2]);
+  });
+});
+
+describe('normalization key under the Roster Evaluation table (2026-11-26)', () => {
+  // League: max 27 GP. Roster: one skater with 20 GP.
+  const stats = new Map([
+    [1, s(1, 'A', 27)],
+    [2, s(2, 'B', 20)],
+  ]);
+  const rostered = [{ source: 'roster', status: 'ok', name: 'B', nhlId: 2, stats: stats.get(2) } as unknown as Subject];
+
+  it('says what the bold number is, from the selected benchmark, with no sample numbers', () => {
+    expect(normalizedMeaning(resolveBenchmark({ kind: 'league-max' }, rostered, stats))).toBe('scaled to 27 games played');
+    expect(normalizedMeaning(resolveBenchmark({ kind: 'roster-max' }, rostered, stats))).toBe('scaled to 20 games played');
+    expect(normalizedMeaning(resolveBenchmark({ kind: 'per-game' }, rostered, stats))).toBe('per game played');
+    expect(normalizedMeaning(resolveBenchmark({ kind: 'custom', gamesPlayed: 40 }, rostered, stats))).toBe('scaled to 40 games played');
+    expect(normalizedMeaning(resolveBenchmark({ kind: 'player', nhlId: 1 }, rostered, stats))).toBe('scaled to 27 games played');
+    expect(normalizedMeaning(resolveBenchmark({ kind: 'custom', gamesPlayed: 1 }, rostered, stats))).toBe('scaled to 1 game played');
+  });
+
+  it('an empty roster does not change the benchmark (roster max falls back to league max)', () => {
+    for (const kind of ['league-max', 'per-game'] as const) {
+      expect(normalizedMeaning(resolveBenchmark({ kind }, [], stats))).toBe(normalizedMeaning(resolveBenchmark({ kind }, rostered, stats)));
+    }
+    expect(normalizedMeaning(resolveBenchmark({ kind: 'roster-max' }, [], stats))).toBe('scaled to 27 games played');
+  });
+
+  it('nothing to explain when nothing is normalized', () => {
+    expect(normalizedMeaning(undefined)).toBeNull();
+    expect(normalizedMeaning(resolveBenchmark({ kind: 'custom', gamesPlayed: 0 }, [], stats))).toBeNull();
+    expect(normalizedMeaning(resolveBenchmark({ kind: 'full-season' }, [], stats))).toBeNull();
   });
 });

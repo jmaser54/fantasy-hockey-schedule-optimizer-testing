@@ -21,7 +21,7 @@ import { clearComparisons, loadEvaluatorPrefs, saveEvaluatorPrefs, type Evaluato
 import { useApp } from './context.ts';
 import { InfoTip } from './common.tsx';
 import { StickyHeadTable } from './StickyHead.tsx';
-import { adjustedDecimals, formatAdjusted, formatStat, mergeComparisons, POSITION_SHORT, searchSkaters, seasonLabel, sortRows, STAT_GROUPS, STAT_SHORT, type StatGroupId } from './evaluatorFormat.ts';
+import { adjustedDecimals, formatAdjusted, formatStat, mergeComparisons, normalizedMeaning, POSITION_SHORT, searchSkaters, seasonLabel, sortRows, STAT_GROUPS, STAT_SHORT, type StatGroupId } from './evaluatorFormat.ts';
 
 /**
  * Player Evaluator (first functional prototype). Reads the saved roster, never changes it, and keeps
@@ -292,6 +292,11 @@ function BenchmarkBar(props: {
         <div className="bench-value">
           {totals ? (
             <b>Full-season totals</b>
+          ) : benchmark.available && benchmark.basis === 'per-game' ? (
+            // Per game said "Normalized to 1 GP", which reads as a data error (2026-11-26).
+            <>
+              Stats <b>per game played</b>
+            </>
           ) : benchmark.available ? (
             <>
               Normalized to <b>{benchmark.gamesPlayed} GP</b>
@@ -519,6 +524,8 @@ function RosterPanel(props: {
   const onSort = (key: StatKey) => setSort((s) => (s?.key === key ? (s.dir === 'desc' ? { key, dir: 'asc' } : null) : { key, dir: 'desc' }));
   // Comparison players sit among rostered players by position, and join the same sort.
   const merged = mergeComparisons(props.roster, props.comparisons);
+  const showTable = !props.emptyRoster || props.comparisons.length > 0;
+  const meaning = normalizedMeaning(props.benchmark);
   const rows = sort ? sortRows(merged, sort.key, sort.dir, !props.totals && props.sortBasis === 'normalized' && isScaledStat(sort.key)) : merged;
 
   const row = (s: EvaluatedSubject) => {
@@ -573,7 +580,7 @@ function RosterPanel(props: {
           and they’ll appear here automatically.
         </div>
       ) : null}
-      {(!props.emptyRoster || props.comparisons.length > 0) && (
+      {showTable && (
         <StickyHeadTable
           tableClass="eval-table"
           scrollClass="table-wrap"
@@ -593,16 +600,19 @@ function RosterPanel(props: {
       <div className="eval-foot">
         {props.footer}
         <p className="small muted ev-legend">
-          {props.totals ? (
+          {/* A key to the stat cells, shown only when there is a table (2026-11-26). */}
+          {!showTable ? null : props.totals ? (
             <>Actual {props.seasonText} regular-season totals</>
-          ) : (
+          ) : meaning ? (
             <>
-              <b className="num">{formatAdjusted(decimals === 3 ? 0.875 : 12.34, decimals)}</b> normalized to {props.benchmark.available ? `${props.benchmark.gamesPlayed} GP` : 'the benchmark'} · <span className="num">10</span> actual
+              <b>Bold</b>: stats {meaning} · smaller number: actual season total
             </>
+          ) : (
+            <>Smaller number: actual season total</>
           )}
           {props.goalies.length > 0 && (
             <>
-              <br />
+              {showTable && <br />}
               Goalies aren’t evaluated yet: {props.goalies.join(', ')}.
             </>
           )}

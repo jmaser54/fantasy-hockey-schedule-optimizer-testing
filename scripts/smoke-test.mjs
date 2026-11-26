@@ -185,7 +185,7 @@ async function checkHistoricalSeasons(rosterSaved) {
     if (!leaders(file.skaters, (x) => x.points).has(top)) fail(`${h.season} Full season: ${top} is not the season's points leader in the snapshot`);
     if (await page.locator('.rank-table tbody tr').first().locator('.ev-cell').count()) fail(`${h.season} Full season: cells show normalized values`);
     await benchSelect.selectOption('per-game');
-    await page.locator('.bench-main', { hasText: /Normalized to\s*1 GP/ }).waitFor({ timeout: 10_000 });
+    await page.locator('.bench-main', { hasText: /per game played/i }).waitFor({ timeout: 10_000 });
     const perGameTop = await firstRowName();
     if (!leaders(file.skaters, (x) => x.points / x.gamesPlayed).has(perGameTop)) fail(`${h.season} Per game: ${perGameTop} is not the season's points-per-game leader in the snapshot`);
     const cell = await page.locator('.rank-table tbody tr').first().locator('.ev-cell b').first().innerText();
