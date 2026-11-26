@@ -205,7 +205,7 @@ function Evaluator({ file, page, onGoRoster }: { file: SkaterStatsFile; page: Ev
             totals={totals}
             noGames={historical ? `No NHL games in ${label}` : undefined}
             seasonText={label}
-            footer={
+            compare={
               <div className="ev-cmp-row">
                 <ComparisonSearch skaters={shown!.skaters} exclude={new Set([...result.rosterNhlIds, ...prefs.comparisons])} teamOf={teamOf} onAdd={addComparison} />
                 {result.evaluation.comparisons.length > 0 && (
@@ -508,7 +508,8 @@ function RosterPanel(props: {
   emptyRoster: boolean;
   onGoRoster: () => void;
   goalies: string[];
-  footer: React.ReactNode;
+  /** Compare a player / Clear comparison players: a row under the stat groups, above the table (2026-11-26). */
+  compare: React.ReactNode;
   sortBasis: SortBasis;
   onSortBasis: (v: SortBasis) => void;
   /** Full season: cells show the actual totals only. */
@@ -569,6 +570,7 @@ function RosterPanel(props: {
         {!props.totals && <SortBasisMenu value={props.sortBasis} onChange={props.onSortBasis} />}
         <StatGroupToggle group={group} onChange={setGroup} />
       </div>
+      {props.compare}
       {props.emptyRoster ? (
         <div className="empty">
           <strong>No roster yet</strong>
@@ -596,10 +598,9 @@ function RosterPanel(props: {
           <tbody>{rows.map(row)}</tbody>
         </StickyHeadTable>
       )}
-      <div className="eval-foot">
-        {props.footer}
-        {/* No key to the bold (normalized) / smaller (actual) figures: removed 2026-11-26, owner decision. */}
-        {((showTable && props.totals) || props.goalies.length > 0) && (
+      {/* No key to the bold (normalized) / smaller (actual) figures: removed 2026-11-26, owner decision. */}
+      {((showTable && props.totals) || props.goalies.length > 0) && (
+        <div className="eval-foot">
           <p className="small muted ev-legend">
             {showTable && props.totals && <>Actual {props.seasonText} regular-season totals</>}
             {props.goalies.length > 0 && (
@@ -609,8 +610,8 @@ function RosterPanel(props: {
               </>
             )}
           </p>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

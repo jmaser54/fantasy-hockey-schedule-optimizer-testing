@@ -676,7 +676,12 @@ input[aria-invalid='true'] { border-color: var(--bad); }
 .eval-table tr.roster-row > * { background: var(--roster-row); }
 .eval-foot { display: grid; gap: 8px; padding: 10px 14px 12px; border-top: 1px solid var(--border); }
 .ev-search { flex: none; max-width: 360px; }
-.ev-cmp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+/* Comparison controls (2026-11-26): one row under the stat groups, above the table; Clear sits to the right. */
+.ev-cmp-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; padding: 8px 14px; }
+.ev-cmp-row .ev-search { flex: 1 1 auto; min-width: 0; max-width: 360px; }
+.ev-cmp-row .ev-search input { padding-top: 6px; padding-bottom: 6px; }
+.ev-cmp-row .btn { flex: none; white-space: nowrap; min-height: 34px; }
+.ev-cmp-row .suggest { right: auto; min-width: 100%; width: max-content; max-width: min(360px, calc(100vw - 40px)); }
 /* Sort-basis dropdown (Normalized / Regular Stats): a small secondary control beside the stat groups. */
 .sort-basis { position: relative; display: inline-flex; align-items: center; gap: 6px; }
 .sort-basis-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
@@ -724,6 +729,10 @@ input[aria-invalid='true'] { border-color: var(--bad); }
   .bench-season { flex: 1 1 100%; }
   .bench-controls > label, .bench-season label { min-width: 76px; }
   .ev-search { max-width: none; }
+  .ev-cmp-row { padding: 8px 12px; gap: 6px; }
+  .ev-cmp-row .ev-search { max-width: none; }
+  /* Two short lines ("Clear comparison / players") so the search box keeps room for its placeholder. */
+  .ev-cmp-row .btn.small { padding: 3px 8px; font-size: 12px; line-height: 1.15; white-space: normal; max-width: 122px; }
   .rank-controls { gap: 8px 12px; }
   .rank-table .rk { width: 30px; min-width: 30px; }
   .rank-table th.sticky { left: 30px; }
