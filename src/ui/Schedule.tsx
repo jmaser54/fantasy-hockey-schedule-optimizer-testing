@@ -22,7 +22,21 @@ import { StickyHeadTable } from './StickyHead.tsx';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const isGoalie = (p: LineupPlayer) => p.positions.length > 0 && p.positions.every((x) => x === 'G');
 
-export function ScheduleGrid({ window: w, active, onCell }: { window: Window; active?: { playerId: string; date: ISODate }; onCell: (playerId: string, date: ISODate, el: HTMLElement) => void }) {
+export function ScheduleGrid({
+  window: w,
+  active,
+  selectedDate,
+  onDate,
+  onCell,
+}: {
+  window: Window;
+  active?: { playerId: string; date: ISODate };
+  /** The day selected in the Lineup tab: its header is highlighted. */
+  selectedDate?: ISODate;
+  /** A date header was tapped (opens that day in Set Lineup). */
+  onDate: (date: ISODate) => void;
+  onCell: (playerId: string, date: ISODate, el: HTMLElement) => void;
+}) {
   const { days, lineupPlayers } = useApp();
   const list = w.dates.map((d) => days.get(d)!).filter(Boolean);
   const groups = [
@@ -59,14 +73,22 @@ export function ScheduleGrid({ window: w, active, onCell }: { window: Window; ac
               <th className="sg-name sg-corner">Player</th>
               {list.map((d, i) => {
                 const showMonth = i === 0 || d.date.slice(8) === '01';
+                const sel = d.date === selectedDate;
                 return (
-                  <th key={d.date} className="sg-date" title={`${weekday(d.date)} ${formatShort(d.date)}: ${d.usable} of ${d.scheduled} games fit your lineup`}>
-                    <span className="sg-month">{showMonth ? MONTHS[Number(d.date.slice(5, 7)) - 1] : ' '}</span>
-                    <span className="sg-wd">{weekday(d.date).slice(0, 2)}</span>
-                    <span className="sg-dn">{Number(d.date.slice(8))}</span>
-                    <span className={`sg-fit ${d.manual ? 'man' : ''}`} aria-label={`${d.usable} of ${d.scheduled} games fit`}>
-                      {d.scheduled ? `${d.usable}/${d.scheduled}` : '–'}
-                    </span>
+                  <th key={d.date} className={`sg-date ${sel ? 'sel' : ''}`} title={`${weekday(d.date)} ${formatShort(d.date)}: ${d.usable} of ${d.scheduled} games fit your lineup`}>
+                    {/* Tapping a date opens that day in Set Lineup (2026-11-26); the selected day is highlighted. */}
+                    <button
+                      type="button"
+                      className="sg-date-btn"
+                      aria-current={sel ? 'date' : undefined}
+                      aria-label={`${weekday(d.date)} ${formatShort(d.date)}, ${d.usable} of ${d.scheduled} games fit: open in Set Lineup`}
+                      onClick={() => onDate(d.date)}
+                    >
+                      <span className="sg-month">{showMonth ? MONTHS[Number(d.date.slice(5, 7)) - 1] : ' '}</span>
+                      <span className="sg-wd">{weekday(d.date).slice(0, 2)}</span>
+                      <span className="sg-dn">{Number(d.date.slice(8))}</span>
+                      <span className={`sg-fit ${d.manual ? 'man' : ''}`}>{d.scheduled ? `${d.usable}/${d.scheduled}` : '–'}</span>
+                    </button>
                   </th>
                 );
               })}

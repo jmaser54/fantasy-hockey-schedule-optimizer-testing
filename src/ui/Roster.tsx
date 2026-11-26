@@ -113,32 +113,39 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
         <div className="panel-body stack roster-body">
           {!showEntry && (
             <div>
-              <button className="btn primary" onClick={() => setEntryOpen(true)}>
+              <button className="btn primary" aria-expanded={false} aria-controls="roster-entry" onClick={() => setEntryOpen(true)}>
                 Add Players
               </button>
             </div>
           )}
           {showEntry && (
             <>
-            <div className="mode-switch modes-3" role="tablist" aria-label="Add players">
-              {INPUT_MODES.map((m) => (
-                <button key={m.id} role="tab" aria-selected={mode === m.id} onClick={() => setMode(m.id)}>
-                  {/* One word per line, so all three labels are two lines; the space keeps the accessible name. */}
-                  {m.label.split(' ').map((w, i) => (
-                    <Fragment key={i}>
-                      {i > 0 && ' '}
-                      <span className="mode-word">{w}</span>
-                    </Fragment>
-                  ))}
+            {/* The switcher with, once the roster has players, a collapse chevron at its right (replaced Done, 2026-11-26). */}
+            <div className="entry-head" id="roster-entry">
+              <div className="mode-switch modes-3" role="tablist" aria-label="Add players">
+                {INPUT_MODES.map((m) => (
+                  <button key={m.id} role="tab" aria-selected={mode === m.id} onClick={() => setMode(m.id)}>
+                    {/* One word per line, so all three labels are two lines; the space keeps the accessible name. */}
+                    {m.label.split(' ').map((w, i) => (
+                      <Fragment key={i}>
+                        {i > 0 && ' '}
+                        <span className="mode-word">{w}</span>
+                      </Fragment>
+                    ))}
+                  </button>
+                ))}
+              </div>
+              {state.roster.length > 0 && (
+                <button type="button" className="entry-collapse" aria-label="Collapse player tools" aria-expanded={true} aria-controls="roster-entry" onClick={closeEntry}>
+                  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+                    <path d="M5.5 15 12 8.5 18.5 15" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                 </button>
-              ))}
+              )}
             </div>
             {state.roster.length > 0 && (
               <div className="clear-roster-row">
                 <ClearRosterButton />
-                <button className="btn small entry-done" onClick={closeEntry}>
-                  Done
-                </button>
               </div>
             )}
             {mode === 'search' && (

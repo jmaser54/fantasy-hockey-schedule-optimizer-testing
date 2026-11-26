@@ -99,8 +99,12 @@ main { max-width: 1200px; margin: 0 auto; padding: 16px; }
    8px to Clear Roster (left, under the toggle), 12px to the paste or search content. */
 .panel-body.roster-body { gap: 12px; padding-top: 8px; }
 .clear-roster-row { display: flex; justify-content: flex-start; margin-top: -4px; }
-/* Done folds the entry tools away again once the roster has players (2026-11-26). */
-.clear-roster-row .entry-done { margin-left: auto; }
+/* The entry tools' switcher, with the collapse chevron at its right once the roster has players (2026-11-26). */
+.entry-head { display: flex; align-items: center; gap: 8px; }
+.entry-head .mode-switch { flex: 1 1 auto; min-width: 0; }
+.entry-collapse { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; }
+.entry-collapse:hover { border-color: var(--accent); color: var(--accent); }
+.entry-collapse:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .clear-roster-btn {
   padding: 4px 10px; border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent); border-radius: 8px;
   background: var(--surface); color: var(--bad); font-size: 13px; font-weight: 600; white-space: nowrap;
@@ -363,6 +367,11 @@ button.lu-fill:hover .lu-empty { color: var(--accent); }
 .sg-dn { font-size: 13px; font-weight: 700; }
 .sg-fit { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
 .sg-fit.man { color: var(--accent); font-weight: 700; }
+/* Date headers open that day in Set Lineup; the selected day is highlighted (2026-11-26). */
+.sg-date-btn { display: block; width: 100%; padding: 0; border: 0; border-radius: 6px; background: none; font: inherit; color: inherit; line-height: inherit; cursor: pointer; }
+.sg-date-btn:hover .sg-dn { color: var(--accent); }
+.sg-date.sel { background: var(--accent-soft); box-shadow: inset 0 -3px 0 var(--accent); }
+.sg-date.sel .sg-dn { color: var(--accent); }
 .sg-row > * { border-bottom: 1px solid var(--border); }
 /* Section breaks: Skaters, Goalies, IR. The label stays pinned with the player column. */
 .sg-group-row > * { background: var(--surface-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }

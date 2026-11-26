@@ -122,17 +122,30 @@ export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
     </div>
   );
 
+  // Shown once above the switcher (2026-11-26): the period cards and the period summary.
+  const shared = (
+    <>
+      {windows.length > 1 && <SummaryCards />}
+      <PeriodOverview window={selected} date={date} onDate={setDate} part="summary" />
+    </>
+  );
+
   if (view === 'schedule') {
     return (
       <div className="stack sg-view">
+        {shared}
         {switcher}
-        {windows.length > 1 && <SummaryCards />}
-        <PeriodOverview window={selected} date={date} onDate={setDate} calendar={false} />
         <section className="panel sg-panel" aria-label={`Schedule for ${selected.name}`}>
           <div className="panel-body sg-panel-body">
             <ScheduleGrid
               window={selected}
               active={sheetAt ?? undefined}
+              selectedDate={date}
+              onDate={(d) => {
+                // A date header opens that day in Set Lineup (the selected day carries both ways).
+                setDate(d);
+                setView('lineup');
+              }}
               onCell={(playerId, d, el) => {
                 opener.current = el;
                 setSheetAt({ playerId, date: d });
@@ -158,11 +171,13 @@ export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
   }
 
   return (
-    <div className="stack lu">
+    <div className="stack">
+      {shared}
       {switcher}
-      {windows.length > 1 && <SummaryCards />}
-      <PeriodOverview window={selected} date={date} onDate={setDate} />
-      {date && <DayLineup date={date} onPlayer={openPlayer} onFill={openFill} />}
+      <div className="lu">
+        <PeriodOverview window={selected} date={date} onDate={setDate} part="calendar" />
+        {date && <DayLineup date={date} onPlayer={openPlayer} onFill={openFill} />}
+      </div>
       {sheetAt && <PlayerSheet key={`${sheetAt.playerId}|${sheetAt.date}`} playerId={sheetAt.playerId} date={sheetAt.date} onClose={close} />}
       {fillAt && <FillSheet key={`${fillAt.date}|${fillAt.seatKey}`} date={fillAt.date} seatKey={fillAt.seatKey} onClose={closeFill} />}
     </div>
@@ -203,7 +218,11 @@ const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 /** Monday of the date's week. */
 const mondayOf = (d: ISODate) => addDays(d, -((new Date(`${d}T12:00:00Z`).getUTCDay() + 6) % 7));
 
-function PeriodOverview({ window: w, date, onDate, calendar = true }: { window: Window; date?: ISODate; onDate: (d: ISODate) => void; calendar?: boolean }) {
+/**
+ * The period summary (headline, facts, your-changes bar; shown once above the Team Schedule / Set Lineup
+ * switcher since 2026-11-26) or, with part="calendar", the day calendar (Set Lineup's day picker).
+ */
+function PeriodOverview({ window: w, date, onDate, part }: { window: Window; date?: ISODate; onDate: (d: ISODate) => void; part: 'summary' | 'calendar' }) {
   const { days, summarizeWindow, lineupPlayers, dispatch } = useApp();
   const seats = useSeats();
   const summary = summarizeWindow(w);
@@ -221,8 +240,23 @@ function PeriodOverview({ window: w, date, onDate, calendar = true }: { window: 
       weeks.push(Array.from({ length: 7 }, (_, i) => addDays(mon, i)).map((d) => (inWindow.has(d) ? d : null)));
     }
   }
+  if (part === 'calendar')
+    return (
+      <section className="panel lu-overview" aria-label={`Days in ${w.name}`}>
+        <div className="panel-body lu-overview-body">
+          <div className="lu-cal" role="group" aria-label={`Days in ${w.name}`}>
+            {WEEKDAYS.map((x, i) => (
+              <div key={`h${i}`} className="lu-cal-head" aria-hidden="true">
+                {x}
+              </div>
+            ))}
+            {weeks.flat().map((d, i) => (d ? <DayTile key={d} s={byDate.get(d)!} selected={d === date} onClick={() => onDate(d)} /> : <div key={`e${i}`} className="lu-day-blank" />))}
+          </div>
+        </div>
+      </section>
+    );
   return (
-    <section className="panel lu-overview" aria-label="Period overview">
+    <section className="panel lu-summary" aria-label="Period overview">
       <div className="panel-head">
         <h2>
           {w.name}: {summary.usable} of {summary.scheduled} scheduled games fit your lineup
@@ -259,18 +293,6 @@ function PeriodOverview({ window: w, date, onDate, calendar = true }: { window: 
               Reset {w.name} to Optimal
             </button>
           </div>
-        )}
-        {calendar && (
-          <>
-        <div className="lu-cal" role="group" aria-label={`Days in ${w.name}`}>
-          {WEEKDAYS.map((x, i) => (
-            <div key={`h${i}`} className="lu-cal-head" aria-hidden="true">
-              {x}
-            </div>
-          ))}
-          {weeks.flat().map((d, i) => (d ? <DayTile key={d} s={byDate.get(d)!} selected={d === date} onClick={() => onDate(d)} /> : <div key={`e${i}`} className="lu-day-blank" />))}
-        </div>
-          </>
         )}
       </div>
     </section>

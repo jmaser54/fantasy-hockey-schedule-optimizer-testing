@@ -283,14 +283,18 @@ try {
   await page.getByRole('tab', { name: 'Search Players' }).click();
   await page.getByLabel('Search players').fill('Connor McDavid');
   await page.locator('.suggest li').first().click();
-  // My Roster entry tools (2026-11-26): Search keeps them open; Done folds them into one Add Players button.
+  // My Roster entry tools (2026-11-26): Search keeps them open; the collapse chevron folds them into one Add Players button.
   if (!(await page.getByLabel('Search players').isVisible())) fail('the entry tools closed after adding a player by search');
-  await page.locator('.clear-roster-row').getByRole('button', { name: 'Done', exact: true }).click();
-  if ((await page.locator('.mode-switch').count()) || !(await page.locator('.roster-body').getByRole('button', { name: 'Add Players', exact: true }).isVisible())) fail('Done did not fold the entry tools into Add Players');
-  await page.locator('.roster-body').getByRole('button', { name: 'Add Players', exact: true }).click();
+  const collapse = page.getByRole('button', { name: 'Collapse player tools' });
+  const box = await collapse.boundingBox();
+  if (!box || box.width < 40 || box.height < 40) fail(`collapse chevron tap target too small: ${JSON.stringify(box)}`);
+  await collapse.click();
+  const reopen = page.locator('.roster-body').getByRole('button', { name: 'Add Players', exact: true });
+  if ((await page.locator('.mode-switch').count()) || !(await reopen.isVisible()) || (await reopen.getAttribute('aria-expanded')) !== 'false') fail('the collapse chevron did not fold the entry tools into Add Players');
+  await reopen.click();
   if (!(await page.locator('.mode-switch').isVisible())) fail('Add Players did not reopen the entry tools');
-  await page.locator('.clear-roster-row').getByRole('button', { name: 'Done', exact: true }).click();
-  console.log('roster entry OK: open after a search add, Done folds it, Add Players reopens it');
+  await collapse.click();
+  console.log('roster entry OK: open after a search add, the chevron folds it, Add Players reopens it');
   // New users (2026-11-26) start with blank league settings: the League Settings tab (and My Team) keep
   // their amber mark until the settings are complete; the My Roster mark clears once the roster has a player.
   const mark = (sel) => page.locator(`${sel} .needs-mark`).count();
@@ -327,6 +331,19 @@ try {
   const heading = await page.locator('.panel-head h2').first().innerText();
   if (!/of \d+ scheduled games fit your lineup/.test(heading)) fail(`lineup heading unexpected: ${heading}`);
   console.log(`lineup OK: "${heading}"`);
+  // Team Schedule ↔ Set Lineup by day (2026-11-26): one shared period summary above the switcher; a date
+  // header opens that day in Set Lineup; the day picked there is highlighted back in Team Schedule.
+  if ((await page.locator('.lu-summary').count()) !== 1) fail('Team Schedule: the period summary is not shown exactly once');
+  const dateHeads = page.locator('.sh-head .sg-date-btn');
+  await dateHeads.nth(2).click();
+  if ((await page.getByRole('button', { name: 'Set Lineup', exact: true }).getAttribute('aria-pressed')) !== 'true') fail('a Team Schedule date did not open Set Lineup');
+  if ((await page.locator('.lu-summary').count()) !== 1) fail('Set Lineup: the period summary is not shown exactly once');
+  if (!(await page.locator('.lu-day').nth(2).getAttribute('aria-pressed'))?.includes('true')) fail('Set Lineup did not select the tapped date');
+  await page.locator('.lu-day').nth(4).click();
+  await page.getByRole('button', { name: 'Team Schedule', exact: true }).click();
+  const current = await page.locator('.sh-head .sg-date-btn[aria-current="date"]').count();
+  if (current !== 1 || (await dateHeads.nth(4).getAttribute('aria-current')) !== 'date') fail('the day picked in Set Lineup is not highlighted in Team Schedule');
+  console.log('lineup days OK: shared summary once; date header → Set Lineup on that day; picked day highlighted back in Team Schedule');
 
   // gtag can keep the network busy, so don't wait for network idle; wait for the
   // reloaded Lineup page (#lineup) to render its heading instead.
