@@ -50,8 +50,6 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
     return m;
   }, [state.roster, resolve]);
   const issues = validateRoster(state.roster, playersMap, state.league);
-  const active = state.roster.filter((e) => !e.onIr).length;
-  const ir = state.roster.length - active;
 
   const add = (p: Player) => {
     if (onRoster.has(p.id)) return toast(`${p.name} is already on your roster`);
@@ -89,13 +87,7 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
       <section className="panel">
         <div className="panel-head">
           <h2>Roster</h2>
-          {/* "Roster N/limit" and the league summary line were removed here (owner request 2026-11-26); IR stays. */}
-          <span className="counts">
-            <span>
-              IR <b className={ir > state.league.irSlots ? 'over' : ''}>{ir}</b>
-              {!Number.isNaN(state.league.irSlots) && `/${state.league.irSlots}`}
-            </span>
-          </span>
+          {/* No counts or league summary here (owner requests 2026-11-26); the Roster tab shows the player count. */}
           {state.roster.length > 0 && (
             <button className="btn small" onClick={onGoLineup}>
               View Lineup →
