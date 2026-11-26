@@ -578,9 +578,9 @@ function RosterPanel(props: {
       {props.emptyRoster ? (
         <div className="empty">
           <strong>No roster yet</strong>
-          Add your players on the{' '}
+          Add your players in{' '}
           <button className="link-btn" onClick={props.onGoRoster}>
-            Roster tab
+            My Roster
           </button>{' '}
           and they’ll appear here automatically.
         </div>

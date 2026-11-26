@@ -78,6 +78,7 @@ await context.route(/google-analytics\.com\/(g|[a-z]\/)?collect/, (route) => {
 });
 const errors = [];
 const dialogs = [];
+let dismissNextDialog = false;
 // Failed loads from Google's analytics hosts are expected on networks that block the tag;
 // they are not app errors.
 const isAnalytics = (url = '') => /googletagmanager\.com|google-analytics\.com/.test(url);
@@ -86,8 +87,11 @@ const watch = (p) => {
   p.on('console', (m) => m.type() === 'error' && !isAnalytics(m.location().url) && errors.push(m.text()));
   p.on('dialog', (d) => {
     dialogs.push(d.message());
-    d.accept();
-  }); // Reset <period> to Optimal asks for confirmation
+    if (dismissNextDialog) {
+      dismissNextDialog = false;
+      d.dismiss();
+    } else d.accept();
+  }); // Reset <period> to Optimal and leaving unsaved League Settings ask for confirmation
 };
 watch(page);
 /** Poll until check() is true, or fail with msg. */
@@ -237,7 +241,11 @@ try {
   console.log(`rankings OK: ${rows} teams; status "${chip.trim()}"`);
   // Grid tab (2026-11-24: the Schedule Grid has its own tab after Schedules).
   const order = (await page.locator('.planner-tabs .tab').allInnerTexts()).map((t) => t.replace(/\s*(\d+|!)$/, '').trim());
-  if (order.join('|') !== 'Schedules|Grid|Lineup|Trade Lab|Roster') fail(`Games Optimizer tab order: ${order.join(', ')}`);
+  if (order.join('|') !== 'Schedules|Grid|Lineup|Trade Lab') fail(`Games Optimizer tab order: ${order.join(', ')}`);
+  // Three product areas (2026-11-26): My Team holds My Roster and League Settings.
+  const areaNames = (await page.locator('.areas .area').allInnerTexts()).map((t) => t.replace(/\s*!$/, '').replace(/\s+/g, ' ').trim());
+  if (areaNames.join('|') !== 'Games Optimizer|Player Normalizer|My Team') fail(`product areas: ${areaNames.join(', ')}`);
+  if (await page.locator('.settings-btn').count()) fail('the top-bar League Settings button is still shown');
   await page.getByRole('tab', { name: 'Grid', exact: true }).click();
   await page.locator('.sh-scroll .sgrid tbody tr').first().waitFor({ timeout: 30_000 });
   const gridRows = await page.locator('.sh-scroll .sgrid tbody tr').count();
@@ -247,7 +255,11 @@ try {
   await page.getByRole('tab', { name: 'Schedules', exact: true }).click();
   await page.locator('.table-wrap table tbody tr').first().waitFor({ timeout: 30_000 });
 
-  await page.getByRole('tab', { name: /^Roster(\s*\d+)?$/ }).click();
+  const myTeam = () => page.getByRole('button', { name: 'My Team', exact: true }).click();
+  await myTeam();
+  const teamTabs = (await page.locator('.team-tabs .tab').allInnerTexts()).map((t) => t.replace(/\s*(\d+|!)$/, '').trim());
+  if (teamTabs.join('|') !== 'My Roster|League Settings') fail(`My Team tabs: ${teamTabs.join(', ')}`);
+  if (!(await page.getByRole('tab', { name: /^My Roster/ }).getAttribute('aria-selected')) || !page.url().endsWith('#roster')) fail('My Team did not open on My Roster (#roster)');
   if (!(await page.getByLabel('Paste player names').isVisible())) fail('paste mode is not the default on the roster page');
   // Upload Image: the panel opens and the self-hosted OCR engine files are served (OCR itself isn't run here).
   await page.getByRole('tab', { name: 'Upload Image' }).click();
@@ -271,15 +283,38 @@ try {
   await page.getByRole('tab', { name: 'Search Players' }).click();
   await page.getByLabel('Search players').fill('Connor McDavid');
   await page.locator('.suggest li').first().click();
-  // New users (2026-11-26) start with blank league settings: a muted mark on League Settings stays
-  // until they are complete; the Roster mark clears once the roster has a player.
-  if ((await page.locator('.planner-tabs .tab .needs-mark').count()) !== 0) fail('Roster mark still shown with a player on the roster');
-  if ((await page.locator('.settings-btn .needs-mark').count()) !== 1) fail('League Settings mark missing while league settings are blank');
-  await page.getByRole('button', { name: /League Settings/ }).click();
+  // New users (2026-11-26) start with blank league settings: the League Settings tab (and My Team) keep
+  // their amber mark until the settings are complete; the My Roster mark clears once the roster has a player.
+  const mark = (sel) => page.locator(`${sel} .needs-mark`).count();
+  const rosterTab = '.team-tabs .tab:has-text("My Roster")';
+  const settingsTab = '.team-tabs .tab:has-text("League Settings")';
+  const teamArea = '.areas .area:has-text("My Team")';
+  if ((await mark(rosterTab)) !== 0) fail('My Roster mark still shown with a player on the roster');
+  if ((await mark(settingsTab)) !== 1 || (await mark(teamArea)) !== 1) fail('League Settings / My Team mark missing while league settings are blank');
+  await page.getByRole('tab', { name: /^League Settings/ }).click();
+  if (!page.url().endsWith('#league-settings')) fail(`League Settings is not at #league-settings: ${page.url()}`);
+  // Discard changes restores the saved (blank) values.
+  await page.locator('#rs').fill('18');
+  await page.getByRole('button', { name: 'Discard changes' }).click();
+  if ((await page.locator('#rs').inputValue()) !== '') fail('Discard changes did not restore the saved roster size');
+  // Leaving with unsaved edits asks; Cancel keeps the page and the edits.
+  await page.locator('#rs').fill('18');
+  dismissNextDialog = true;
+  await page.getByRole('tab', { name: /^My Roster/ }).click();
+  if (dialogs.at(-1) !== 'Discard your unsaved league settings changes?') fail(`unsaved-changes prompt: ${JSON.stringify(dialogs.at(-1))}`);
+  if ((await page.getByRole('tab', { name: /^League Settings/ }).getAttribute('aria-selected')) !== 'true' || (await page.locator('#rs').inputValue()) !== '18') fail('cancelling the unsaved-changes prompt did not keep League Settings and its edits');
+  // Save keeps the user on the page and clears the marks.
   await page.getByRole('button', { name: 'Restore Defaults' }).click();
   await page.getByRole('button', { name: 'Save' }).click();
-  if ((await page.locator('.settings-btn .needs-mark').count()) !== 0) fail('League Settings mark still shown after completing league settings');
-  console.log('setup marks OK: Roster and League Settings marks clear independently');
+  if ((await mark(settingsTab)) !== 0 || (await mark(teamArea)) !== 0) fail('League Settings / My Team mark still shown after completing league settings');
+  // Confirming the prompt discards the edits and navigates.
+  await page.locator('#ir').fill('5');
+  await page.getByRole('tab', { name: /^My Roster/ }).click();
+  if ((await page.getByRole('tab', { name: /^My Roster/ }).getAttribute('aria-selected')) !== 'true') fail('confirming the unsaved-changes prompt did not navigate');
+  await page.getByRole('tab', { name: /^League Settings/ }).click();
+  if ((await page.locator('#ir').inputValue()) !== '2') fail('confirming the unsaved-changes prompt did not discard the edits');
+  console.log('my team OK: My Roster and League Settings tabs, independent marks, Save, Discard changes and the unsaved-changes prompt');
+  await page.getByRole('button', { name: 'Games Optimizer', exact: true }).click();
   await page.getByRole('tab', { name: 'Lineup' }).click();
   const heading = await page.locator('.panel-head h2').first().innerText();
   if (!/of \d+ scheduled games fit your lineup/.test(heading)) fail(`lineup heading unexpected: ${heading}`);
@@ -289,7 +324,7 @@ try {
   // reloaded Lineup page (#lineup) to render its heading instead.
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.locator('.panel-head h2', { hasText: /of \d+ scheduled games fit your lineup/ }).first().waitFor({ timeout: 30_000 });
-  await page.getByRole('tab', { name: /^Roster(\s*\d+)?$/ }).click();
+  await myTeam();
   // The Roster box no longer shows "Roster N/limit" (2026-11-26): the restored player itself is the check.
   if (!(await page.locator('.roster-table', { hasText: 'Connor McDavid' }).count())) fail('roster not restored after reload');
   console.log('persistence OK');
@@ -338,8 +373,8 @@ try {
   await checkHistoricalSeasons(rosterSaved);
   await page.getByRole('button', { name: 'Games Optimizer', exact: true }).click();
   if (await page.getByRole('tab', { name: 'My Players' }).count()) fail('Player Evaluator destinations still shown in Playoff Planner');
-  for (const tab of ['Roster', 'Lineup']) {
-    await page.getByRole('tab', { name: tab === 'Roster' ? /^Roster(\s*\d+)?$/ : tab }).click();
+  for (const tab of ['Lineup', 'Trade Lab']) {
+    await page.getByRole('tab', { name: tab }).click();
     if (await page.locator('#season-select').count()) fail(`season selector shown in the Games Optimizer (${tab})`);
   }
   console.log('games optimizer OK: no season selector');
@@ -389,7 +424,9 @@ try {
     // A write to the other site's storage (as its open tab would make) must not reach this page.
     await other.evaluate(([k, v]) => localStorage.setItem(k, v), [otherKey, JSON.stringify({ version: 1, roster: [] })]);
     await sleep(500);
-    if (!/^Roster\s*1$/.test((await page.locator('.planner-tabs .tab', { hasText: 'Roster' }).innerText()).trim())) fail('a change to the other site\'s storage reached this page');
+    await myTeam();
+    if (!/^My Roster\s*1$/.test((await page.locator('.team-tabs .tab', { hasText: 'My Roster' }).innerText()).trim())) fail('a change to the other site\'s storage reached this page');
+    await page.getByRole('button', { name: 'Games Optimizer', exact: true }).click();
     await other.evaluate(([k, v]) => localStorage.setItem(k, v), [otherKey, otherSiteData]);
     await other.close();
     console.log('two tabs OK: changes and resets show in every open tab at once');
@@ -423,10 +460,12 @@ try {
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('table tbody tr');
   await page.waitForTimeout(3000);
-  for (const tab of [/^Roster(\s*\d+)?$/, 'Lineup', 'Trade Lab']) {
+  for (const tab of ['Grid', 'Lineup', 'Trade Lab']) {
     await page.getByRole('tab', { name: tab }).click();
     await page.waitForTimeout(1500);
   }
+  await page.getByRole('button', { name: 'My Team', exact: true }).click();
+  await page.waitForTimeout(1500);
   await page.waitForTimeout(3000);
   const views = gaHits.filter((h) => h.en === 'page_view');
   console.log(`analytics: ${gaHits.length} GA4 hits captured (not sent to Google); page_view ${views.length}`);

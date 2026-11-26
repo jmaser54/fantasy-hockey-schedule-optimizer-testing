@@ -193,7 +193,7 @@ function TeamRankings({ onGoRoster }: { onGoRoster: () => void }) {
   );
 }
 
-/** Invitation to the Roster tab before a roster exists; nothing once it has players (2026-11-26: the Roster tab shows the count). */
+/** Invitation to My Team › My Roster before a roster exists; nothing once it has players (that tab shows the count). */
 function RosterPill({ onGoRoster }: { onGoRoster: () => void }) {
   const { state } = useApp();
   if (state.roster.length > 0) return null;

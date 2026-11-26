@@ -15,7 +15,7 @@ import { ContactForm } from './Contact.tsx';
 import { LineupView } from './Lineup.tsx';
 import { GridView, RankingsView } from './Rankings.tsx';
 import { RosterView } from './Roster.tsx';
-import { SettingsModal } from './Settings.tsx';
+import { LeagueSettingsPage } from './Settings.tsx';
 import { TradesView } from './Trades.tsx';
 
 const TABS = [
@@ -24,24 +24,31 @@ const TABS = [
   { id: 'grid', label: 'Grid' },
   { id: 'lineup', label: 'Lineup' },
   { id: 'trades', label: 'Trade Lab' },
-  { id: 'roster', label: 'Roster' },
 ] as const;
 /** Player Evaluator's destinations (no period bar). */
 const EVALUATOR_TABS = [
   { id: 'evaluator', label: 'My Players' },
   { id: 'player-rankings', label: 'Player Rankings' },
 ] as const;
-const ALL_TABS = [...TABS, ...EVALUATOR_TABS];
+/** My Team's destinations (2026-11-26): the roster (#roster kept for old links) and League Settings, once a dialog. */
+const TEAM_TABS = [
+  { id: 'roster', label: 'My Roster' },
+  { id: 'league-settings', label: 'League Settings' },
+] as const;
+const ALL_TABS = [...TABS, ...EVALUATOR_TABS, ...TEAM_TABS];
 type TabId = (typeof ALL_TABS)[number]['id'];
 const isEvaluatorTab = (t: TabId) => EVALUATOR_TABS.some((e) => e.id === t);
+const isTeamTab = (t: TabId) => TEAM_TABS.some((e) => e.id === t);
 
-/** The two equal product areas (primary navigation); each shows its own destinations beneath. */
-type AreaId = 'planner' | 'evaluator';
+/** The product areas (primary navigation), in this order; each shows its own destinations beneath. */
+type AreaId = 'planner' | 'evaluator' | 'team';
 const AREAS: { id: AreaId; label: string; first: TabId }[] = [
   { id: 'planner', label: 'Games Optimizer', first: 'rankings' },
   { id: 'evaluator', label: 'Player Normalizer', first: 'evaluator' },
+  { id: 'team', label: 'My Team', first: 'roster' },
 ];
-const areaOf = (t: TabId): AreaId => (isEvaluatorTab(t) ? 'evaluator' : 'planner');
+const AREA_TABS: Record<AreaId, readonly { id: TabId; label: string }[]> = { planner: TABS, evaluator: EVALUATOR_TABS, team: TEAM_TABS };
+const areaOf = (t: TabId): AreaId => (isEvaluatorTab(t) ? 'evaluator' : isTeamTab(t) ? 'team' : 'planner');
 
 const isAboutHash = () => globalThis.location?.hash === '#about';
 
@@ -56,7 +63,6 @@ export function App() {
   const [status, setStatus] = useState<DataStatus>({ state: 'loading' });
   const [tab, setTab] = useState<TabId>(tabFromHash);
   const [about, setAbout] = useState(isAboutHash);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(() => (takeContactReturn() ? 'Message sent. Thanks for getting in touch!' : (notice ?? null)));
   const [saveFailed, setSaveFailed] = useState(false);
@@ -97,9 +103,17 @@ export function App() {
     trackTabView(ALL_TABS.find((t) => t.id === tab)!.label);
   }, [tab]);
 
+  // League Settings registers a check here while it has unsaved edits; leaving asks first.
+  const leaveGuard = useRef<(() => boolean) | null>(null);
+  const tabNow = useRef(tab);
+  tabNow.current = tab;
   useEffect(() => {
     // #about opens the About page and keeps the current tab to return to.
     const onHash = () => {
+      if (tabNow.current === 'league-settings' && leaveGuard.current && !leaveGuard.current()) {
+        history.replaceState(null, '', '#league-settings');
+        return;
+      }
       if (isAboutHash()) return setAbout(true);
       setAbout(false);
       setTab(tabFromHash());
@@ -120,6 +134,7 @@ export function App() {
   const lastTab = useRef<Partial<Record<AreaId, TabId>>>({});
   lastTab.current[area] = tab;
   const go = (id: TabId) => {
+    if (tab === 'league-settings' && id !== tab && leaveGuard.current && !leaveGuard.current()) return;
     history.replaceState(null, '', `#${id}`);
     setTab(id);
     setAbout(false);
@@ -150,44 +165,35 @@ export function App() {
                 onClick={() => area !== a.id && go(lastTab.current[a.id] ?? a.first)}
               >
                 {a.label}
+                {a.id === 'team' && (needs.roster || needs.league) && <NeedsMark />}
               </button>
             ))}
           </nav>
-          <button className="settings-btn" onClick={() => setSettingsOpen(true)} title="Review and adjust your league settings" aria-describedby={needs.league ? 'needs-input' : undefined}>
-            <span aria-hidden="true">⚙︎</span> League Settings
-            {needs.league && <NeedsMark />}
-          </button>
           <span id="needs-input" hidden>
             Needs your input
           </span>
         </div>
         <div className="topbar-inner tabbar-row">
-          {area === 'planner' ? (
-            <nav className="tabs planner-tabs" role="tablist" aria-label="Games Optimizer">
-              {TABS.map((t) => (
+          <nav className={`tabs ${area}-tabs`} role="tablist" aria-label={AREAS.find((a) => a.id === area)!.label}>
+            {AREA_TABS[area].map((t) => {
+              // Each "needs your input" mark clears on its own (roster has a player / league complete).
+              const mark = (t.id === 'roster' && needs.roster) || (t.id === 'league-settings' && needs.league);
+              return (
                 <button
                   key={t.id}
                   role="tab"
                   className="tab"
                   aria-selected={!about && tab === t.id}
-                  aria-describedby={t.id === 'roster' && needs.roster ? 'needs-input' : undefined}
+                  aria-describedby={mark ? 'needs-input' : undefined}
                   onClick={() => go(t.id)}
                 >
                   {t.label}
                   {t.id === 'roster' && state.roster.length > 0 && <span className="count">{state.roster.length}</span>}
-                  {t.id === 'roster' && needs.roster && <NeedsMark />}
+                  {mark && <NeedsMark />}
                 </button>
-              ))}
-            </nav>
-          ) : (
-            <nav className="tabs evaluator-tabs" role="tablist" aria-label="Player Normalizer">
-              {EVALUATOR_TABS.map((t) => (
-                <button key={t.id} role="tab" className="tab" aria-selected={!about && tab === t.id} onClick={() => go(t.id)}>
-                  {t.label}
-                </button>
-              ))}
-            </nav>
-          )}
+              );
+            })}
+          </nav>
         </div>
       </div>
       <main>
@@ -205,15 +211,14 @@ export function App() {
             dispatch={dispatch}
             data={status.data}
             toast={toast}
-            periodBar={!about && !isEvaluatorTab(tab)}
-            showModes={tab !== 'roster'}
-            onOpenSettings={() => setSettingsOpen(true)}
-            overlay={settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+            periodBar={!about && area === 'planner'}
+            onOpenSettings={() => go('league-settings')}
           >
             {about && <AboutView />}
             {!about && tab === 'rankings' && <RankingsView onGoRoster={() => go('roster')} />}
             {!about && tab === 'grid' && <GridView />}
             {!about && tab === 'roster' && <RosterView onGoLineup={() => go('lineup')} />}
+            {!about && tab === 'league-settings' && <LeagueSettingsPage leaveGuard={leaveGuard} />}
             {!about && tab === 'lineup' && <LineupView onGoRoster={() => go('roster')} />}
             {!about && tab === 'trades' && <TradesView onGoRoster={() => go('roster')} />}
             {/* One element for both destinations, so the shared state survives switching between them. */}
@@ -306,11 +311,9 @@ function Ready(props: {
   dispatch: AppCtx['dispatch'];
   data: AppCtx['data'];
   toast: AppCtx['toast'];
+  /** Games Optimizer destinations only (not Player Normalizer, My Team or About). */
   periodBar: boolean;
-  /** False on Roster: no period toggle there (its Games column always shows next week). */
-  showModes: boolean;
   onOpenSettings: () => void;
-  overlay: React.ReactNode;
   children: React.ReactNode;
 }) {
   const { state, dispatch, data, toast } = props;
@@ -411,10 +414,9 @@ function Ready(props: {
   const controls: PeriodControls = { mode, setMode, customPeriods, setCustomPeriods, customTotal, setCustomTotal };
   return (
     <Ctx.Provider value={ctx}>
-      {props.periodBar && props.showModes && <PeriodBar {...controls} hasWindow={!!selected} />}
+      {props.periodBar && <PeriodBar {...controls} hasWindow={!!selected} />}
       {/* The league summary line shows only on the Roster tab (in-page); removed from the other tabs 2026-11-26. */}
-      {props.periodBar && props.showModes && !selected ? <div className="empty">Enter a start and end date for your period above.</div> : props.children}
-      {props.overlay}
+      {props.periodBar && !selected ? <div className="empty">Enter a start and end date for your period above.</div> : props.children}
     </Ctx.Provider>
   );
 }

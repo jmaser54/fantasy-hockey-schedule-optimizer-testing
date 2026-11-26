@@ -53,7 +53,6 @@ button { cursor: pointer; }
 .tabbar .tabs { margin-top: 0; }
 .tabbar-row { display: flex; align-items: center; gap: 12px; }
 .tabbar-row .tabs { flex: 1 1 auto; min-width: 0; }
-.tabbar-row .settings-btn { order: 2; padding: 5px 12px; font-size: 13px; }
 .topbar-inner { max-width: 1200px; margin: 0 auto; padding: 10px 16px 0; }
 .brand-row { display: flex; align-items: center; gap: 12px; }
 .brand { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; margin-right: auto; }
@@ -71,13 +70,6 @@ button { cursor: pointer; }
 .needs-mark { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-left: 6px; border-radius: 50%; background: #b45309; color: #fff; font-size: 13px !important; font-weight: 800; line-height: 1; vertical-align: 1px; flex: none; }
 main { max-width: 1200px; margin: 0 auto; padding: 16px; }
 
-.settings-btn {
-  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
-  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
-  border-radius: 8px; padding: 7px 14px; font-size: 14px; font-weight: 700;
-}
-.settings-btn span { font-size: 16px; line-height: 1; }
-.settings-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
 .label-short { display: none; }
 .data-status { max-width: 1200px; margin: 0 auto; padding: 4px 16px 20px; font-size: 11px; color: var(--muted); opacity: 0.8; display: flex; align-items: baseline; gap: 16px; }
 .data-status.stale { color: var(--warn); opacity: 1; }
@@ -582,7 +574,6 @@ h3 { font-size: 13px; margin: 16px 0 6px; }
   .topbar-inner { padding: 8px 12px 0; }
   .tabbar-row { flex-wrap: wrap; gap: 0; }
   .tabbar-row .tabs { flex-basis: 100%; }
-  .tabbar-row .settings-btn { order: 0; margin: 6px 0 2px; }
   .custom-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
   .custom-row > input { width: 100%; }
   .custom-row .date-inputs { grid-column: 1 / -1; order: 2; display: flex; }
@@ -649,14 +640,17 @@ h3 { font-size: 13px; margin: 16px 0 6px; }
 
 
 /* Player Evaluator (first prototype; layout expected to change after review) */
-/* Navigation: two equal product areas (Playoff Planner, Player Evaluator), with League Settings on
-   the same row; the selected area's destinations are the tab row beneath. */
+/* Navigation: three product areas (Games Optimizer, Player Normalizer, My Team; 2026-11-26); the selected
+   area's destinations are the tab row beneath. */
 .tabbar .area-row { display: flex; align-items: center; gap: 12px; padding-top: 6px; }
 .areas { display: flex; gap: 4px; margin-right: auto; min-width: 0; }
 .area { border: 0; background: none; padding: 5px 10px; border-radius: 8px; font-size: 14px; font-weight: 700; color: var(--muted); white-space: nowrap; }
 .area:hover { color: var(--text); background: var(--surface-2); }
 .area[aria-current='true'] { color: var(--accent); background: var(--accent-soft); }
-.area-row .settings-btn { padding: 5px 12px; font-size: 13px; }
+/* League Settings is a My Team page (2026-11-26), set to the old dialog's width. On phones the lineup-slot
+   rows are wider than the screen (as they were in the dialog); they scroll inside the form, not the page. */
+.settings-page { max-width: 720px; min-width: 0; }
+.settings-page .panel-body { overflow-x: auto; }
 .evaluator { gap: 12px; }
 .eval-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 4px 12px; }
 .eval-title { font-size: 18px; margin: 0; }
@@ -722,12 +716,12 @@ input[aria-invalid='true'] { border-color: var(--bad); }
 .rank-more { padding: 10px 14px; border-top: 1px solid var(--border); }
 @media (max-width: 600px) {
   .tabbar .area-row { padding-top: 6px; gap: 8px; }
-  /* Phones: each area name on two lines ("Games / Optimizer"), so both fit beside League Settings. */
+  /* Phones: each area name on two lines ("Games / Optimizer"), so all three fit. */
   .areas { gap: 2px; }
   .area { width: min-content; padding: 5px 8px; white-space: normal; line-height: 1.15; text-align: center; }
-  /* The League Settings mark sits on the button's corner on phones, so the button keeps its width. */
-  .area-row .settings-btn { position: relative; }
-  .area-row .settings-btn .needs-mark { position: absolute; top: -8px; right: -8px; margin: 0; box-shadow: 0 0 0 2px var(--surface); }
+  /* The My Team mark sits on the button's corner on phones, so the two-line labels keep their width. */
+  .area { position: relative; }
+  .area .needs-mark { position: absolute; top: -7px; right: -7px; margin: 0; box-shadow: 0 0 0 2px var(--surface); }
   .eval-table th, .eval-table td { padding: 6px 6px; }
   .eval-table tbody th.sticky { white-space: normal; min-width: 112px; max-width: 132px; font-size: 13px; }
   .eval-table .ev-name { display: block; }
