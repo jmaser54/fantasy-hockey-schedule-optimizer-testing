@@ -21,7 +21,7 @@ import { clearComparisons, loadEvaluatorPrefs, saveEvaluatorPrefs, type Evaluato
 import { useApp } from './context.ts';
 import { InfoTip } from './common.tsx';
 import { StickyHeadTable } from './StickyHead.tsx';
-import { adjustedDecimals, formatAdjusted, formatStat, mergeComparisons, normalizedMeaning, POSITION_SHORT, searchSkaters, seasonLabel, sortRows, STAT_GROUPS, STAT_SHORT, type StatGroupId } from './evaluatorFormat.ts';
+import { adjustedDecimals, formatAdjusted, formatStat, mergeComparisons, POSITION_SHORT, searchSkaters, seasonLabel, sortRows, STAT_GROUPS, STAT_SHORT, type StatGroupId } from './evaluatorFormat.ts';
 
 /**
  * Player Evaluator (first functional prototype). Reads the saved roster, never changes it, and keeps
@@ -525,7 +525,6 @@ function RosterPanel(props: {
   // Comparison players sit among rostered players by position, and join the same sort.
   const merged = mergeComparisons(props.roster, props.comparisons);
   const showTable = !props.emptyRoster || props.comparisons.length > 0;
-  const meaning = normalizedMeaning(props.benchmark);
   const rows = sort ? sortRows(merged, sort.key, sort.dir, !props.totals && props.sortBasis === 'normalized' && isScaledStat(sort.key)) : merged;
 
   const row = (s: EvaluatedSubject) => {
@@ -599,24 +598,18 @@ function RosterPanel(props: {
       )}
       <div className="eval-foot">
         {props.footer}
-        <p className="small muted ev-legend">
-          {/* A key to the stat cells, shown only when there is a table (2026-11-26). */}
-          {!showTable ? null : props.totals ? (
-            <>Actual {props.seasonText} regular-season totals</>
-          ) : meaning ? (
-            <>
-              <b>Bold</b>: stats {meaning} · smaller number: actual season total
-            </>
-          ) : (
-            <>Smaller number: actual season total</>
-          )}
-          {props.goalies.length > 0 && (
-            <>
-              {showTable && <br />}
-              Goalies aren’t evaluated yet: {props.goalies.join(', ')}.
-            </>
-          )}
-        </p>
+        {/* No key to the bold (normalized) / smaller (actual) figures: removed 2026-11-26, owner decision. */}
+        {((showTable && props.totals) || props.goalies.length > 0) && (
+          <p className="small muted ev-legend">
+            {showTable && props.totals && <>Actual {props.seasonText} regular-season totals</>}
+            {props.goalies.length > 0 && (
+              <>
+                {showTable && props.totals && <br />}
+                Goalies aren’t evaluated yet: {props.goalies.join(', ')}.
+              </>
+            )}
+          </p>
+        )}
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import type { SkaterPositionCode, SkaterStatLine } from '../data/format.ts';
-import type { Benchmark, StatKey } from '../domain/evaluator.ts';
+import type { StatKey } from '../domain/evaluator.ts';
 import { normalizeName } from '../domain/names.ts';
 
 /** Player Evaluator display helpers (pure). Layout choices here are prototype defaults, easy to change. */
@@ -42,17 +42,6 @@ export const POSITION_SHORT: Record<SkaterPositionCode, string> = { C: 'C', L: '
  */
 export const formatAdjusted = (v: number, decimals = 2): string => v.toFixed(decimals);
 /** Decimal places for normalized values under a benchmark basis. */
-/**
- * What the bold number in a stat cell means, for the key under the Roster Evaluation table
- * (2026-11-26). It replaced a key built from made-up sample numbers ("12.34 normalized to 27 GP · 10
- * actual"), which read like real data. Null when nothing is normalized (no benchmark).
- */
-export function normalizedMeaning(benchmark: Benchmark | undefined): string | null {
-  if (!benchmark?.available || benchmark.basis === 'full-season') return null;
-  if (benchmark.basis === 'per-game') return 'per game played';
-  return `scaled to ${benchmark.gamesPlayed} ${benchmark.gamesPlayed === 1 ? 'game' : 'games'} played`;
-}
-
 export const adjustedDecimals = (basis: string | undefined): number => (basis === 'per-game' ? 3 : 2);
 
 /** A reported value: counts as integers, +/- signed, percentages to one decimal, TOI as m:ss. */
