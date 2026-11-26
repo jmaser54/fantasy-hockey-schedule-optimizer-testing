@@ -135,7 +135,7 @@ export function App() {
           <div className="brand">
             Playoff <span>Planner</span>
           </div>
-          <p className="tagline">Plan your next week — and your playoff run. Add your roster to see which pickups are worth it.</p>
+          <p className="tagline">Plan your next week — and your playoff run. Add your roster to see the best moves for your team.</p>
         </div>
       </header>
       <div className="tabbar">

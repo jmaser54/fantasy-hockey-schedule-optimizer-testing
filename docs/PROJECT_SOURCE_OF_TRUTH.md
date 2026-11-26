@@ -55,7 +55,7 @@ Primary workflows (tabs, in order; `src/ui/App.tsx` `TABS`). **Testing repo, own
 - Roster-limit warning: "Your roster has N players, but your current limit is L. If your roster is correct, update your league settings. Otherwise, drop players or move eligible players to IR." (`src/domain/roster.ts` `describeIssue`).
 - Contact intro: "Have feedback? Send us a message."
 - Browser title: "Fantasy Hockey Playoff Planner" (`index.html`); the in-page brand stays "Playoff Planner".
-- Subtitle under the brand: "Plan your next week — and your playoff run. Add your roster to see which pickups are worth it."
+- Subtitle under the brand: "Plan your next week — and your playoff run. Add your roster to see which pickups are worth it." *(Testing repo, owner wording 2026-11-26: "Plan your next week — and your playoff run. Add your roster to see the best moves for your team."; the link-preview descriptions below are unchanged.)*
 - The "How it works" strip was removed in round 2 (owner decision); only the subtitle stays.
 - Roster shortcut above "NHL Team Schedules": a "+ Add your roster" pill while the roster is empty; then "Roster: N players" with an "Edit" link. Both go to the Roster tab (`RosterPill` in `Rankings.tsx`). *(Testing repo, 2026-11-26: only the empty-roster "+ Add your roster" pill remains; with players there is no shortcut, since the Roster tab shows the count.)*
 - League Settings button: gear icon plus the words "League Settings", at every width (`.tabbar .settings-btn`).
