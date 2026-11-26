@@ -111,11 +111,16 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
           )}
         </div>
         <div className="panel-body stack roster-body">
-          {!showEntry && (
-            <div>
-              <button className="btn primary" aria-expanded={false} aria-controls="roster-entry" onClick={() => setEntryOpen(true)}>
-                Add Players
-              </button>
+          {/* Action row (2026-11-26): Add Players (while the tools are folded) and Clear Roster to its right, which
+              stays visible whether the tools are open or folded (it only shows when the roster has players). */}
+          {(!showEntry || state.roster.length > 0) && (
+            <div className="roster-actions">
+              {!showEntry && (
+                <button className="btn primary" aria-expanded={false} aria-controls="roster-entry" onClick={() => setEntryOpen(true)}>
+                  Add Players
+                </button>
+              )}
+              <ClearRosterButton />
             </div>
           )}
           {showEntry && (
@@ -143,11 +148,6 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
                 </button>
               )}
             </div>
-            {state.roster.length > 0 && (
-              <div className="clear-roster-row">
-                <ClearRosterButton />
-              </div>
-            )}
             {mode === 'search' && (
               <div className="add-bar">
                 <PlayerSearch onPick={add} exclude={onRoster} placeholder="Add a player by name…" />
@@ -165,7 +165,7 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
                     toast(`Added ${ids.length} player${ids.length === 1 ? '' : 's'}`);
                   }
                   // The import is finished once its review is: with players on the roster, Done here folds the tools
-                  // away like the Done beside Clear Roster (both mean "finished adding").
+                  // away like the collapse chevron (both mean "finished adding").
                   if (ids.length > 0 || state.roster.length > 0) closeEntry();
                   else setOutcome(null);
                 }}

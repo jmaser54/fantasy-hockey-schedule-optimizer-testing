@@ -94,11 +94,10 @@ main { max-width: 1200px; margin: 0 auto; padding: 16px; }
 
 /* Period bar */
 .periodbar { display: grid; justify-items: start; gap: 10px; margin-bottom: 16px; }
-/* Roster tab: setup line on the left, Clear Roster on the right; wraps on narrow screens. */
-/* Roster tab, one spacing rhythm: summary 8px under the heading row, 10px to the Paste/Search toggle,
-   8px to Clear Roster (left, under the toggle), 12px to the paste or search content. */
+/* My Roster: 12px between the action row, the entry switcher and the paste or search content. */
 .panel-body.roster-body { gap: 12px; padding-top: 8px; }
-.clear-roster-row { display: flex; justify-content: flex-start; margin-top: -4px; }
+/* My Roster action row (2026-11-26): Add Players, then Clear Roster to its right; wraps only if it must. */
+.roster-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 /* The entry tools' switcher, with the collapse chevron at its right once the roster has players (2026-11-26). */
 .entry-head { display: flex; align-items: center; gap: 8px; }
 .entry-head .mode-switch { flex: 1 1 auto; min-width: 0; }
