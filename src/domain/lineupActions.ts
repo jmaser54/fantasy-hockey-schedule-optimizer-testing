@@ -300,21 +300,50 @@ export interface DaySummary {
   hasIssues: boolean;
   /** Players whose game could be added without giving up another (genuine open spots). */
   opportunities: string[];
+  /** Benched non-IR players with a game who can't be added without giving up another game (`priority`/`constraint`). */
+  noRoom: string[];
+  /**
+   * Day indicator (2026-11-26): `avoidable` (crimson) when any benched non-IR player with a game is an
+   * `opportunity`; else `capacity` (light yellow) when any such player remains (`noRoom`); else null.
+   * Empty slots with no eligible rostered player never set it on their own; IR players and players
+   * without a game never do.
+   */
+  attention: DayAttention;
+}
+
+export type DayAttention = 'avoidable' | 'capacity' | null;
+
+/** A benched player's indicator: `avoidable` for an `opportunity`, `no-room` for `priority`/`constraint`. */
+export function benchStatus(day: DayResult, playerId: string, players: ReadonlyMap<string, LineupPlayer>, seats: readonly Seat[]): 'avoidable' | 'no-room' | undefined {
+  const k = gameKind(day, playerId, players, seats);
+  return k === 'opportunity' ? 'avoidable' : k === 'priority' || k === 'constraint' ? 'no-room' : undefined;
 }
 
 /** Per-day figures for the period overview, straight from the day results (no new optimization). */
 export function summarizeDays(days: readonly DayResult[], roster: readonly LineupPlayer[], seats: readonly Seat[]): DaySummary[] {
   const players = new Map(roster.map((p) => [p.id, p]));
-  return days.map((d) => ({
-    date: d.date,
-    usable: d.usable,
-    scheduled: d.scheduled,
-    optimal: d.optimalUsable,
-    manual: d.manual,
-    hasIssues: d.manualIssues.length > 0,
-    // Only edited days can have them (the automatic lineup is a maximum); skip the work elsewhere.
-    opportunities: d.manual ? d.players.filter((x) => x.game && !x.seatKey && gameKind(d, x.playerId, players, seats) === 'opportunity').map((x) => x.playerId) : [],
-  }));
+  return days.map((d) => {
+    // Every benched player with a game, classified by the existing gameKind (IR players come back as 'ir').
+    const opportunities: string[] = [];
+    const noRoom: string[] = [];
+    for (const x of d.players) {
+      if (!x.game || x.seatKey) continue;
+      const st = benchStatus(d, x.playerId, players, seats);
+      if (st === 'avoidable') opportunities.push(x.playerId);
+      else if (st === 'no-room') noRoom.push(x.playerId);
+    }
+    return {
+      date: d.date,
+      usable: d.usable,
+      scheduled: d.scheduled,
+      optimal: d.optimalUsable,
+      manual: d.manual,
+      hasIssues: d.manualIssues.length > 0,
+      opportunities,
+      noRoom,
+      attention: opportunities.length ? 'avoidable' : noRoom.length ? 'capacity' : null,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

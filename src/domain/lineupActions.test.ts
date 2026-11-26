@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { initialState, reducer, type AppState } from '../state/appState.ts';
-import { addOptions, gameKind, inAutomaticLineup, lineupOf, moveOptions, overrideFor, fillCandidates, planIrChange, placeOptions, playerSchedule, replaceOptions, summarizeDays } from './lineupActions.ts';
+import { addOptions, benchStatus, gameKind, inAutomaticLineup, lineupOf, moveOptions, overrideFor, fillCandidates, planIrChange, placeOptions, playerSchedule, replaceOptions, summarizeDays } from './lineupActions.ts';
 import { expandSeats, optimizeDates, optimizeDay, type LineupPlayer } from './optimizer.ts';
 import { toLineupPlayers } from './roster.ts';
 import { player, sched, slots } from './testUtils.ts';
@@ -302,5 +302,125 @@ describe('filling empty slots with players without a game (ESPN-style, 2026-11-2
     const opts = placeOptions(day(idleBench), 'pickard', idleBench, gSeats);
     expect(opts.length).toBeGreaterThan(0);
     expect(opts.every((o) => o.gain === undefined)).toBe(true);
+  });
+});
+
+describe('day and bench indicators (crimson avoidable / yellow capacity, 2026-11-26)', () => {
+  // One date: A, B, C and D play; team E doesn't.
+  const D = '2027-03-01';
+  const sc = sched([
+    [D, 'A', 'B'],
+    [D, 'C', 'D'],
+  ]);
+  const pl = (id: string, team: string, positions: Position[], onIr = false) => player(id, team, positions, onIr);
+  const run = (r: LineupPlayer[], st: ReturnType<typeof expandSeats>, lineup?: Record<string, string | null>) => {
+    const day = optimizeDay(D, r, st, sc, lineup ? { start: Object.values(lineup).filter((x): x is string => !!x), sit: [], lineup } : undefined);
+    const summary = summarizeDays([day], r, st)[0]!;
+    const by = new Map(r.map((p) => [p.id, p]));
+    const status = (id: string) => benchStatus(day, id, by, st);
+    return { day, summary, status };
+  };
+  const CL = expandSeats(slots({ C: ['C'], LW: ['LW'] }));
+
+  it('an empty eligible slot with a benched player who has a game is crimson', () => {
+    const r = [pl('c1', 'A', ['C']), pl('w1', 'C', ['LW'])];
+    const { summary, status } = run(r, CL, { 'C#0': null, 'LW#0': 'w1' });
+    expect(summary.attention).toBe('avoidable');
+    expect(summary.opportunities).toEqual(['c1']);
+    expect(status('c1')).toBe('avoidable');
+  });
+
+  it('a slot held by a player without a game counts as open (crimson)', () => {
+    const r = [pl('c1', 'A', ['C']), pl('idle', 'E', ['C']), pl('w1', 'C', ['LW'])];
+    const { summary, status } = run(r, CL, { 'C#0': 'idle', 'LW#0': 'w1' });
+    expect(summary.attention).toBe('avoidable');
+    expect(status('c1')).toBe('avoidable');
+    expect(status('idle')).toBeUndefined(); // no game: never flagged
+  });
+
+  it('an opportunity that needs starters reshuffled is crimson', () => {
+    // f1 (C/LW) holds C; LW is empty; c2 (C only) fits once f1 moves to LW.
+    const r = [pl('f1', 'A', ['C', 'LW']), pl('c2', 'C', ['C'])];
+    const { summary, status } = run(r, CL, { 'C#0': 'f1', 'LW#0': null });
+    expect(status('c2')).toBe('avoidable');
+    expect(summary.attention).toBe('avoidable');
+  });
+
+  it('only priority players (more games than slots) is yellow', () => {
+    const r = [pl('c1', 'A', ['C']), pl('c2', 'C', ['C']), pl('w1', 'B', ['LW'])];
+    const { day, summary, status } = run(r, CL);
+    expect(day.manual).toBe(false);
+    expect(summary.attention).toBe('capacity');
+    expect(summary.opportunities).toEqual([]);
+    expect(summary.noRoom).toEqual(['c2']);
+    expect(status('c2')).toBe('no-room');
+  });
+
+  it('only constraint players (no slot accepts them) is yellow', () => {
+    const r = [pl('c1', 'A', ['C']), pl('w1', 'B', ['LW']), pl('d1', 'C', ['D'])];
+    const { summary, status } = run(r, CL);
+    expect(summary.attention).toBe('capacity');
+    expect(summary.noRoom).toEqual(['d1']);
+    expect(status('d1')).toBe('no-room');
+  });
+
+  it('opportunity and capacity players together: crimson takes precedence', () => {
+    const r = [pl('c1', 'A', ['C']), pl('w1', 'B', ['LW']), pl('d1', 'C', ['D'])];
+    const { summary, status } = run(r, CL, { 'C#0': 'c1', 'LW#0': null });
+    expect(summary.attention).toBe('avoidable');
+    expect(summary.opportunities).toEqual(['w1']);
+    expect(summary.noRoom).toEqual(['d1']);
+    expect([status('w1'), status('d1')]).toEqual(['avoidable', 'no-room']);
+  });
+
+  it('a permanently unfillable slot alone sets no indicator', () => {
+    // Two goalie slots, no goalie on the roster: G stays empty every day.
+    const st = expandSeats(slots({ C: ['C'], G: [2, ['G']] }));
+    const r = [pl('c1', 'A', ['C'])];
+    const { day, summary } = run(r, st);
+    expect(day.seats.filter((x) => !x.playerId).length).toBe(2);
+    expect(summary.attention).toBeNull();
+  });
+
+  it('IR players with games never set an indicator', () => {
+    const r = [pl('c1', 'A', ['C']), pl('w1', 'B', ['LW']), pl('hurt', 'C', ['C'], true)];
+    const { summary, status } = run(r, CL);
+    expect(summary.attention).toBeNull();
+    expect(status('hurt')).toBeUndefined();
+    // Still none on a saved day that leaves a slot empty, if only the IR player could fill it.
+    expect(run(r, CL, { 'C#0': null, 'LW#0': 'w1' }).summary.opportunities).toEqual(['c1']);
+  });
+
+  it('automatic vs saved lineups: the same roster is clear when automatic, crimson when a saved lineup benches a fitting player', () => {
+    const r = [pl('c1', 'A', ['C']), pl('w1', 'B', ['LW'])];
+    expect(run(r, CL).summary.attention).toBeNull();
+    const saved = run(r, CL, { 'C#0': 'c1', 'LW#0': null });
+    expect(saved.day.manual).toBe(true);
+    expect(saved.summary.attention).toBe('avoidable');
+  });
+
+  it('day indicators agree with player statuses, and automatic days are never crimson (random rosters)', () => {
+    const teams = ['A', 'B', 'C', 'D', 'E', 'F'];
+    const pos: Position[][] = [['C'], ['LW'], ['RW'], ['D'], ['C', 'LW'], ['LW', 'RW'], ['G'], ['C', 'RW']];
+    const full = expandSeats(slots({ C: [2, ['C']], LW: [2, ['LW']], RW: [2, ['RW']], D: [2, ['D']], UTIL: ['C', 'LW', 'RW', 'D'], G: [2, ['G']] }));
+    let seed = 23;
+    const rnd = (n: number) => ((seed = (seed * 9301 + 49297) % 233280), Math.floor((seed / 233280) * n));
+    for (let t = 0; t < 80; t++) {
+      const r: LineupPlayer[] = Array.from({ length: 6 + rnd(18) }, (_, i) => ({ ...player(`p${i}`, teams[rnd(teams.length)]!, pos[rnd(pos.length)]!, rnd(9) === 0), preferred: rnd(4) === 0 }));
+      const auto = run(r, full);
+      // Random saved lineup: the automatic one with some seats emptied.
+      const lineup = lineupOf(auto.day);
+      for (const k of Object.keys(lineup)) if (rnd(4) === 0) lineup[k] = null;
+      for (const { day, summary, status } of [auto, run(r, full, lineup)]) {
+        const benched = r.filter((p) => !p.onIr && !day.seats.some((x) => x.playerId === p.id) && day.players.find((x) => x.playerId === p.id)!.game);
+        const st = benched.map((p) => status(p.id));
+        expect(st.every((x) => x === 'avoidable' || x === 'no-room')).toBe(true);
+        const want = st.includes('avoidable') ? 'avoidable' : st.length ? 'capacity' : null;
+        expect(summary.attention).toBe(want);
+        // Avoidable exactly when the lineup's games are below the day's maximum.
+        expect(summary.attention === 'avoidable').toBe(day.usable < day.optimalUsable);
+        if (!day.manual) expect(summary.attention).not.toBe('avoidable');
+      }
+    }
   });
 });

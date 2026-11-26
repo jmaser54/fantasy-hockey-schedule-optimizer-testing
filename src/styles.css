@@ -301,7 +301,13 @@ th.col-selected { box-shadow: inset 0 -2px 0 var(--accent); }
 .lu-day-bar { width: 70%; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
 .lu-day-bar span { display: block; height: 100%; background: var(--accent); }
 /* Red alert dot (2026-11-25): a genuine open lineup spot that needs attention. */
-.lu-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #dc2626; vertical-align: middle; }
+.lu-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #be123c; vertical-align: middle; }
+/* Day indicators (2026-11-26): crimson dot and bar = an avoidable benching; pale yellow tile = games that don't fit. */
+.lu-day.att-avoidable .lu-day-bar span { background: #be123c; }
+.lu-day.att-capacity { background: #fdf6d3; }
+/* Bench rows: a thin crimson edge for a game that fits; a muted "No room" note for one that doesn't. */
+.lu-row.lu-avoid { box-shadow: inset 3px 0 0 #be123c; }
+.lu-noroom { color: var(--muted); font-size: 12px; }
 .lu-day-dot { position: absolute; top: 4px; right: 4px; }
 .lu-daily-head h2 { margin-right: auto; }
 .lu-day-count-text { font-weight: 400; color: var(--muted); }

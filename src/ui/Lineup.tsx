@@ -4,6 +4,7 @@ import { addDays, easternToday, formatShort, weekday } from '../domain/dates.ts'
 import {
   addOptions,
   fillCandidates,
+  benchStatus,
   gameKind,
   inAutomaticLineup,
   moveOptions,
@@ -295,9 +296,9 @@ function PeriodOverview({ window: w, date, onDate, calendar = true }: { window: 
 
 function DayTile({ s, selected, onClick }: { s: DaySummary; selected: boolean; onClick: () => void }) {
   const pct = s.scheduled ? Math.round((s.usable / s.scheduled) * 100) : 0;
-  const label = `${weekday(s.date)} ${formatShort(s.date)}: ${s.scheduled ? `${s.usable} of ${s.scheduled} games fit your lineup` : 'no games'}${s.opportunities.length ? `, ${s.opportunities.length} open spot${s.opportunities.length === 1 ? '' : 's'}` : ''}${s.manual ? ', your changes' : ''}`;
+  const label = `${weekday(s.date)} ${formatShort(s.date)}: ${s.scheduled ? `${s.usable} of ${s.scheduled} games fit your lineup` : 'no games'}${s.opportunities.length ? `, ${s.opportunities.length} open spot${s.opportunities.length === 1 ? '' : 's'}` : s.noRoom.length ? `, no room for ${s.noRoom.length} game${s.noRoom.length === 1 ? '' : 's'}` : ''}${s.manual ? ', your changes' : ''}`;
   return (
-    <button type="button" className={`lu-day ${s.hasIssues ? 'issue' : ''}`} aria-pressed={selected} aria-label={label} title={label} onClick={onClick}>
+    <button type="button" className={`lu-day ${s.hasIssues ? 'issue' : ''} ${s.attention ? `att-${s.attention}` : ''}`} aria-pressed={selected} aria-label={label} title={label} onClick={onClick}>
       <span className="lu-day-date">{Number(s.date.slice(8))}</span>
       <span className="lu-day-count">
         {s.scheduled ? (
@@ -311,7 +312,8 @@ function DayTile({ s, selected, onClick }: { s: DaySummary; selected: boolean; o
       <span className="lu-day-bar">
         <span style={{ width: `${pct}%` }} />
       </span>
-      {s.opportunities.length > 0 && <span className="lu-dot lu-day-dot" aria-hidden="true" />}
+      {/* Crimson dot + bar: an avoidable benching; pale yellow tile (no dot): games that don't fit (2026-11-26). */}
+      {s.attention === 'avoidable' && <span className="lu-dot lu-day-dot" aria-hidden="true" />}
     </button>
   );
 }
@@ -357,15 +359,25 @@ function DayLineup({ date, onPlayer, onFill }: { date: ISODate; onPlayer: (id: s
   const row = (p: LineupPlayer, posLabel: string, kind: 'starter' | 'bench' | 'ir') => {
     const cls = { starter: 'lu-starter', bench: 'lu-benched', ir: 'lu-onir' }[kind];
     const m = matchupOf(day, p.id);
+    // Benched players with a game (2026-11-26): crimson edge when they fit without giving up a game, "No room" otherwise.
+    const status = kind === 'bench' ? benchStatus(day, p.id, players, seats) : undefined;
     return (
-      <div key={`${kind}-${p.id}-${posLabel}`} className={`lu-row ${cls} ${kind === 'starter' && !m.game ? 'lu-idle' : ''}`}>
-        <button type="button" className="lu-main" onClick={(e) => onPlayer(p.id, e.currentTarget)} aria-label={`${p.name}, ${posLabel}, ${m.text}: details and replacements`}>
+      <div key={`${kind}-${p.id}-${posLabel}`} className={`lu-row ${cls} ${kind === 'starter' && !m.game ? 'lu-idle' : ''} ${status === 'avoidable' ? 'lu-avoid' : ''}`}>
+        <button
+          type="button"
+          className="lu-main"
+          onClick={(e) => onPlayer(p.id, e.currentTarget)}
+          aria-label={`${p.name}, ${posLabel}, ${m.text}${status === 'avoidable' ? ', fits your lineup' : status === 'no-room' ? ', no room' : ''}: details and replacements`}
+        >
           <span className={`lu-pos ${cls}`}>{posLabel}</span>
           <span className="lu-name">
             {p.name}
             {kind !== 'starter' && <PosBadges positions={p.positions} />}
           </span>
-          <span className={`lu-game ${m.game ? '' : 'muted'}`}>{m.text}</span>
+          <span className={`lu-game ${m.game ? '' : 'muted'}`}>
+            {status === 'no-room' && <span className="lu-noroom">No room · </span>}
+            {m.text}
+          </span>
         </button>
         <PreferredToggle id={p.id} name={p.name} preferred={!!p.preferred} />
       </div>
