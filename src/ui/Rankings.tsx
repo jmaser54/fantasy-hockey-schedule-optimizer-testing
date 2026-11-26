@@ -353,12 +353,17 @@ function TeamPlayers({ team, players }: { team: TeamId; players: RosteredPlayer[
   );
 }
 
+/** The Grid's default order: most games first (ties A→Z by team, `sortTeamRows`). */
+export const GRID_DEFAULT_SORT: SortState = { key: 'games', dir: 'desc' };
+
 /** Team-by-date matrix for the selected range: opponent on game days, blank on off-days. */
 function ScheduleGrid() {
   const { data, selected } = useApp();
   const gamesIn = useGamesInWindow();
   const byTeam = useRosterByTeam();
-  const [sort, setSort] = useState<SortState>({ key: 'team', dir: 'asc' });
+  // Default (2026-11-26): most games in the selected period first, ties A→Z by team; recomputed for each period.
+  // A column the user picks (Team, Your Players, Games) stays selected while they use the Grid.
+  const [sort, setSort] = useState<SortState>(GRID_DEFAULT_SORT);
   const [openTeam, setOpenTeam] = useState<TeamId | null>(null);
   // "mine" sorts on the number of your players on the team (numeric), like Team Schedules.
   const rows = sortTeamRows(

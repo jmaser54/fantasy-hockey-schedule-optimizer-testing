@@ -106,3 +106,17 @@ describe('compact rostered-player list (2026-11-26, revised)', () => {
     ).toBe('Lukas Dostal (G), Tristan Luneau (D [IR])');
   });
 });
+
+describe('Grid default order (2026-11-26)', () => {
+  it('most games first, ties alphabetical by team; Your Players sorts by count both ways when chosen', () => {
+    const rows = [
+      { team: 'TOR', values: { games: 3, mine: 2 } },
+      { team: 'ANA', values: { games: 4, mine: 0 } },
+      { team: 'BOS', values: { games: 3, mine: 0 } },
+      { team: 'EDM', values: { games: 4, mine: 1 } },
+    ];
+    expect(sortTeamRows(rows, { key: 'games', dir: 'desc' }, ['games']).map((r) => r.team)).toEqual(['ANA', 'EDM', 'BOS', 'TOR']);
+    expect(sortTeamRows(rows, { key: 'mine', dir: 'desc' }, ['games']).map((r) => r.team)).toEqual(['TOR', 'EDM', 'ANA', 'BOS']);
+    expect(sortTeamRows(rows, { key: 'mine', dir: 'asc' }, ['games']).map((r) => r.team)).toEqual(['ANA', 'BOS', 'EDM', 'TOR']);
+  });
+});

@@ -691,7 +691,7 @@ input[aria-invalid='true'] { border-color: var(--bad); }
 .ev-cmp-row .ev-search input { padding-top: 6px; padding-bottom: 6px; }
 .ev-cmp-row .btn { flex: none; white-space: nowrap; min-height: 34px; }
 /* Crimson outline only when there are comparison players to clear. */
-.ev-clear.has-items { border-color: #be123c; color: #be123c; }
+.ev-clear.has-items { border-color: #be123c; color: var(--text); }
 .ev-cmp-row .suggest { right: auto; min-width: 100%; width: max-content; max-width: min(360px, calc(100vw - 40px)); }
 /* Sort-basis dropdown (Normalized / Regular Stats): a small secondary control beside the stat groups. */
 .sort-basis { position: relative; display: inline-flex; align-items: center; gap: 6px; }
