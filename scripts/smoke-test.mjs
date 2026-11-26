@@ -449,6 +449,35 @@ try {
     await until(async () => (await savedDays(page)) === 0 && (await page.locator('.sg-scroll .sg-row', { hasText: 'Connor McDavid' }).locator('.sg-cell.off').count()) === 0, 'Reset in the Lineup view did not reach the Schedule view');
     await page.getByRole('button', { name: 'Set Lineup', exact: true }).click();
     console.log('schedule OK: a change from the Schedule view is saved, and Reset in Lineup shows in Schedule');
+
+    // IR from Team Schedule (2026-11-26): the cell's panel offers the same Move to IR as Set Lineup,
+    // with its confirmation; Cancel changes nothing, confirming moves the player to IR (then back).
+    await page.getByRole('button', { name: 'Team Schedule', exact: true }).click();
+    const onIr = () => page.evaluate((k) => JSON.parse(localStorage.getItem(k)).roster[0].onIr === true, siteKey);
+    const mcCell = () => page.locator('.sg-scroll .sg-row', { hasText: 'Connor McDavid' }).locator('.sg-cell').first();
+    const sheet = page.locator('.sheet');
+    await mcCell().click();
+    const toIr = sheet.getByRole('button', { name: /^Move to IR/ });
+    if (!(await toIr.isEnabled())) fail('Team Schedule panel does not offer Move to IR');
+    await toIr.click();
+    if (!/games fit your lineup/.test(await sheet.innerText())) fail('Move to IR confirmation (before/after games) not shown from Team Schedule');
+    await sheet.getByRole('button', { name: 'Cancel' }).click();
+    if (await onIr()) fail('cancelling Move to IR from Team Schedule changed the roster');
+    await sheet.getByRole('button', { name: /^Move to IR/ }).click();
+    await sheet.locator('.sheet-actions').getByRole('button', { name: 'Move to IR' }).click();
+    await sheet.getByText('What changed').waitFor();
+    if (!(await onIr())) fail('confirming Move to IR from Team Schedule did not move the player to IR');
+    await sheet.getByRole('button', { name: 'Done' }).click();
+    await page.locator('.sg-scroll .sg-row.sg-ir', { hasText: 'Connor McDavid' }).waitFor({ timeout: 5_000 });
+    await mcCell().click();
+    const offIr = sheet.getByRole('button', { name: /^Move off IR/ });
+    if (!(await offIr.count())) fail('Team Schedule panel for an IR player does not offer Move off IR');
+    await offIr.click();
+    await sheet.locator('.sheet-actions').getByRole('button', { name: 'Move off IR' }).click();
+    await sheet.getByRole('button', { name: 'Done' }).click();
+    if (await onIr()) fail('Move off IR from Team Schedule did not restore the player');
+    await page.getByRole('button', { name: 'Set Lineup', exact: true }).click();
+    console.log('team schedule IR OK: Move to IR offered, Cancel keeps the roster, confirm moves to IR (IR section, Move off IR)');
   }
   const otherNow = await page.evaluate((k) => localStorage.getItem(k), otherKey);
   if (otherNow !== otherSiteData) fail(`this site changed the other site's saved data (${otherKey})`);

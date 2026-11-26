@@ -728,23 +728,23 @@ function PlayerSheet({ playerId, date, onClose, onOpenInLineup }: { playerId: st
               </button>
             ),
           )}
-          {!onOpenInLineup &&
-            (p.onIr ? (
-              <button className="option-btn" onClick={() => setIrStep({ kind: 'confirm', toIr: false, plan: planIrChange(playerId, false, lineupPlayers, selected.dates, seats, data.schedule, state.manual) })}>
-                Move off IR
-              </button>
-            ) : (
-              <button
-                className="option-btn"
-                disabled={irFull}
-                onClick={() => setIrStep({ kind: 'confirm', toIr: true, plan: planIrChange(playerId, true, lineupPlayers, selected.dates, seats, data.schedule, state.manual) })}
-              >
-                <span>
-                  Move to IR
-                  {irFull && <span className="small muted"> · your IR slots are full ({irCount} of {state.league.irSlots})</span>}
-                </span>
-              </button>
-            ))}
+          {/* IR action: in both the Set Lineup and the Team Schedule panel (Team Schedule since 2026-11-26). */}
+          {p.onIr ? (
+            <button className="option-btn" onClick={() => setIrStep({ kind: 'confirm', toIr: false, plan: planIrChange(playerId, false, lineupPlayers, selected.dates, seats, data.schedule, state.manual) })}>
+              Move off IR
+            </button>
+          ) : (
+            <button
+              className="option-btn"
+              disabled={irFull}
+              onClick={() => setIrStep({ kind: 'confirm', toIr: true, plan: planIrChange(playerId, true, lineupPlayers, selected.dates, seats, data.schedule, state.manual) })}
+            >
+              <span>
+                Move to IR
+                {irFull && <span className="small muted"> · your IR slots are full ({irCount} of {state.league.irSlots})</span>}
+              </span>
+            </button>
+          )}
         </div>
         {!seat && !p.onIr && m.game && kind === 'constraint' && <p className="small muted">No lineup slot in your league accepts {p.positions.join('/')}.</p>}
         {onOpenInLineup && (
