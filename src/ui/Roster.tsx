@@ -91,10 +91,13 @@ export function RosterView({ onGoLineup }: { onGoLineup: () => void }) {
           <h2>Roster</h2>
           <span className="counts">
             <span>
-              Roster <b className={active > state.league.rosterSize ? 'over' : ''}>{active}</b>/{state.league.rosterSize}
+              Roster <b className={active > state.league.rosterSize ? 'over' : ''}>{active}</b>
+              {/* No limit shown while League Settings is blank (new users). */}
+              {!Number.isNaN(state.league.rosterSize) && `/${state.league.rosterSize}`}
             </span>
             <span>
-              IR <b className={ir > state.league.irSlots ? 'over' : ''}>{ir}</b>/{state.league.irSlots}
+              IR <b className={ir > state.league.irSlots ? 'over' : ''}>{ir}</b>
+              {!Number.isNaN(state.league.irSlots) && `/${state.league.irSlots}`}
             </span>
           </span>
           {state.roster.length > 0 && (

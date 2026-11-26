@@ -66,6 +66,8 @@ button { cursor: pointer; }
 }
 .tab[aria-selected='true'] { color: var(--text); border-bottom-color: var(--accent); }
 .tab .count { font-weight: 500; color: var(--muted); margin-left: 4px; }
+/* "Needs your input" mark on League Settings and Roster (2026-11-26): small, muted, not an alarm. */
+.needs-mark { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-left: 5px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); font-size: 10px !important; font-weight: 700; line-height: 1; vertical-align: 1px; }
 main { max-width: 1200px; margin: 0 auto; padding: 16px; }
 
 .settings-btn {
@@ -700,6 +702,9 @@ input[aria-invalid='true'] { border-color: var(--bad); }
   /* Phones: each area name on two lines ("Games / Optimizer"), so both fit beside League Settings. */
   .areas { gap: 2px; }
   .area { width: min-content; padding: 5px 8px; white-space: normal; line-height: 1.15; text-align: center; }
+  /* The League Settings mark sits on the button's corner on phones, so the button keeps its width. */
+  .area-row .settings-btn { position: relative; }
+  .area-row .settings-btn .needs-mark { position: absolute; top: -6px; right: -6px; margin: 0; background: var(--surface); }
   .eval-table th, .eval-table td { padding: 6px 6px; }
   .eval-table tbody th.sticky { white-space: normal; min-width: 112px; max-width: 132px; font-size: 13px; }
   .eval-table .ev-name { display: block; }

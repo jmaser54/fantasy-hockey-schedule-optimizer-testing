@@ -30,6 +30,8 @@ export interface AppCtx {
   days: Map<ISODate, DayResult>;
   summarizeWindow: (w: Window, days?: Map<ISODate, DayResult>, roster?: LineupPlayer[]) => RangeResult;
   toast: (msg: string) => void;
+  /** Opens League Settings. */
+  openSettings: () => void;
   /** The setup line, when the page shows it itself (Roster: under its heading row). */
   setupLine?: ReactNode;
 }

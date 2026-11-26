@@ -4,10 +4,10 @@ import { takeContactReturn } from '../contact.ts';
 import { buildPlayerLookup, isStale, loadDataset, type DataStatus } from '../data/load.ts';
 import { dayCount, eachDate, formatRange, formatShort, isValidISODate, easternToday, nextWeek } from '../domain/dates.ts';
 import { expandSeats, freezeOverride, optimizeDates, summarize, type DayResult, type LineupPlayer } from '../domain/optimizer.ts';
-import { activeSlotCount } from '../domain/league.ts';
+import { activeSlotCount, isLeagueComplete } from '../domain/league.ts';
 import { toLineupPlayers } from '../domain/roster.ts';
 import type { ISODate, Player } from '../domain/types.ts';
-import { STORAGE_KEY, deserialize, loadFromStorage, reducer, saveToStorage } from '../state/appState.ts';
+import { STORAGE_KEY, deserialize, loadFromStorage, reducer, saveToStorage, setupNeeds } from '../state/appState.ts';
 import { Ctx, useApp, type AppCtx, type Window } from './context.ts';
 import { AboutView } from './About.tsx';
 import { EvaluatorView } from './Evaluator.tsx';
@@ -125,6 +125,8 @@ export function App() {
     setAbout(false);
   };
   useEffect(() => window.scrollTo(0, 0), [about]);
+  // Muted "needs your input" marks on League Settings and Roster (2026-11-26), each cleared only by completing it.
+  const needs = setupNeeds(state);
 
   return (
     <>
@@ -151,17 +153,29 @@ export function App() {
               </button>
             ))}
           </nav>
-          <button className="settings-btn" onClick={() => setSettingsOpen(true)} title="Review and adjust your league settings">
+          <button className="settings-btn" onClick={() => setSettingsOpen(true)} title="Review and adjust your league settings" aria-describedby={needs.league ? 'needs-input' : undefined}>
             <span aria-hidden="true">⚙︎</span> League Settings
+            {needs.league && <NeedsMark />}
           </button>
+          <span id="needs-input" hidden>
+            Needs your input
+          </span>
         </div>
         <div className="topbar-inner tabbar-row">
           {area === 'planner' ? (
             <nav className="tabs planner-tabs" role="tablist" aria-label="Games Optimizer">
               {TABS.map((t) => (
-                <button key={t.id} role="tab" className="tab" aria-selected={!about && tab === t.id} onClick={() => go(t.id)}>
+                <button
+                  key={t.id}
+                  role="tab"
+                  className="tab"
+                  aria-selected={!about && tab === t.id}
+                  aria-describedby={t.id === 'roster' && needs.roster ? 'needs-input' : undefined}
+                  onClick={() => go(t.id)}
+                >
                   {t.label}
                   {t.id === 'roster' && state.roster.length > 0 && <span className="count">{state.roster.length}</span>}
+                  {t.id === 'roster' && needs.roster && <NeedsMark />}
                 </button>
               ))}
             </nav>
@@ -362,10 +376,10 @@ function Ready(props: {
   // star changes leave every manually edited day as it is. What the user sees is unchanged.
   useEffect(() => {
     const older = Object.entries(state.manual).filter(([, o]) => !o.lineup);
-    if (older.length === 0) return;
+    if (older.length === 0 || !isLeagueComplete(state.league)) return;
     const seats = expandSeats(state.league.slots);
     for (const [date, o] of older) dispatch({ type: 'setManual', date, override: freezeOverride(date, lineupPlayers, seats, data.schedule, o) });
-  }, [state.manual, state.league.slots, lineupPlayers, data.schedule, dispatch]);
+  }, [state.manual, state.league, lineupPlayers, data.schedule, dispatch]);
 
   const allDates = useMemo(() => [...new Set(windows.flatMap((w) => w.dates))].sort(), [windows]);
   const days = useMemo(
@@ -395,6 +409,7 @@ function Ready(props: {
     days,
     summarizeWindow,
     toast,
+    openSettings: props.onOpenSettings,
     setupLine: props.periodBar && props.setupInPage ? <SetupLine mode={mode} hasWindow={!!selected} onOpen={props.onOpenSettings} /> : undefined,
   };
   const controls: PeriodControls = { mode, setMode, customPeriods, setCustomPeriods, customTotal, setCustomTotal };
@@ -411,7 +426,9 @@ function Ready(props: {
 /** Quiet summary of the league setup; opens League Settings. */
 function SetupLine({ mode, hasWindow, onOpen }: { mode: Mode; hasWindow: boolean; onOpen: () => void }) {
   const { state, selected } = useApp();
-  const parts = [`${state.league.rosterSize} roster`, `${state.league.irSlots} IR`, `${activeSlotCount(state.league)} starters`];
+  // Blank (new-user) fields show as "–" until League Settings is filled in.
+  const n = (x: number) => (Number.isNaN(x) ? '–' : String(x));
+  const parts = [`${n(state.league.rosterSize)} roster`, `${n(state.league.irSlots)} IR`, `${n(activeSlotCount(state.league))} starters`];
   if (mode === 'playoffs' && hasWindow) parts.push(`${selected.name}: ${formatRange(selected.start, selected.end)}`);
   return (
     <button type="button" className="setup-line" onClick={onOpen} title="Open League Settings">
@@ -506,5 +523,14 @@ function CustomEditor({ customPeriods, setCustomPeriods, customTotal, setCustomT
         )}
       </div>
     </div>
+  );
+}
+
+/** Small, muted "!" marking a section that still needs the user's input (described by #needs-input). */
+function NeedsMark() {
+  return (
+    <span className="needs-mark" aria-hidden="true">
+      !
+    </span>
   );
 }

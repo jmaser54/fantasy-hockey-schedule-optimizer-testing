@@ -236,7 +236,7 @@ try {
   if (!/NHL data/.test(chip)) fail(`unexpected data status: ${chip}`);
   console.log(`rankings OK: ${rows} teams; status "${chip.trim()}"`);
   // Grid tab (2026-11-24: the Schedule Grid has its own tab after Schedules).
-  const order = (await page.locator('.planner-tabs .tab').allInnerTexts()).map((t) => t.replace(/\s*\d+$/, '').trim());
+  const order = (await page.locator('.planner-tabs .tab').allInnerTexts()).map((t) => t.replace(/\s*(\d+|!)$/, '').trim());
   if (order.join('|') !== 'Schedules|Grid|Lineup|Trade Lab|Roster') fail(`Games Optimizer tab order: ${order.join(', ')}`);
   await page.getByRole('tab', { name: 'Grid', exact: true }).click();
   await page.locator('.sh-scroll .sgrid tbody tr').first().waitFor({ timeout: 30_000 });
@@ -271,6 +271,15 @@ try {
   await page.getByRole('tab', { name: 'Search Players' }).click();
   await page.getByLabel('Search players').fill('Connor McDavid');
   await page.locator('.suggest li').first().click();
+  // New users (2026-11-26) start with blank league settings: a muted mark on League Settings stays
+  // until they are complete; the Roster mark clears once the roster has a player.
+  if ((await page.locator('.planner-tabs .tab .needs-mark').count()) !== 0) fail('Roster mark still shown with a player on the roster');
+  if ((await page.locator('.settings-btn .needs-mark').count()) !== 1) fail('League Settings mark missing while league settings are blank');
+  await page.getByRole('button', { name: /League Settings/ }).click();
+  await page.getByRole('button', { name: 'Restore Defaults' }).click();
+  await page.getByRole('button', { name: 'Save' }).click();
+  if ((await page.locator('.settings-btn .needs-mark').count()) !== 0) fail('League Settings mark still shown after completing league settings');
+  console.log('setup marks OK: Roster and League Settings marks clear independently');
   await page.getByRole('tab', { name: 'Lineup' }).click();
   const heading = await page.locator('.panel-head h2').first().innerText();
   if (!/of \d+ scheduled games fit your lineup/.test(heading)) fail(`lineup heading unexpected: ${heading}`);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DEFAULT_LEAGUE, DEFAULT_PERIODS, activeSlotCount, validateLeague, validatePeriod } from '../domain/league.ts';
+import { DEFAULT_LEAGUE, DEFAULT_PERIODS, validateLeague, validatePeriod } from '../domain/league.ts';
 import type { LeagueConfig, Period } from '../domain/types.ts';
 import { useApp } from './context.ts';
 import { PosToggles } from './common.tsx';
@@ -8,7 +8,9 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   const { state, dispatch, toast } = useApp();
   const [league, setLeague] = useState<LeagueConfig>(structuredClone(state.league));
   const [periods, setPeriods] = useState<Period[]>(structuredClone(state.periods));
-  const leagueErrors = validateLeague(league);
+  // Blank fields may be saved (a new user can change playoff rounds first); invalid values may not.
+  const leagueErrors = validateLeague(league, { allowBlank: true });
+  const filledActive = league.slots.reduce((n, s) => n + (Number.isNaN(s.count) ? 0 : s.count), 0);
   const periodErrors = periods.map(validatePeriod);
   const hasErrors = leagueErrors.length > 0 || periodErrors.some(Boolean) || periods.length === 0;
 
@@ -48,7 +50,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <h3>
-            Daily Lineup Slots <span className="muted small">({activeSlotCount(league)} active · {Math.max(0, league.rosterSize - activeSlotCount(league))} bench)</span>
+            Daily Lineup Slots <span className="muted small">({filledActive} active · {Number.isNaN(league.rosterSize) ? '–' : Math.max(0, league.rosterSize - filledActive)} bench)</span>
           </h3>
           {league.slots.map((s, i) => (
             <div className="slot-row" key={i}>

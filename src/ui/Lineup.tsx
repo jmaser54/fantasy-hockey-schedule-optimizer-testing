@@ -1,3 +1,4 @@
+import { isLeagueComplete } from '../domain/league.ts';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { addDays, easternToday, formatShort, weekday } from '../domain/dates.ts';
 import {
@@ -66,7 +67,7 @@ function useSeats() {
 }
 
 export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
-  const { state, selected, windows, lineupPlayers } = useApp();
+  const { state, selected, windows, lineupPlayers, openSettings } = useApp();
   const [view, setViewState] = useState<PlanView>(loadView);
   const setView = (v: PlanView) => {
     setViewState(v);
@@ -111,6 +112,17 @@ export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
         <strong>Add your roster to see how many games fit your lineup</strong>
         <button className="btn primary" onClick={onGoRoster} style={{ marginTop: 8 }}>
           Add Players
+        </button>
+      </div>
+    );
+  }
+  // Incomplete league (new users, 2026-11-26): no lineup is calculated from blank slot counts.
+  if (!isLeagueComplete(state.league)) {
+    return (
+      <div className="panel empty">
+        <strong>Complete your league settings to see how many games fit your lineup</strong>
+        <button className="btn primary" onClick={openSettings} style={{ marginTop: 8 }}>
+          League Settings
         </button>
       </div>
     );
