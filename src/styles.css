@@ -168,6 +168,13 @@ tbody tr:hover td { background: color-mix(in srgb, var(--surface-2) 60%, transpa
 th.col-selected { box-shadow: inset 0 -2px 0 var(--accent); }
 .team-cell { display: flex; align-items: center; gap: 8px; }
 .team-abbr { font-weight: 700; width: 38px; }
+/* Team row expansion cue (2026-11-26): a small muted chevron after the name; points down when open. */
+.team-chev { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin: -6px -6px -6px -4px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--muted); opacity: 0.6; cursor: pointer; }
+.team-chev svg { transition: transform 0.15s; }
+.team-chev.open { opacity: 0.9; }
+.team-chev.open svg { transform: rotate(90deg); }
+.team-chev:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; opacity: 1; }
+tbody tr:hover .team-chev { opacity: 0.9; }
 .mine-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); display: inline-block; }
 .expand-row td { background: var(--surface-2); white-space: normal; }
 .game-chips { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -175,7 +182,7 @@ th.col-selected { box-shadow: inset 0 -2px 0 var(--accent); }
 .game-chip.light { border-color: var(--good); }
 
 /* Nightly strip */
-.strip { display: flex; gap: 2px; align-items: flex-end; height: 64px; padding: 4px 0; overflow-x: auto; }
+.strip { display: flex; gap: 2px; align-items: flex-end; height: 66px; padding: 6px 0 4px; overflow-x: auto; } /* top room for the selected bar's outline */
 .strip .bar-col { flex: 1 0 14px; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 14px; }
 .strip .bar { width: 100%; border-radius: 3px 3px 0 0; background: var(--heat-3); }
 .strip .bar.light { background: var(--good); }
@@ -189,6 +196,19 @@ th.col-selected { box-shadow: inset 0 -2px 0 var(--accent); }
 .strip .bar-col.active .bar { outline: 2px solid var(--text); outline-offset: 1px; }
 .strip .bar-col.active .lbl { color: var(--text); font-weight: 700; }
 .night-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 28px; margin-top: 6px; font-size: 12px; }
+/* Games per Night interaction (2026-11-26): no reserved space until a night is chosen; hover shows a
+   floating tooltip (nothing moves); pressed and selected states make the bars read as tappable. */
+.night-detail:empty { min-height: 0; margin-top: 0; }
+.strip-wrap { position: relative; }
+.strip-tip { position: absolute; bottom: 100%; margin-bottom: 2px; z-index: 5; pointer-events: none; white-space: nowrap; padding: 3px 7px; border-radius: 6px; background: var(--text); color: var(--surface); font-size: 11px; font-weight: 600; box-shadow: 0 2px 6px rgb(0 0 0 / 0.15); }
+.strip .bar { transition: filter 0.12s, opacity 0.15s; }
+@media (hover: hover) {
+  .strip button.bar-col:hover .bar { filter: brightness(0.86); }
+  .strip button.bar-col:hover .lbl { color: var(--text); font-weight: 700; }
+}
+.strip button.bar-col { -webkit-tap-highlight-color: transparent; }
+.strip button.bar-col:active .bar { filter: brightness(0.75); }
+.strip.has-pinned .bar-col:not(.active) .bar { opacity: 0.45; }
 .mine-btn { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 1px 9px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .mine-btn:hover, .mine-btn[aria-expanded='true'] { border-color: var(--accent); color: var(--accent); }
 .summary-col { color: var(--muted); border-left: 1px dashed var(--border); }

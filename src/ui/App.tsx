@@ -401,7 +401,7 @@ function Ready(props: {
   return (
     <Ctx.Provider value={ctx}>
       {props.periodBar && props.showModes && <PeriodBar {...controls} hasWindow={!!selected} />}
-      {props.periodBar && !props.setupInPage && <SetupLine mode={mode} hasWindow={!!selected} onOpen={props.onOpenSettings} />}
+      {/* The league summary line shows only on the Roster tab (in-page); removed from the other tabs 2026-11-26. */}
       {props.periodBar && props.showModes && !selected ? <div className="empty">Enter a start and end date for your period above.</div> : props.children}
       {props.overlay}
     </Ctx.Provider>

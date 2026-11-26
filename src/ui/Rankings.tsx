@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { formatShort, weekday } from '../domain/dates.ts';
 import { isLightNight, rankTeams } from '../domain/rankings.ts';
 import { opponent } from '../domain/schedule.ts';
@@ -117,9 +117,6 @@ function TeamRankings({ onGoRoster }: { onGoRoster: () => void }) {
       <section className="panel">
         <div className="panel-head">
           <h2>NHL Team Schedules</h2>
-          <span className="small muted">
-            {selected.name}, {formatShort(selected.start)} – {formatShort(selected.end)}. Click a team to view game dates.
-          </span>
         </div>
         <StickyHeadTable
           tableClass={`team-table ${selected.id === 'week' ? 'next-week' : ''}`}
@@ -148,6 +145,26 @@ function TeamRankings({ onGoRoster }: { onGoRoster: () => void }) {
                         <div className="team-cell">
                           <span className="team-abbr">{r.team}</span>
                           <span className="muted small">{data.teams.find((t) => t.id === r.team)?.name}</span>
+                          {/* Expansion cue (2026-11-26): the whole row still toggles; this is its accessible control. */}
+                          {(() => {
+                            const open = expanded?.team === r.team && expanded.kind === 'games';
+                            return (
+                              <button
+                                type="button"
+                                className={`team-chev ${open ? 'open' : ''}`}
+                                aria-expanded={open}
+                                aria-label={`${open ? 'Hide' : 'Show'} ${r.team} game dates`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggle(r.team, 'games');
+                                }}
+                              >
+                                <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
+                                  <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              </button>
+                            );
+                          })()}
                         </div>
                       </td>
                       {gameCols.map((c) => (
@@ -193,32 +210,30 @@ function TeamRankings({ onGoRoster }: { onGoRoster: () => void }) {
   );
 }
 
-/** Shortcut to the Roster tab: an invitation before a roster exists, its size after. */
+/** Invitation to the Roster tab before a roster exists; nothing once it has players (2026-11-26: the Roster tab shows the count). */
 function RosterPill({ onGoRoster }: { onGoRoster: () => void }) {
   const { state } = useApp();
-  const n = state.roster.length;
-  if (n === 0) {
-    return (
-      <button type="button" className="roster-pill" onClick={onGoRoster}>
-        + Add your roster
-      </button>
-    );
-  }
+  if (state.roster.length > 0) return null;
   return (
-    <span className="roster-pill has">
-      Roster: {n} {n === 1 ? 'player' : 'players'}
-      <button type="button" className="link-btn" onClick={onGoRoster}>
-        Edit
-      </button>
-    </span>
+    <button type="button" className="roster-pill" onClick={onGoRoster}>
+      + Add your roster
+    </button>
   );
 }
 
 /** League-wide games per night in the selected range; each bar reveals that night's matchups on demand. */
 function GamesPerNight() {
   const { data, selected } = useApp();
-  const [hover, setHover] = useState<ISODate | null>(null);
+  // Hover (mouse) and keyboard focus show a floating tooltip only, so nothing moves; a click or tap
+  // pins the night and opens its matchups below the chart (2026-11-26).
+  const [tip, setTip] = useState<{ d: ISODate; x: number } | null>(null);
   const [pinned, setPinned] = useState<ISODate | null>(null);
+  const strip = useRef<HTMLDivElement>(null);
+  const showTip = (d: ISODate, el: HTMLElement) => {
+    const s = strip.current;
+    if (!s) return;
+    setTip({ d, x: el.offsetLeft - s.scrollLeft + el.offsetWidth / 2 });
+  };
   useEffect(() => {
     if (pinned && !selected.dates.includes(pinned)) setPinned(null);
   }, [selected, pinned]);
@@ -231,8 +246,10 @@ function GamesPerNight() {
   const nights = selected.dates.map((d) => ({ d, n: data.schedule.gamesOn(d).length }));
   const maxNight = Math.max(1, ...nights.map((x) => x.n));
   const lightCount = nights.filter((x) => isLightNight(x.n, data.teams.length)).length;
-  const active = pinned ?? hover;
+  const active = pinned;
   const matchups = active ? matchupsOn(data.schedule, active) : [];
+  const tipNight = tip && nights.find((x) => x.d === tip.d);
+  const wrapW = strip.current?.clientWidth ?? 0;
 
   return (
     <section className="panel">
@@ -246,7 +263,17 @@ function GamesPerNight() {
         </span>
       </div>
       <div className="panel-body" style={{ paddingTop: 6, paddingBottom: 6 }}>
-        <div className="strip" aria-label="NHL games per date">
+        <div className="strip-wrap">
+        {tip && tipNight && (
+          <div
+            className="strip-tip"
+            aria-hidden="true"
+            style={{ left: tip.x, transform: `translateX(${tip.x < 60 ? '-15%' : wrapW && tip.x > wrapW - 60 ? '-85%' : '-50%'})` }}
+          >
+            {weekday(tip.d)} {formatShort(tip.d)} · {tipNight.n} {tipNight.n === 1 ? 'game' : 'games'}
+          </div>
+        )}
+        <div ref={strip} className={`strip ${pinned ? 'has-pinned' : ''}`} aria-label="NHL games per date" onScroll={() => setTip(null)}>
           {nights.map(({ d, n }) => (
             <button
               key={d}
@@ -254,16 +281,17 @@ function GamesPerNight() {
               className={`bar-col ${active === d ? 'active' : ''}`}
               aria-label={`${weekday(d)} ${formatShort(d)}: ${n} games. Show matchups.`}
               aria-pressed={pinned === d}
-              onMouseEnter={() => setHover(d)}
-              onMouseLeave={() => setHover(null)}
-              onFocus={() => setHover(d)}
-              onBlur={() => setHover(null)}
+              onPointerEnter={(e) => e.pointerType === 'mouse' && showTip(d, e.currentTarget)}
+              onPointerLeave={() => setTip(null)}
+              onFocus={(e) => e.currentTarget.matches(':focus-visible') && showTip(d, e.currentTarget)}
+              onBlur={() => setTip(null)}
               onClick={() => setPinned(pinned === d ? null : d)}
             >
               <div className={`bar ${isLightNight(n, data.teams.length) ? 'light' : ''}`} style={{ height: `${(n / maxNight) * 44}px` }} />
               <span className="lbl">{d.slice(8).replace(/^0/, '')}</span>
             </button>
           ))}
+        </div>
         </div>
         <div className="night-detail" aria-live="polite">
           {active ? (
@@ -279,15 +307,11 @@ function GamesPerNight() {
                 ))}
                 {matchups.length === 0 && <span className="muted">No NHL games.</span>}
               </span>
-              {pinned && (
-                <button className="icon-btn" aria-label="Close matchups" onClick={() => setPinned(null)}>
-                  ✕
-                </button>
-              )}
+              <button className="icon-btn" aria-label="Close matchups" onClick={() => setPinned(null)}>
+                ✕
+              </button>
             </>
-          ) : (
-            <span className="muted">Hover or tap a bar to see that night’s matchups.</span>
-          )}
+          ) : null}
         </div>
       </div>
     </section>
