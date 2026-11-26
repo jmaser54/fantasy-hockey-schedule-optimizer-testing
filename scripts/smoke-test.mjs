@@ -360,9 +360,9 @@ try {
   const inLineup = async (p) => (await mcStarter(p).count()) > 0;
   const benchMcDavid = async (p) => {
     await mcStarter(p).locator('.lu-main').click();
-    await p.locator('.sheet .lu-more summary').click();
+    // The sheet lists its actions directly and closes itself once the change is saved (2026-11-26).
     await p.locator('.sheet').getByRole('button', { name: /^Remove from lineup/ }).click();
-    await p.locator('.sheet').getByRole('button', { name: 'Close' }).click();
+    await p.locator('.sheet').waitFor({ state: 'detached', timeout: 10_000 });
   };
   const resetPeriod = (p) => p.getByRole('button', { name: /^Reset (?!Day ).+ to Optimal$/ }).click();
   if (day < 0) {
@@ -399,10 +399,8 @@ try {
     const assigned = page.locator('.sg-scroll .sg-row', { hasText: 'Connor McDavid' }).locator('.sg-cell.on').first();
     if (!(await assigned.count())) fail('Schedule view shows no in-lineup game for Connor McDavid');
     await assigned.click();
-    await page.locator('.sheet').getByText('Starting at').waitFor();
-    await page.locator('.sheet .lu-more summary').click();
     await page.locator('.sheet').getByRole('button', { name: /^Remove from lineup/ }).click();
-    await page.locator('.sheet').getByRole('button', { name: 'Close' }).click();
+    await page.locator('.sheet').waitFor({ state: 'detached', timeout: 10_000 });
     await until(async () => (await savedDays(page)) === 1 && (await page.locator('.sg-scroll .sg-row', { hasText: 'Connor McDavid' }).locator('.sg-cell.off').count()) > 0, 'a change from the Schedule view was not saved');
     await page.getByRole('button', { name: 'Lineup', exact: true }).click();
     await page.locator('.lu-daily').waitFor();

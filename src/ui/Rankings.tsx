@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { formatShort, weekday } from '../domain/dates.ts';
 import { isLightNight, rankTeams } from '../domain/rankings.ts';
 import { opponent } from '../domain/schedule.ts';
-import { formatRosterList, gridCell, rosterListParts, matchupsOn, nextSort, rosterPlayersByTeam, sortTeamRows, type RosteredPlayer, type SortState, type TeamRow } from '../domain/teamSchedules.ts';
+import { formatRosterList, gridCell, matchupsOn, nextSort, rosterPlayersByTeam, sortTeamRows, type RosteredPlayer, type SortState, type TeamRow } from '../domain/teamSchedules.ts';
 import type { ISODate, TeamId } from '../domain/types.ts';
 import { useApp, type Window } from './context.ts';
 import { StickyHeadTable } from './StickyHead.tsx';
@@ -174,23 +174,7 @@ function TeamRankings({ onGoRoster }: { onGoRoster: () => void }) {
                       <td className="n">{r.values.light}</td>
                       {summaryCol && <td className="n summary-col">{r.values.summary}</td>}
                       <td className="n">
-                        {players.length > 0 ? (
-                          <button
-                            className="mine-btn"
-                            aria-expanded={expanded?.team === r.team && expanded.kind === 'players'}
-                            aria-label={`${players.length} of your players on ${r.team}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggle(r.team, 'players');
-                            }}
-                          >
-                            <span className="mine-dot" /> {players.length}
-                          </button>
-                        ) : (
-                          <span className="muted" title="None of your players">
-                            –
-                          </span>
-                        )}
+                        <MinePill team={r.team} count={players.length} open={expanded?.team === r.team && expanded.kind === 'players'} onToggle={() => toggle(r.team, 'players')} />
                       </td>
                     </tr>
                     {expanded?.team === r.team && (
@@ -337,7 +321,30 @@ function TeamGames({ team }: { team: string }) {
   );
 }
 
-/** The team's rostered players as one compact line, e.g. "(Connor Bedard C RW IR)" (2026-11-26: no heading). */
+/** Blue-dot count of your players on a team; toggles their list. Shared by Team Schedules and the Grid (2026-11-26). */
+function MinePill({ team, count, open, onToggle }: { team: TeamId; count: number; open: boolean; onToggle: () => void }) {
+  if (count === 0)
+    return (
+      <span className="muted" title="None of your players">
+        –
+      </span>
+    );
+  return (
+    <button
+      className="mine-btn"
+      aria-expanded={open}
+      aria-label={`${count} of your players on ${team}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+    >
+      <span className="mine-dot" /> {count}
+    </button>
+  );
+}
+
+/** The team's rostered players as one compact line, e.g. "Leo Carlsson (C), Lukas Dostal (G)" (no heading). */
 function TeamPlayers({ team, players }: { team: TeamId; players: RosteredPlayer[] }) {
   return (
     <div className="team-players" aria-label={`Your players on ${team}`}>
@@ -352,11 +359,14 @@ function ScheduleGrid() {
   const gamesIn = useGamesInWindow();
   const byTeam = useRosterByTeam();
   const [sort, setSort] = useState<SortState>({ key: 'team', dir: 'asc' });
+  const [openTeam, setOpenTeam] = useState<TeamId | null>(null);
+  // "mine" sorts on the number of your players on the team (numeric), like Team Schedules.
   const rows = sortTeamRows(
-    data.teams.map((t) => ({ team: t.id, values: { games: gamesIn(t.id, selected) } })),
+    data.teams.map((t) => ({ team: t.id, values: { games: gamesIn(t.id, selected), mine: byTeam.get(t.id)?.length ?? 0 } })),
     sort,
     ['games'],
   );
+  const cols = selected.dates.length + 3;
   const head = (key: string, label: string, cls: string) => (
     <th
       className={`sortable ${cls} ${sort.key === key ? 'active' : ''}`}
@@ -406,9 +416,7 @@ function ScheduleGrid() {
                   {formatShort(d).replace(' ', ' ')}
                 </th>
               ))}
-              <th className="sg-mine" title="Your players on each team">
-                Your Players
-              </th>
+              {head('mine', 'Your Players', 'sg-mine')}
               {head('games', 'Games', 'n')}
             </tr>
           </>
@@ -416,7 +424,8 @@ function ScheduleGrid() {
       >
           <tbody>
             {rows.map((r) => (
-              <tr key={r.team}>
+              <Fragment key={r.team}>
+              <tr>
                 <th className="sticky" scope="row" title={data.teams.find((t) => t.id === r.team)?.name}>
                   {r.team} {byTeam.get(r.team)?.length ? <span className="mine-dot" title="You have players on this team" /> : null}
                 </th>
@@ -432,20 +441,22 @@ function ScheduleGrid() {
                     </td>
                   );
                 })}
-                {/* Your players on this team (2026-11-26), same compact format as Team Schedules. */}
+                {/* Your players on this team: the same blue-dot count and expanded list as Team Schedules (2026-11-26). */}
                 <td className="sg-mine">
-                  {byTeam.get(r.team)?.length ? (
-                    rosterListParts(byTeam.get(r.team)!).map((t) => (
-                      <span key={t} className="sg-mine-p">
-                        {t}{' '}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="muted">–</span>
-                  )}
+                  <MinePill team={r.team} count={r.values.mine ?? 0} open={openTeam === r.team} onToggle={() => setOpenTeam(openTeam === r.team ? null : r.team)} />
                 </td>
                 <td className="n">{r.values.games}</td>
               </tr>
+              {openTeam === r.team && (
+                <tr className="expand-row sg-expand">
+                  <td colSpan={cols}>
+                    <div className="sg-expand-in">
+                      <TeamPlayers team={r.team} players={byTeam.get(r.team) ?? []} />
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
       </StickyHeadTable>

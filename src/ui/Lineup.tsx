@@ -6,7 +6,6 @@ import {
   fillCandidates,
   benchStatus,
   gameKind,
-  inAutomaticLineup,
   moveOptions,
   overrideFor,
   placeOptions,
@@ -328,13 +327,19 @@ const matchupOf = (day: DayResult, id: string): { text: string; game?: Game } =>
   return { text: `${o.home ? 'vs' : '@'} ${o.team}`, game: st.game };
 };
 
-/** Saves one date's new lineup (only that date changes), as before. */
+/** Saves one date's new lineup (only that date changes), as before. True once saved; false (and a toast) if it failed. */
 function useSaveDay() {
   const { state, dispatch, lineupPlayers, data, toast } = useApp();
   const seats = useSeats();
-  return (date: ISODate, next: Lineup) => {
-    dispatch({ type: 'setManual', date, override: overrideFor(date, next, lineupPlayers, seats, data.schedule, state.manual[date]?.notes) });
+  return (date: ISODate, next: Lineup): boolean => {
+    try {
+      dispatch({ type: 'setManual', date, override: overrideFor(date, next, lineupPlayers, seats, data.schedule, state.manual[date]?.notes) });
+    } catch {
+      toast('That change couldn’t be saved.');
+      return false;
+    }
     toast('Lineup saved.');
+    return true;
   };
 }
 
@@ -362,7 +367,7 @@ function DayLineup({ date, onPlayer, onFill }: { date: ISODate; onPlayer: (id: s
     // Benched players with a game (2026-11-26): crimson edge when they fit without giving up a game, "No room" otherwise.
     const status = kind === 'bench' ? benchStatus(day, p.id, players, seats) : undefined;
     return (
-      <div key={`${kind}-${p.id}-${posLabel}`} className={`lu-row ${cls} ${kind === 'starter' && !m.game ? 'lu-idle' : ''} ${status === 'avoidable' ? 'lu-avoid' : ''}`}>
+      <div key={`${kind}-${p.id}-${posLabel}`} className={`lu-row ${cls} ${kind === 'starter' && !m.game ? 'lu-idle' : ''} ${status === 'avoidable' ? 'lu-avoid' : status === 'no-room' ? 'lu-noroom-row' : ''}`}>
         <button
           type="button"
           className="lu-main"
@@ -542,7 +547,7 @@ type IrStep = { kind: 'confirm' | 'done'; plan: IrPlan; toIr: boolean };
  * grid row; IR belongs to the Lineup view), plus a way to open that day in the Lineup view.
  */
 function PlayerSheet({ playerId, date, onClose, onOpenInLineup }: { playerId: string; date: ISODate; onClose: () => void; onOpenInLineup?: () => void }) {
-  const { state, days, dispatch, lineupPlayers, selected, summarizeWindow, data, teams, toast } = useApp();
+  const { state, days, dispatch, lineupPlayers, selected, data, teams, toast } = useApp();
   const seats = useSeats();
   const save = useSaveDay();
   const [pending, setPending] = useState<Pending | null>(null);
@@ -554,7 +559,6 @@ function PlayerSheet({ playerId, date, onClose, onOpenInLineup }: { playerId: st
   const name = (id: string) => byId.get(id)?.name ?? id;
   const m = matchupOf(day, playerId);
   const seat = day.seats.find((x) => x.playerId === playerId)?.seat;
-  const totals = summarizeWindow(selected).players.find((x) => x.playerId === playerId);
   const irCount = state.roster.filter((e) => e.onIr).length;
   const activeCount = state.roster.length - irCount;
   const irFull = irCount >= state.league.irSlots;
@@ -583,8 +587,9 @@ function PlayerSheet({ playerId, date, onClose, onOpenInLineup }: { playerId: st
           <button
             className="btn primary"
             onClick={() => {
-              save(date, pending.next);
-              setPending(null);
+              // Close the sheet once the change is saved (2026-11-26); it stays open if saving failed.
+              if (save(date, pending.next)) onClose();
+              else setPending(null);
             }}
           >
             Confirm
@@ -647,178 +652,121 @@ function PlayerSheet({ playerId, date, onClose, onOpenInLineup }: { playerId: st
       </div>
     );
   } else {
+    // Simplified sheet (2026-11-26): the player's identity in the title, then every valid action as one flat
+    // list (no headings, explanations or disclosure). A saved change closes the sheet.
     const kind = gameKind(day, playerId, byId, seats);
     const replacements = seat ? replaceOptions(day, playerId, lineupPlayers, seats) : [];
     const moves = seat ? moveOptions(day, playerId, lineupPlayers, seats).filter((x) => x.seatKey) : [];
     const bench = seat ? moveOptions(day, playerId, lineupPlayers, seats).find((x) => !x.seatKey) : undefined;
     const adds = !seat && !p.onIr && m.game ? addOptions(day, playerId, lineupPlayers, seats) : [];
-    const fromChanges = kind === 'opportunity' && day.manual && inAutomaticLineup(date, playerId, lineupPlayers, seats, data.schedule);
+    const places = !seat && !p.onIr && !m.game ? placeOptions(day, playerId, lineupPlayers, seats) : [];
+    const act = (next: Lineup) => {
+      if (save(date, next)) onClose();
+    };
     body = (
       <div className="stack">
-        <p className="lu-status">
-          {p.onIr ? 'On IR.' : seat ? (
-            <>
-              Starting at <b>{seat.label}</b>.
-            </>
-          ) : (
-            'On the bench.'
-          )}{' '}
-          <span className="small muted">
-            {selected.name}: in your lineup for {totals?.usable ?? 0} of {totals?.scheduled ?? 0} games
-          </span>
-        </p>
-
-        {seat && (
-          <div>
-            <h3 className="sheet-sub">Replace with a bench player</h3>
-            {replacements.length === 0 ? (
-              <p className="small muted">No bench player can play {seat.label}.</p>
-            ) : (
-              <div className="sheet-options">
-                {replacements.map((o) => (
-                  <button
-                    key={o.inId}
-                    className="option-btn"
-                    onClick={() => setPending({ inId: o.inId, outId: playerId, seatLabel: o.seatLabel, gain: o.gain, lose: o.lose, next: o.next })}
-                  >
-                    <span>
-                      <b>{name(o.inId)}</b> <span className="small muted">{matchupOf(day, o.inId).text}</span>
-                    </span>
-                    <span className="small">
-                      {o.gain ? <span className="gain-text">Gain {matchupOf(day, o.inId).text}</span> : <span className="muted">No game gained</span>} ·{' '}
-                      {o.lose ? <span className="lose-text">Give up {m.text}</span> : <span className="muted">no game given up</span>}
-                      {o.net !== 0 && <b className={o.net > 0 ? 'gain-text' : 'lose-text'}> ({o.net > 0 ? '+1' : '−1'} game)</b>}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {!seat && !p.onIr && (
-          <div>
-            {!m.game ? (
-              <>
-                <p className="small muted">No game on {when}. You can still put {p.name} in the lineup; it adds no game.</p>
-                <div className="sheet-options" aria-label="Put in the lineup">
-                  {placeOptions(day, playerId, lineupPlayers, seats).map((o) =>
-                    o.lose ? (
-                      <button
-                        key={o.seatKey}
-                        className="option-btn"
-                        onClick={() => setPending({ inId: playerId, outId: o.outId!, seatLabel: o.seatLabel, gain: o.gain, lose: o.lose, next: o.next })}
-                      >
-                        <span>
-                          At {o.seatLabel} instead of <b>{name(o.outId!)}</b>
-                        </span>
-                        <span className="small">
-                          <span className="lose-text">Give up {matchupOf(day, o.outId!).text}</span> <b className="lose-text">(−1 game)</b>
-                        </span>
-                      </button>
-                    ) : (
-                      <button key={o.seatKey} className="option-btn" onClick={() => save(date, o.next)}>
-                        <span>
-                          At {o.seatLabel}
-                          {o.outId ? <> instead of <b>{name(o.outId)}</b></> : ' (empty slot)'}
-                        </span>
-                        <span className="small muted">{o.outId ? `${name(o.outId)} has no game either` : 'Fills the slot; no game'}</span>
-                      </button>
-                    ),
-                  )}
-                </div>
-              </>
-            ) : kind === 'constraint' ? (
-              <p className="small muted">No lineup slot in your league accepts {p.positions.join('/')}.</p>
-            ) : (
-              <>
-                <h3 className="sheet-sub">{kind === 'opportunity' ? 'Add to the lineup' : 'Start instead of'}</h3>
-                {kind === 'opportunity' && <p className="small">{fromChanges ? 'Your changes for this day left this game out. It fits without giving up another game.' : 'This game fits without giving up another game.'}</p>}
-                <div className="sheet-options">
-                  {adds.map((o) =>
-                    o.kind === 'open' ? (
-                      <button key={`o-${o.seatKey}`} className="option-btn gain" onClick={() => save(date, o.next)}>
-                        Add at {o.seatLabel}
-                        {o.outId ? <span className="small muted"> · {name(o.outId)} (no game) goes to the bench</span> : null}
-                      </button>
-                    ) : (
-                      <button
-                        key={`r-${o.outId}`}
-                        className="option-btn"
-                        onClick={() => setPending({ inId: playerId, outId: o.outId!, seatLabel: o.seatLabel, gain: o.gain, lose: o.lose, next: o.next })}
-                      >
-                        <span>
-                          <b>{name(o.outId!)}</b> at {o.seatLabel}
-                          {o.suggested && <span className="badge good" style={{ marginLeft: 6 }}>Suggested</span>}
-                        </span>
-                        <span className="small">
-                          <span className="gain-text">Gain {m.text}</span> · <span className="lose-text">Give up {matchupOf(day, o.outId!).text}</span>
-                        </span>
-                      </button>
-                    ),
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {seat && (moves.length > 0 || bench) && (
-          <details className="lu-more">
-            <summary className="small">Change position or remove</summary>
-            <div className="sheet-options">
-              {moves.map((x) => (
-                <button key={x.seatKey} className="option-btn" onClick={() => save(date, x.next)}>
-                  Move to {x.seatLabel}
-                  {x.withId ? <span className="small muted"> · swap with {name(x.withId)}</span> : null}
-                </button>
-              ))}
-              {bench && (
-                <button className="option-btn lose" onClick={() => save(date, bench.next)}>
-                  Remove from lineup <span className="small muted">· {m.game ? 'gives up this game' : 'no game'}</span>
-                </button>
-              )}
-            </div>
-          </details>
-        )}
-
-        {onOpenInLineup ? (
-          <button className="btn small" onClick={onOpenInLineup}>
-            Open {when} in Lineup
-          </button>
-        ) : (
-          <>
-        <div className="lu-star-row">
-          <PreferredToggle id={p.id} name={p.name} preferred={!!p.preferred} />
-          <span className="small">
-            {p.preferred ? <b>Preferred</b> : 'Not preferred'}: starred players get lineup spots first on optimized days.
-            {day.manual && ' This day has your changes, so a star change won’t affect it until you reset it.'}
-          </span>
-        </div>
-
-        <div className="lu-ir-row">
-          {p.onIr ? (
-            <button className="option-btn" onClick={() => setIrStep({ kind: 'confirm', toIr: false, plan: planIrChange(playerId, false, lineupPlayers, selected.dates, seats, data.schedule, state.manual) })}>
-              Move off IR
+        <div className="sheet-options" aria-label="Lineup actions">
+          {moves.map((x) => (
+            <button key={`m-${x.seatKey}`} className="option-btn" onClick={() => act(x.next)}>
+              <span>
+                Move to {x.seatLabel}
+                {x.withId ? <span className="small muted"> · swap with {name(x.withId)}</span> : null}
+              </span>
             </button>
-          ) : (
-            <>
+          ))}
+          {replacements.map((o) => (
+            <button
+              key={`r-${o.inId}`}
+              className="option-btn"
+              onClick={() => setPending({ inId: o.inId, outId: playerId, seatLabel: o.seatLabel, gain: o.gain, lose: o.lose, next: o.next })}
+            >
+              <span>
+                Replace with <b>{name(o.inId)}</b>
+              </span>
+              <span className="small">
+                {o.gain ? <span className="gain-text">Gain {matchupOf(day, o.inId).text}</span> : <span className="muted">No game gained</span>} ·{' '}
+                {o.lose ? <span className="lose-text">Give up {m.text}</span> : <span className="muted">no game given up</span>}
+                {o.net !== 0 && <b className={o.net > 0 ? 'gain-text' : 'lose-text'}> ({o.net > 0 ? '+1' : '−1'} game)</b>}
+              </span>
+            </button>
+          ))}
+          {bench && (
+            <button className="option-btn lose" onClick={() => act(bench.next)}>
+              <span>
+                Remove from lineup <span className="small muted">· {m.game ? 'gives up this game' : 'no game'}</span>
+              </span>
+            </button>
+          )}
+          {adds.map((o) =>
+            o.kind === 'open' ? (
+              <button key={`o-${o.seatKey}`} className="option-btn gain" onClick={() => act(o.next)}>
+                <span>
+                  Add at {o.seatLabel}
+                  {o.outId ? <span className="small muted"> · {name(o.outId)} (no game) goes to the bench</span> : null}
+                </span>
+              </button>
+            ) : (
+              <button
+                key={`s-${o.outId}`}
+                className="option-btn"
+                onClick={() => setPending({ inId: playerId, outId: o.outId!, seatLabel: o.seatLabel, gain: o.gain, lose: o.lose, next: o.next })}
+              >
+                <span>
+                  Start instead of <b>{name(o.outId!)}</b> at {o.seatLabel}
+                  {o.suggested && <span className="badge good" style={{ marginLeft: 6 }}>Suggested</span>}
+                </span>
+                <span className="small">
+                  <span className="gain-text">Gain {m.text}</span> · <span className="lose-text">Give up {matchupOf(day, o.outId!).text}</span>
+                </span>
+              </button>
+            ),
+          )}
+          {places.map((o) =>
+            o.lose ? (
+              <button
+                key={`p-${o.seatKey}`}
+                className="option-btn"
+                onClick={() => setPending({ inId: playerId, outId: o.outId!, seatLabel: o.seatLabel, gain: o.gain, lose: o.lose, next: o.next })}
+              >
+                <span>
+                  Put in at {o.seatLabel} instead of <b>{name(o.outId!)}</b>
+                </span>
+                <span className="small">
+                  <span className="lose-text">Give up {matchupOf(day, o.outId!).text}</span> <b className="lose-text">(−1 game)</b>
+                </span>
+              </button>
+            ) : (
+              <button key={`p-${o.seatKey}`} className="option-btn" onClick={() => act(o.next)}>
+                <span>
+                  Put in at {o.seatLabel}
+                  <span className="small muted"> · {o.outId ? `${name(o.outId)} (no game) goes to the bench` : 'empty slot, adds no game'}</span>
+                </span>
+              </button>
+            ),
+          )}
+          {!onOpenInLineup &&
+            (p.onIr ? (
+              <button className="option-btn" onClick={() => setIrStep({ kind: 'confirm', toIr: false, plan: planIrChange(playerId, false, lineupPlayers, selected.dates, seats, data.schedule, state.manual) })}>
+                Move off IR
+              </button>
+            ) : (
               <button
                 className="option-btn"
                 disabled={irFull}
                 onClick={() => setIrStep({ kind: 'confirm', toIr: true, plan: planIrChange(playerId, true, lineupPlayers, selected.dates, seats, data.schedule, state.manual) })}
               >
-                Move to IR
+                <span>
+                  Move to IR
+                  {irFull && <span className="small muted"> · your IR slots are full ({irCount} of {state.league.irSlots})</span>}
+                </span>
               </button>
-              {irFull && (
-                <p className="small muted">
-                  Your IR slots are full ({irCount} of {state.league.irSlots}).
-                </p>
-              )}
-            </>
-          )}
+            ))}
         </div>
-          </>
+        {!seat && !p.onIr && m.game && kind === 'constraint' && <p className="small muted">No lineup slot in your league accepts {p.positions.join('/')}.</p>}
+        {onOpenInLineup && (
+          <button className="btn small" onClick={onOpenInLineup}>
+            Open {when} in Lineup
+          </button>
         )}
       </div>
     );

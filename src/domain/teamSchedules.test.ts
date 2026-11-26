@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { rankTeams } from './rankings.ts';
-import { defaultDir, formatRosterList, gridCell, rosterListParts, matchupsOn, nextSort, rosterPlayersByTeam, sortTeamRows } from './teamSchedules.ts';
+import { defaultDir, formatRosteredPlayer, formatRosterList, gridCell, matchupsOn, nextSort, rosterPlayersByTeam, sortTeamRows } from './teamSchedules.ts';
 import { sched } from './testUtils.ts';
 import type { Player } from './types.ts';
 
@@ -92,21 +92,17 @@ describe('roster players by team', () => {
   });
 });
 
-describe('compact rostered-player list (2026-11-26)', () => {
-  it('names, positions and IR in parentheses, several joined by commas', () => {
+describe('compact rostered-player list (2026-11-26, revised)', () => {
+  it('positions in parentheses after each name, IR in brackets, players joined by commas', () => {
     expect(formatRosterList([])).toBe('');
-    expect(formatRosterList([{ id: 'a', name: 'Connor Bedard', positions: ['C', 'RW'], onIr: true }])).toBe('(Connor Bedard C RW IR)');
+    expect(formatRosterList([{ id: 'a', name: 'Leo Carlsson', positions: ['C'], onIr: false }])).toBe('Leo Carlsson (C)');
+    expect(formatRosteredPlayer({ id: 'a', name: 'Player Name', positions: ['C', 'RW'], onIr: false })).toBe('Player Name (C, RW)');
+    expect(formatRosteredPlayer({ id: 'a', name: 'Player Name', positions: ['C', 'RW'], onIr: true })).toBe('Player Name (C, RW [IR])');
     expect(
       formatRosterList([
-        { id: 'a', name: 'Connor Bedard', positions: ['C', 'RW'], onIr: false },
-        { id: 'b', name: 'Sam Rinzel', positions: ['D'], onIr: false },
+        { id: 'a', name: 'Lukas Dostal', positions: ['G'], onIr: false },
+        { id: 'b', name: 'Tristan Luneau', positions: ['D'], onIr: true },
       ]),
-    ).toBe('(Connor Bedard C RW, Sam Rinzel D)');
-    expect(
-      rosterListParts([
-        { id: 'a', name: 'Connor Bedard', positions: ['C', 'RW'], onIr: true },
-        { id: 'b', name: 'Sam Rinzel', positions: ['D'], onIr: false },
-      ]),
-    ).toEqual(['(Connor Bedard C RW IR,', 'Sam Rinzel D)']);
+    ).toBe('Lukas Dostal (G), Tristan Luneau (D [IR])');
   });
 });

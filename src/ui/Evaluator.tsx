@@ -208,11 +208,15 @@ function Evaluator({ file, page, onGoRoster }: { file: SkaterStatsFile; page: Ev
             compare={
               <div className="ev-cmp-row">
                 <ComparisonSearch skaters={shown!.skaters} exclude={new Set([...result.rosterNhlIds, ...prefs.comparisons])} teamOf={teamOf} onAdd={addComparison} />
-                {result.evaluation.comparisons.length > 0 && (
-                  <button type="button" className="btn small" onClick={clearAllComparisons}>
-                    Clear comparison players
-                  </button>
-                )}
+                {/* Always shown (2026-11-26): crimson outline when there is something to clear, neutral and disabled otherwise. */}
+                <button
+                  type="button"
+                  className={`btn small ev-clear ${result.evaluation.comparisons.length > 0 ? 'has-items' : ''}`}
+                  disabled={result.evaluation.comparisons.length === 0}
+                  onClick={clearAllComparisons}
+                >
+                  Clear comparison players
+                </button>
               </div>
             }
           />

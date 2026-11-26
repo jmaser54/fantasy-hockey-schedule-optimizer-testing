@@ -92,17 +92,15 @@ export function rosterPlayersByTeam(
   return out;
 }
 
-/**
- * Compact list of a team's rostered players (2026-11-26): "(Connor Bedard C RW IR)", several joined by
- * commas: "(Connor Bedard C RW, Sam Rinzel D)". Used under Team Schedules rows and in the Grid.
- */
-export function formatRosterList(players: readonly RosteredPlayer[]): string {
-  return rosterListParts(players).join(' ');
+/** One rostered player with eligible positions (and IR) in parentheses: "Leo Carlsson (C)", "Player Name (C, RW [IR])". */
+export function formatRosteredPlayer(p: RosteredPlayer): string {
+  return `${p.name} (${p.positions.join(', ')}${p.onIr ? ' [IR]' : ''})`;
 }
 
-/** The same list split per player, punctuation included ("(Connor Bedard C RW,", "Sam Rinzel D)"), so a
- *  narrow column can break between players but never inside one. */
-export function rosterListParts(players: readonly RosteredPlayer[]): string[] {
-  const n = players.length;
-  return players.map((p, i) => `${i === 0 ? '(' : ''}${[p.name, ...p.positions, ...(p.onIr ? ['IR'] : [])].join(' ')}${i === n - 1 ? ')' : ','}`);
+/**
+ * A team's rostered players as one compact line (2026-11-26, revised): "Leo Carlsson (C), Lukas Dostal (G)".
+ * Used for the expanded "Your Players" rows in Team Schedules and the Grid.
+ */
+export function formatRosterList(players: readonly RosteredPlayer[]): string {
+  return players.map(formatRosteredPlayer).join(', ');
 }
