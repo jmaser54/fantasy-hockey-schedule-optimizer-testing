@@ -108,10 +108,11 @@ export const TYPICAL_ERROR_PER_GAME: Record<string, Record<PosGroup, number>> = 
 export const INSIGHTS_FRESH_MS = 48 * 3600 * 1000;
 
 /**
- * Ownership ranking weights by the confirmed internal tiers (never shown, never a filter). Missing or
- * stale ownership is neutral: the middle weight, no bonus and no penalty. The weights themselves are an
- * assumption (not measured): strong enough that a widely owned star doesn't outrank a clearly useful
- * low-owned player, without excluding anyone.
+ * Ownership ranking weights by the confirmed internal tiers (never shown, never a filter or an
+ * availability claim). Missing or stale ownership is neutral at 1.0, no bonus and no penalty (owner
+ * decision 2026-11-28): a player missing from the file, or everyone when the whole file is stale. The
+ * tier weights are provisional (not measured): strong enough that a widely owned star doesn't outrank
+ * a clearly useful low-owned player, without excluding anyone.
  */
 export const OWNERSHIP_WEIGHTS = {
   skater: { lowBelow: 10, midBelow: 30 },
@@ -119,7 +120,7 @@ export const OWNERSHIP_WEIGHTS = {
   low: 1,
   mid: 0.6,
   high: 0.3,
-  neutral: 0.6,
+  neutral: 1,
 } as const;
 
 /** Custom Insights: cards shown before See All, and the internal maximum ranked. */

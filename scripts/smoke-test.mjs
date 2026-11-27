@@ -258,9 +258,9 @@ try {
   // Grid tab (2026-11-24: the Schedule Grid has its own tab after Schedules).
   const order = (await page.locator('.planner-tabs .tab').allInnerTexts()).map((t) => t.replace(/\s*(\d+|!)$/, '').trim());
   if (order.join('|') !== 'Schedules|Grid|Lineup|Trade Lab') fail(`Games Optimizer tab order: ${order.join(', ')}`);
-  // Three product areas (2026-11-26): My Team holds My Roster and League Settings.
+  // Four product areas (2026-11-28: Insights added): My Team holds My Roster and League Settings.
   const areaNames = (await page.locator('.areas .area').allInnerTexts()).map((t) => t.replace(/\s*!$/, '').replace(/\s+/g, ' ').trim());
-  if (areaNames.join('|') !== 'Games Optimizer|Player Normalizer|My Team') fail(`product areas: ${areaNames.join(', ')}`);
+  if (areaNames.join('|') !== 'Games Optimizer|Player Normalizer|Insights|My Team') fail(`product areas: ${areaNames.join(', ')}`);
   if (await page.locator('.settings-btn').count()) fail('the top-bar League Settings button is still shown');
   await page.getByRole('tab', { name: 'Grid', exact: true }).click();
   await page.locator('.sh-scroll .sgrid tbody tr').first().waitFor({ timeout: 30_000 });

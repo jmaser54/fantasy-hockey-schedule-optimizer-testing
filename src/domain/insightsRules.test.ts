@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { INSIGHTS_VERSION, type InsightsInputsFile, type SkaterFeatures } from '../data/format.ts';
-import type { DirectoryPlayer, OwnershipData } from '../data/load.ts';
+import { ownershipForRanking, type DirectoryPlayer, type OwnershipData } from '../data/load.ts';
 import { eachDate } from './dates.ts';
 import { customInsights, generalInsights, rosterIdForms, type CustomInput } from './insightsRules.ts';
+import { ownershipWeight } from './insightsValue.ts';
 import { DEFAULT_LEAGUE } from './league.ts';
 import { ScheduleIndex } from './schedule.ts';
 import { DEFAULT_SCORING } from './scoring.ts';
@@ -139,6 +140,23 @@ describe('Custom Insights', () => {
     expect(withOwn.cards[0]!.addId).toBe('nhl-11');
     expect(withOwn.cards[0]!.lines.find((l) => l.kind === 'ownership')!.text).toBe('Owned in 3% of ESPN leagues');
     expect(JSON.stringify(withOwn)).not.toMatch(/available/i);
+  });
+
+  it('treats missing ownership as 1.0 (no bonus or penalty), a stale file as no ownership, and never filters on it', () => {
+    expect([ownershipWeight(undefined), ownershipWeight(3), ownershipWeight(10), ownershipWeight(29.9), ownershipWeight(30), ownershipWeight(100)]).toEqual([1, 1, 0.6, 0.6, 0.3, 0.3]);
+    const s = setup({ players: { 1: feat(0.5), 2: feat(0.4), 3: feat(1.0), 4: feat(1.0), 10: feat(1.5), 11: feat(1.45), 12: feat(0.4), 13: feat(0.4) } });
+    const unweighted = customInsights(base(s)).cards;
+    // nhl-11 is known low-owned; nhl-10 is missing from the file: both 1.0, so pure value decides.
+    const partial: OwnershipData = { season: '20262027', fetchedAt: '2027-02-28T00:00:00Z', byPlayerId: new Map([['nhl-11', { espnId: 2, pct: 3 }]]) };
+    const r = customInsights(base(s, { ownership: partial })).cards;
+    expect(r.map((c) => [c.addId, c.score])).toEqual(unweighted.map((c) => [c.addId, c.score]));
+    // A stale file is dropped before ranking (ownershipForRanking), which is the same as no ownership at all.
+    const stale: OwnershipData = { ...partial, fetchedAt: '2027-02-20T00:00:00Z' };
+    expect(ownershipForRanking(stale, Date.parse('2027-02-28T12:00:00Z'))).toBeUndefined();
+    // Even 100% ownership for everyone never removes a candidate: the same players qualify, only scores scale.
+    const everyone: OwnershipData = { ...partial, byPlayerId: new Map(s.directory.map((p, i) => [p.id, { espnId: i + 1, pct: 100 }])) };
+    const all = customInsights(base(s, { ownership: everyone })).cards;
+    expect(all.map((c) => c.addId).sort()).toEqual(unweighted.map((c) => c.addId).sort());
   });
 
   it('shows roster warnings without displacing cards, and a factual Goalie Schedule', () => {

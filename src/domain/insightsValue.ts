@@ -90,7 +90,7 @@ export function errorPerGame(group: PosGroup, scale: CategoryScale): number {
   return Math.sqrt(s);
 }
 
-/** Ownership ranking weight by internal tier; missing or stale ownership (undefined here) is neutral. */
+/** Ownership ranking weight by internal tier; missing or stale ownership (undefined here) is neutral (1.0). */
 export function ownershipWeight(pct: number | undefined, goalie = false): number {
   if (pct === undefined) return OWNERSHIP_WEIGHTS.neutral;
   const t = goalie ? OWNERSHIP_WEIGHTS.goalie : OWNERSHIP_WEIGHTS.skater;
