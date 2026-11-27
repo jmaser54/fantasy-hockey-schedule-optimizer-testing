@@ -1,106 +1,157 @@
 /**
- * TEMPORARY diagnostic on the throwaway branch diag/nhl-landing (2026-11-27). Never merged.
- * Read-only: checks whether the NHL player landing endpoint distinguishes current NHL players,
- * injured players absent from the current-roster feed, and players assigned elsewhere.
- * Run 2 population: players with NHL games this season (skaters from skater-stats.json, goalies from
- * the NHL goalie summary report) who are on no current roster. At most 76 profile requests (run 1 used 24).
+ * TEMPORARY diagnostic on the throwaway branch diag/nhl-landing (2026-11-27, run 3). Never merged.
+ * Read-only feasibility probe for the Insights data layer: a small number of representative requests
+ * (about 30) to verify field names, sample values, pagination and sizes. Writes only to data-raw/.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 const SEASON = process.env.SEASON ?? '20262027';
-const BASE = 'https://api-web.nhle.com/v1';
+const DATE = process.env.PROBE_DATE ?? '2026-11-25';
+const REST = 'https://api.nhle.com/stats/rest/en';
+const WEB = 'https://api-web.nhle.com/v1';
 const RAW = 'data-raw/stats-probe';
-const MAX_PROFILES = 100;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (s) => console.log(s);
+let requests = 0;
 
-async function get(path) {
-  for (let i = 0; i < 3; i++) {
-    try {
-      const res = await fetch(`${BASE}${path}`, { headers: { accept: 'application/json', 'user-agent': 'fantasy-playoff-optimizer roster-status probe' } });
-      if (res.status === 404) return { status: 404 };
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return { status: res.status, body: await res.json() };
-    } catch (e) {
-      if (i === 2) return { status: 0, error: String(e) };
-      await sleep(2000);
-    } finally {
-      await sleep(150);
-    }
+async function get(url) {
+  requests++;
+  const t = Date.now();
+  try {
+    const res = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'fantasy-playoff-optimizer insights feasibility probe' } });
+    const text = await res.text();
+    await sleep(250);
+    let body;
+    try { body = JSON.parse(text); } catch { body = undefined; }
+    return { status: res.status, bytes: text.length, ms: Date.now() - t, body };
+  } catch (e) {
+    return { status: 0, bytes: 0, ms: Date.now() - t, error: String(e) };
   }
 }
-const name = (p) => `${p.firstName?.default ?? ''} ${p.lastName?.default ?? ''}`.trim();
-const rosterIds = (body) => ['forwards', 'defensemen', 'goalies'].flatMap((g) => (Array.isArray(body?.[g]) ? body[g] : []).map((p) => ({ id: p.id, name: name(p), pos: p.positionCode })));
+const short = (v, n = 1200) => { const s = JSON.stringify(v); return s.length > n ? s.slice(0, n) + '…' : s; };
+const restUrl = (path, { game = false, cayenne, limit = 100, start = 0, sort = 'playerId' } = {}) => {
+  const p = new URLSearchParams({ isAggregate: 'false', isGame: String(game), start: String(start), limit: String(limit), sort: JSON.stringify([{ property: sort, direction: 'ASC' }]), cayenneExp: cayenne });
+  return `${REST}/${path}?${p}`;
+};
+const seasonExp = `gameTypeId=2 and seasonId<=${SEASON} and seasonId>=${SEASON}`;
+const dateExp = `gameTypeId=2 and gameDate<="${DATE} 23:59:59" and gameDate>="${DATE}"`;
+
+/** Fetch a REST report, log status/size/total/keys/sample; returns rows. */
+async function rest(label, path, opts) {
+  const r = await get(restUrl(path, opts));
+  const rows = Array.isArray(r.body?.data) ? r.body.data : [];
+  log(`\n=== ${label}: ${path} isGame=${opts.game ?? false} | HTTP ${r.status} | ${r.bytes} bytes | ${r.ms} ms | total ${r.body?.total ?? '-'} | rows ${rows.length}${r.error ? ' | ERROR ' + r.error : ''}${!rows.length && r.body ? ' | body ' + short(r.body, 300) : ''}`);
+  if (rows[0]) {
+    log(`  fields: ${Object.keys(rows[0]).join(', ')}`);
+    log(`  sample: ${short(rows[0])}`);
+  }
+  await writeFile(`${RAW}/${label.replace(/\W+/g, '_')}.json`, JSON.stringify(r.body ?? null));
+  return rows;
+}
 
 await mkdir(RAW, { recursive: true });
-const teams = JSON.parse(await readFile('public/data/schedule.json', 'utf8')).teams.map((t) => t.id);
-const dir = JSON.parse(await readFile('public/data/players.json', 'utf8')).players;
-const dirByNhl = new Map(dir.filter((p) => p.nhlId).map((p) => [p.nhlId, p]));
+const schedule = JSON.parse(await readFile('public/data/schedule.json', 'utf8'));
+const games = schedule.games.filter((g) => g.date === DATE);
+log(`PROBE: season ${SEASON}, date ${DATE}, scheduled games that day ${games.length}`);
 
-const current = new Map(); // id -> {team, ...}
-let rosterRequests = 0;
-for (const t of teams) {
-  const c = await get(`/roster/${t}/current`); rosterRequests++;
-  if (!c.body) log(`roster fetch problem ${t}: ${c.status} ${c.error ?? ''}`);
-  for (const p of rosterIds(c.body)) current.set(p.id, { ...p, team: t });
+// 1. Per-game skater rows via isGame=true for one date (league-wide, paginated).
+const sumGame = [];
+for (let start = 0; start < 1000; start += 100) {
+  const rows = await rest(`skater summary isGame page ${start / 100}`, 'skater/summary', { game: true, cayenne: dateExp, start });
+  sumGame.push(...rows);
+  if (rows.length < 100) break;
 }
-// Players with NHL games this season: skaters from the bundled stats file, goalies from one NHL stats request.
-const skaters = JSON.parse(await readFile('public/data/skater-stats.json', 'utf8')).skaters;
-const goalies = [];
-for (let start = 0; start < 400; start += 100) {
-  const u = `https://api.nhle.com/stats/rest/en/goalie/summary?isAggregate=false&isGame=false&start=${start}&limit=100&sort=playerId&cayenneExp=gameTypeId=2%20and%20seasonId=${SEASON}`;
-  const res = await fetch(u, { headers: { accept: 'application/json' } }); await sleep(150);
-  const j = res.ok ? await res.json() : { data: [] };
-  goalies.push(...(j.data ?? []));
-  if ((j.data ?? []).length < 100) break;
-}
-const offFeed = [
-  ...goalies.filter((g) => !current.has(g.playerId)).map((g) => ({ id: g.playerId, name: g.goalieFullName, pos: 'G', team: g.teamAbbrevs, nhlGpStats: g.gamesPlayed })),
-  ...skaters.filter((s) => !current.has(s.nhlId)).map((s) => ({ id: s.nhlId, name: s.name, pos: s.position, team: (s.teams ?? []).join('/'), nhlGpStats: s.gamesPlayed })),
-];
-log(`ROSTER PROBE: ${rosterRequests} current-roster requests; current-roster players ${current.size}; goalies with ${SEASON} NHL games ${goalies.length}; NHL players with ${SEASON} games but on no current roster: ${offFeed.length} (goalies ${offFeed.filter((p) => p.pos === 'G').length}, skaters ${offFeed.filter((p) => p.pos !== 'G').length})`);
-const MAX_THIS_RUN = 76; // the first run used 24 profile requests
-const targets = offFeed.slice(0, MAX_THIS_RUN).map((p) => ({ ...p, group: 'off-feed' }));
-log(`PROFILE PROBE: ${targets.length} profile requests (off-feed players; ${Math.max(0, offFeed.length - targets.length)} not checked because of the cap)`);
+const ids = new Set(sumGame.map((r) => `${r.playerId}|${r.gameId}`));
+log(`  isGame summary for ${DATE}: ${sumGame.length} rows, ${ids.size} distinct player-games, ${new Set(sumGame.map((r) => r.gameId)).size} distinct gameIds`);
+const rtGame = await rest('skater realtime isGame', 'skater/realtime', { game: true, cayenne: dateExp, limit: 100 });
+const toiGame = await rest('skater timeonice isGame', 'skater/timeonice', { game: true, cayenne: dateExp, limit: 100 });
+const ppGame = await rest('skater powerplay isGame', 'skater/powerplay', { game: true, cayenne: dateExp, limit: 100 });
+const spgGame = await rest('skater scoringpergame isGame', 'skater/scoringpergame', { game: true, cayenne: dateExp, limit: 5 });
 
-const keyCount = {};
-const rows = [];
-let saved = 0;
-for (const p of targets) {
-  const r = await get(`/player/${p.id}/landing`);
-  if (!r.body) { rows.push({ ...p, error: `${r.status} ${r.error ?? ''}` }); continue; }
-  const b = r.body;
-  for (const k of Object.keys(b)) keyCount[k] = (keyCount[k] ?? 0) + 1;
-  if (saved < 6 && (p.group === 'current' || saved < 4)) { await writeFile(`${RAW}/landing-${p.group}-${p.id}.json`, JSON.stringify(b, null, 2)); saved++; }
-  const totals = Array.isArray(b.seasonTotals) ? b.seasonTotals.filter((x) => String(x.season) === SEASON) : [];
-  const lines = totals.map((x) => `${x.leagueAbbrev}:${x.teamName?.default ?? x.teamCommonName?.default ?? '?'} gt${x.gameTypeId} gp${x.gamesPlayed}`);
-  const last5 = Array.isArray(b.last5Games) ? b.last5Games.map((g) => g.gameDate).filter(Boolean) : [];
-  const d = dirByNhl.get(p.id);
-  rows.push({
-    ...p,
-    isActive: b.isActive,
-    currentTeamId: b.currentTeamId,
-    currentTeamAbbrev: b.currentTeamAbbrev,
-    statusLike: Object.fromEntries(Object.entries(b).filter(([k]) => /status|injur|roster|assign|transac|reserve|active/i.test(k)).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v).slice(0, 80) : v])),
-    lines,
-    nhlGp: totals.filter((x) => x.leagueAbbrev === 'NHL').reduce((a, x) => a + (x.gamesPlayed ?? 0), 0),
-    otherGp: totals.filter((x) => x.leagueAbbrev !== 'NHL').reduce((a, x) => a + (x.gamesPlayed ?? 0), 0),
-    otherLeagues: [...new Set(totals.filter((x) => x.leagueAbbrev !== 'NHL').map((x) => x.leagueAbbrev))],
-    lastNhlGame: last5[0],
-    inOwnCurrentTeamRoster: Array.isArray(b.currentTeamRoster) ? b.currentTeamRoster.some((x) => x.playerId === p.id) : 'n/a',
-    directory: d ? (d.inactive ? 'inactive' : 'active') : 'no nhlId in directory',
-  });
-}
-await writeFile(`${RAW}/landing-summary.json`, JSON.stringify(rows, null, 2));
+// 2–4. Season-level skater reports (one page each, to see fields).
+await rest('skater timeonice season', 'skater/timeonice', { cayenne: seasonExp, limit: 5 });
+await rest('skater powerplay season', 'skater/powerplay', { cayenne: seasonExp, limit: 5 });
+await rest('skater scoringpergame season', 'skater/scoringpergame', { cayenne: seasonExp, limit: 5 });
+await rest('skater scoringRates season', 'skater/scoringRates', { cayenne: seasonExp, limit: 5 });
 
-log(`LANDING FIELDS (profiles having each): ${JSON.stringify(keyCount)}`);
-log(`LANDING status-like fields seen: ${JSON.stringify([...new Set(rows.flatMap((r) => Object.keys(r.statusLike ?? {})))])}`);
-const tab = {};
-for (const r of rows) {
-  const k = `${r.pos === 'G' ? 'G' : 'S'}|isActive=${r.isActive}|currentTeam=${r.currentTeamAbbrev ? 'XXX' + (String(r.team).split(/[\/,]/).includes(r.currentTeamAbbrev) ? '(a team he played for)' : '(other)') : 'none'}|AHL/other league ${SEASON}=${r.otherGp > 0 ? 'yes' : 'no'}|in currentTeamRoster=${r.inOwnCurrentTeamRoster}`;
-  tab[k] = (tab[k] ?? 0) + 1;
+// 3. Team context: season and one date.
+const teamSeason = await rest('team summary season', 'team/summary', { cayenne: seasonExp, limit: 50, sort: 'teamId' });
+const teamPpSeason = await rest('team powerplay season', 'team/powerplay', { cayenne: seasonExp, limit: 50, sort: 'teamId' });
+const teamPpGame = await rest('team powerplay isGame', 'team/powerplay', { game: true, cayenne: dateExp, limit: 100, sort: 'teamId' });
+await rest('team summary isGame', 'team/summary', { game: true, cayenne: dateExp, limit: 5, sort: 'teamId' });
+
+// 5. Goalies.
+const gSumGame = await rest('goalie summary isGame', 'goalie/summary', { game: true, cayenne: dateExp, limit: 100 });
+await rest('goalie summary season', 'goalie/summary', { cayenne: seasonExp, limit: 5 });
+await rest('goalie advanced season', 'goalie/advanced', { cayenne: seasonExp, limit: 5 });
+await rest('goalie startedVsRelieved season', 'goalie/startedVsRelieved', { cayenne: seasonExp, limit: 5 });
+await rest('goalie daysrest season', 'goalie/daysrest', { cayenne: seasonExp, limit: 5 });
+
+// Gamecenter boxscore and play-by-play for one game; a player game log for comparison.
+const g = games[0];
+let box;
+if (g) {
+  const r = await get(`${WEB}/gamecenter/${g.id}/boxscore`);
+  box = r.body;
+  log(`\n=== boxscore ${g.id} (${g.away}@${g.home}) | HTTP ${r.status} | ${r.bytes} bytes | top-level: ${box ? Object.keys(box).join(', ') : '-'}`);
+  const pbs = box?.playerByGameStats;
+  if (pbs) {
+    log(`  playerByGameStats: ${Object.keys(pbs).join(', ')}; homeTeam groups: ${Object.keys(pbs.homeTeam ?? {}).join(', ')}`);
+    for (const grp of ['forwards', 'defense', 'goalies']) {
+      const list = pbs.homeTeam?.[grp] ?? [];
+      log(`  homeTeam.${grp}: ${list.length} players; fields: ${list[0] ? Object.keys(list[0]).join(', ') : '-'}`);
+      if (list[0]) log(`    sample: ${short(list[0], 900)}`);
+    }
+  }
+  const other = box ? Object.keys(box).filter((k) => !['playerByGameStats'].includes(k)) : [];
+  log(`  team-level blocks: ${other.map((k) => `${k}=${typeof box[k] === 'object' ? short(box[k], 160) : box[k]}`).join(' | ').slice(0, 1500)}`);
+  await writeFile(`${RAW}/boxscore.json`, JSON.stringify(box ?? null));
+
+  const p = await get(`${WEB}/gamecenter/${g.id}/play-by-play`);
+  const plays = Array.isArray(p.body?.plays) ? p.body.plays : [];
+  const goals = plays.filter((x) => x.typeDescKey === 'goal');
+  log(`\n=== play-by-play ${g.id} | HTTP ${p.status} | ${p.bytes} bytes | plays ${plays.length} | goals ${goals.length}`);
+  if (goals[0]) log(`  goal sample: ${short(goals[0], 900)}`);
+  const shot = plays.find((x) => x.typeDescKey === 'shot-on-goal');
+  if (shot) log(`  shot sample: ${short(shot, 600)}`);
+  const pen = plays.find((x) => x.typeDescKey === 'penalty');
+  if (pen) log(`  penalty sample: ${short(pen, 500)}`);
+
+  // Cross-check: same player's game line in isGame summary vs boxscore.
+  const boxPlayers = ['forwards', 'defense'].flatMap((grp) => [...(box?.playerByGameStats?.homeTeam?.[grp] ?? []), ...(box?.playerByGameStats?.awayTeam?.[grp] ?? [])]);
+  const gameRows = sumGame.filter((r) => String(r.gameId) === String(g.id));
+  log(`\n=== CROSS-CHECK game ${g.id}: boxscore skaters ${boxPlayers.length}, isGame summary rows ${gameRows.length}`);
+  let mism = 0;
+  for (const bp of boxPlayers.slice(0, 40)) {
+    const row = gameRows.find((r) => r.playerId === bp.playerId);
+    if (!row) { mism++; log(`  no isGame row for ${bp.playerId}`); continue; }
+    const pairs = [['goals', bp.goals, row.goals], ['assists', bp.assists, row.assists], ['points', bp.points, row.points], ['shots', bp.sog ?? bp.shots, row.shots], ['plusMinus', bp.plusMinus, row.plusMinus], ['pim', bp.pim, row.penaltyMinutes]];
+    const bad = pairs.filter(([, a, b]) => a !== undefined && b !== undefined && a !== b);
+    if (bad.length) { mism++; log(`  mismatch ${bp.playerId}: ${JSON.stringify(bad)}`); }
+  }
+  log(`  players compared ${Math.min(40, boxPlayers.length)}, mismatches ${mism}`);
+  const one = boxPlayers[0];
+  if (one) {
+    const t = toiGame.find((r) => r.playerId === one.playerId && String(r.gameId) === String(g.id));
+    const pp = ppGame.find((r) => r.playerId === one.playerId && String(r.gameId) === String(g.id));
+    log(`  TOI check ${one.playerId}: boxscore toi ${one.toi} | timeonice row ${short(t ?? 'not on first page', 500)} | powerplay row ${short(pp ?? 'not on first page', 500)}`);
+  }
+  // PP share denominator check: team PP time for this game vs players' PP TOI.
+  const teamRows = teamPpGame.filter((r) => String(r.gameId) === String(g.id));
+  log(`  team powerplay isGame rows for game: ${short(teamRows, 900)}`);
+  const ppRowsGame = ppGame.filter((r) => String(r.gameId) === String(g.id));
+  log(`  skater powerplay isGame rows for game on first page: ${ppRowsGame.length}`);
+  // Goalie cross-check.
+  const gb = [...(box?.playerByGameStats?.homeTeam?.goalies ?? []), ...(box?.playerByGameStats?.awayTeam?.goalies ?? [])];
+  log(`  goalies in boxscore: ${short(gb.map((x) => ({ id: x.playerId, starter: x.starter, toi: x.toi, saves: x.saves, sa: x.shotsAgainst, ga: x.goalsAgainst, pct: x.savePctg, decision: x.decision })), 600)}`);
+  log(`  goalie isGame rows for game: ${short(gSumGame.filter((r) => String(r.gameId) === String(g.id)), 900)}`);
+
+  const pid = boxPlayers[0]?.playerId;
+  if (pid) {
+    const gl = await get(`${WEB}/player/${pid}/game-log/${SEASON}/2`);
+    const list = gl.body?.gameLog ?? [];
+    log(`\n=== player game-log ${pid} | HTTP ${gl.status} | ${gl.bytes} bytes | top-level ${gl.body ? Object.keys(gl.body).join(', ') : '-'} | games ${list.length}`);
+    if (list[0]) log(`  fields: ${Object.keys(list[0]).join(', ')}\n  sample: ${short(list[0], 700)}`);
+  }
 }
-for (const [k, v] of Object.entries(tab).sort()) log(`LANDING CROSSTAB ${k}: ${v}`);
-for (const r of rows) {
-  log(`LANDING ${r.group} ${r.pos} ${r.name} (${r.id}) season-team ${r.team} | ${r.error ? 'ERROR ' + r.error : `isActive=${r.isActive} currentTeam=${r.currentTeamAbbrev ?? r.currentTeamId ?? 'none'} | ${SEASON}: ${r.lines.join(', ') || 'no season lines'} | NHL GP (stats) ${r.nhlGpStats} | last NHL game ${r.lastNhlGame ?? '-'} | in currentTeamRoster ${r.inOwnCurrentTeamRoster} | directory ${r.directory}`}`);
-}
+log(`\nPROBE DONE: ${requests} requests; team season rows ${teamSeason.length}, team pp season rows ${teamPpSeason.length}, realtime isGame rows ${rtGame.length}, scoringpergame isGame rows ${spgGame.length}`);
