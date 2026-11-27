@@ -6,6 +6,7 @@
 import { INSIGHTS_VERSION, type GoalieWindow, type InsightsInputsFile, type PlayersFile, type SkaterStatsFile, type SkaterWindow, type TalentEvidence } from '../format.ts';
 import { validateInsightsInputs } from '../validate.ts';
 import type { GetJson, SkaterLine } from './gamelog.ts';
+import { goalieStartFacts, posGroup, positionRates, skaterFeatures, type SeasonTotals, type WindowAppearance } from './insightsFeatures.ts';
 import type { InsightsConfig, WindowState } from './insightsWindow.ts';
 import { STATS_BASE } from './stats.ts';
 
@@ -16,7 +17,7 @@ const int = (v: unknown): number | null => (typeof v === 'number' && Number.isIn
 
 export interface SeasonData {
   fetchedAt: string;
-  skaters: Record<string, { gp: number; g: number | null; a: number | null; a1: number | null; a2: number | null; pts: number | null; sog: number | null; hit: number | null; blk: number | null; pim: number | null; toi: number | null; evToi: number | null; ppToi: number | null; shToi: number | null; ppSharePg: number | null }>;
+  skaters: Record<string, { gp: number; g: number | null; a: number | null; a1: number | null; a2: number | null; pts: number | null; sog: number | null; hit: number | null; blk: number | null; pim: number | null; toi: number | null; evToi: number | null; ppToi: number | null; shToi: number | null; ppSharePg: number | null; evG?: number | null; ppG?: number | null; shG?: number | null; evPts?: number | null; ppPts?: number | null; shPts?: number | null; pm?: number | null }>;
   /** Keyed by NHL teamId (team reports carry no abbreviation). */
   teams: Record<string, { gp: number; gfPg: number | null; sfPg: number | null; ppPct: number | null; pkPct: number | null; ppOpp: number; ppOppPg: number | null; ppGoals: number; ppToiPg: number | null }>;
   goalies: Record<string, GoalieWindow & { gaa: number | null }>;
@@ -58,6 +59,8 @@ export async function fetchSeasonData(getJson: GetJson, season: string, nowIso: 
   const teamSum = await fetchSeasonReport(getJson, 'team/summary', season, 'teamId');
   const teamPp = new Map((await fetchSeasonReport(getJson, 'team/powerplay', season, 'teamId')).map((r) => [String(r.teamId), r]));
   const goalies = await fetchSeasonReport(getJson, 'goalie/summary', season, 'playerId');
+  // Situational goals and points (version 2). Joined leniently: a player missing here keeps nulls.
+  const summary = new Map((await fetchSeasonReport(getJson, 'skater/summary', season, 'playerId')).map((r) => [String(r.playerId), r]));
   if (toi.size !== scoring.length || pp.size !== scoring.length) throw new Error(`season skater reports cover different players (${scoring.length}/${toi.size}/${pp.size})`);
   if (teamSum.length !== teamPp.size) throw new Error('season team reports cover different teams');
   const out: SeasonData = { fetchedAt: nowIso, skaters: {}, teams: {}, goalies: {} };
@@ -73,6 +76,8 @@ export async function fetchSeasonData(getJson: GetJson, season: string, nowIso: 
       sog: int(r.shots), hit: int(r.hits), blk: int(r.blockedShots), pim: int(r.penaltyMinutes),
       toi: int(t.timeOnIce), evToi: int(t.evTimeOnIce), ppToi: int(t.ppTimeOnIce), shToi: int(t.shTimeOnIce), ppSharePg: num(p.ppTimeOnIcePctPerGame),
     };
+    const u = summary.get(id);
+    if (u && u.gamesPlayed === gp) Object.assign(out.skaters[id]!, { evG: int(u.evGoals), ppG: int(u.ppGoals), shG: int(u.shGoals), evPts: int(u.evPoints), ppPts: int(u.ppPoints), shPts: int(u.shPoints), pm: int(u.plusMinus) });
   }
   for (const r of teamSum) {
     const id = String(r.teamId);
@@ -109,7 +114,7 @@ function skaterWindow(apps: Appearance[], cfg: InsightsConfig): SkaterWindow {
     gp: apps.length,
     from: apps[apps.length - 1]!.date,
     to: apps[0]!.date,
-    talent: { g: f(1), a: f(2), a1: f(3), a2: f(4), pts: f(5), evPts: f(6), ppp: f(7), sog: f(8), hit: f(9), blk: f(10), pim: f(11), pm: f(12) },
+    talent: { g: f(1), a: f(2), a1: f(3), a2: f(4), pts: f(5), evPts: f(6), ppp: f(7), sog: f(8), hit: f(9), blk: f(10), pim: f(11), pm: f(12), evG: f(17), ppG: f(18), shp: f(19) },
     opportunity: {
       toi: f(13), evToi: f(14), ppToi, shToi: f(16), teamPpToi,
       ppShare: ppToi !== null && teamPpToi !== null && teamPpToi >= cfg.ppShareMinSeconds ? round(ppToi / teamPpToi) : null,
@@ -123,6 +128,9 @@ export function buildInsightsInputs(input: {
   season: SeasonData | undefined;
   players: PlayersFile;
   skaterStats: SkaterStatsFile | undefined;
+  /** The previous season's reports and skater-stats snapshot: the Talent baseline. */
+  previousSeason?: SeasonData;
+  previousSkaterStats?: SkaterStatsFile;
   target: readonly string[];
   cfg: InsightsConfig;
   nowIso: string;
@@ -143,6 +151,43 @@ export function buildInsightsInputs(input: {
     }
   }
   const statsById = new Map((skaterStats?.season === state.meta.season ? skaterStats.skaters : []).map((s) => [String(s.nhlId), s]));
+  const prevStatsById = new Map((input.previousSkaterStats?.skaters ?? []).map((s) => [String(s.nhlId), s]));
+  const totals = (src: SeasonData | undefined, stats: Map<string, SkaterStatsFile['skaters'][number]>) => {
+    const m = new Map<string, SeasonTotals>();
+    for (const [id, x] of Object.entries(src?.skaters ?? {})) {
+      const st = stats.get(id);
+      m.set(id, {
+        gp: x.gp, pts: x.pts, g: x.g, evG: x.evG ?? null, ppG: x.ppG ?? null, shG: x.shG ?? null, evPts: x.evPts ?? null, ppPts: x.ppPts ?? null, shPts: x.shPts ?? null,
+        sog: x.sog, hit: x.hit, blk: x.blk, pim: x.pim, pm: x.pm ?? null, fow: st && st.gamesPlayed === x.gp && typeof st.faceoffWins === 'number' ? st.faceoffWins : null,
+        toi: x.toi, evToi: x.evToi, ppToi: x.ppToi, shToi: x.shToi, ppSharePg: x.ppSharePg,
+      });
+    }
+    return m;
+  };
+  const cur = totals(season, statsById);
+  const prev = totals(input.previousSeason, prevStatsById);
+  const groupOfStat = (s: SkaterStatsFile['skaters'][number] | undefined) => (s ? (s.position === 'D' ? 'D' : 'F') : undefined);
+  const pool = (m: Map<string, SeasonTotals>, stats: Map<string, SkaterStatsFile['skaters'][number]>) =>
+    [...m.entries()].flatMap(([id, t]) => {
+      const g = groupOfStat(stats.get(id));
+      return g ? [[t, g] as [SeasonTotals, 'F' | 'D']] : [];
+    });
+  const prevPool = pool(prev, prevStatsById);
+  const posAvg = prevPool.length ? positionRates(prevPool, 20) : positionRates(pool(cur, statsById), 10);
+  const posMinutes = (['F', 'D'] as const).map((g) => {
+    const list = pool(cur, statsById).filter(([t, gg]) => gg === g && t.gp >= 10);
+    const avg = (f: (t: SeasonTotals) => number | null, def: number) => {
+      const v = list.map(([t]) => f(t)).filter((x): x is number => x !== null);
+      return v.length ? v.reduce((a, b) => a + b, 0) / v.length : def;
+    };
+    return {
+      toi: avg((t) => (t.toi === null ? null : t.toi / t.gp / 60), g === 'F' ? 15 : 20),
+      evToi: avg((t) => (t.evToi === null ? null : t.evToi / t.gp / 60), g === 'F' ? 12.5 : 16.5),
+      shToi: avg((t) => (t.shToi === null ? null : t.shToi / t.gp / 60), g === 'F' ? 0.8 : 1.5),
+      ppShare: avg((t) => t.ppSharePg, g === 'F' ? 0.3 : 0.2),
+    };
+  });
+  const teamDates = (team: string) => (teamGames.get(team) ?? []).map((x) => x.date);
   const out: InsightsInputsFile = {
     version: INSIGHTS_VERSION,
     season: state.meta.season,
@@ -159,9 +204,12 @@ export function buildInsightsInputs(input: {
       evidence: { talent: true, opportunity: { toi: true, ppShare: true, linemates: false, ppUnit: false, teammateQuality: false } },
     },
     players: {},
+    league: { ppToiPg: null },
     teams: {},
     goalies: {},
   };
+  const teamPp = Object.values(season?.teams ?? {}).map((t) => t.ppToiPg).filter((v): v is number => v !== null);
+  if (teamPp.length) out.league.ppToiPg = round(teamPp.reduce((a, b) => a + b, 0) / teamPp.length, 1);
   for (const p of players.players) {
     if (p.nhlId === undefined || p.inactive) continue; // Insights candidates: current NHL roster only
     const id = String(p.nhlId);
@@ -183,6 +231,7 @@ export function buildInsightsInputs(input: {
         };
       }
       if (s) entry.season = s;
+      if (apps.length) entry.starts = goalieStartFacts(apps.filter((x) => x.line[1] === 1).map((x) => x.date), teamDates(p.team));
       out.goalies[key] = entry;
       continue;
     }
@@ -193,13 +242,19 @@ export function buildInsightsInputs(input: {
     if (apps.length) {
       entry.last5 = skaterWindow(apps.slice(0, 5), cfg);
       entry.last10 = skaterWindow(apps.slice(0, 10), cfg);
+      entry.window = skaterWindow(apps, cfg);
     }
+    const group = posGroup(p.positions);
+    entry.features = skaterFeatures({
+      apps: apps as WindowAppearance[], group, current: cur.get(id), previous: prev.get(id), posAvg: posAvg[group], posMinutes: posMinutes[group === 'F' ? 0 : 1]!, teamDates: teamDates(p.team),
+    });
     if (s) {
       const st = statsById.get(id);
       const evPts = st && st.gamesPlayed === s.gp ? st.points - st.ppPoints - st.shPoints : null;
       const talent: TalentEvidence = {
         g: s.g, a: s.a, a1: s.a1, a2: s.a2, pts: s.pts, evPts, ppp: st && st.gamesPlayed === s.gp ? st.ppPoints : null,
         sog: s.sog, hit: s.hit, blk: s.blk, pim: s.pim, pm: st && st.gamesPlayed === s.gp ? st.plusMinus : null,
+        evG: s.evG ?? null, ppG: s.ppG ?? null, shp: st && st.gamesPlayed === s.gp ? st.shPoints : s.shPts ?? null,
       };
       const pg = (v: number | null) => (v === null ? null : round(v / s.gp, 1));
       entry.season = { gp: s.gp, talent, opportunity: { toiPg: pg(s.toi), evToiPg: pg(s.evToi), ppToiPg: pg(s.ppToi), shToiPg: pg(s.shToi), ppSharePg: s.ppSharePg } };
@@ -232,7 +287,7 @@ export function insightsUpdateProblems(next: InsightsInputsFile, previous: Insig
     const covered = current.filter((p) => next.players[`nhl-${p.nhlId}`]?.season).length;
     if (current.length && covered / current.length < 0.9) problems.push(`only ${covered}/${current.length} current roster skaters with games have a season block`);
   }
-  if (previous && previous.season === next.season) {
+  if (previous && previous.season === next.season && previous.version === next.version) {
     const before = Object.keys(previous.players).length;
     const now = Object.keys(next.players).length;
     if (now < before * 0.9) problems.push(`players fell from ${before} to ${now}`);

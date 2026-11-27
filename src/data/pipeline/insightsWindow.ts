@@ -5,7 +5,8 @@
  */
 import type { GameRecord } from './gamelog.ts';
 
-export const WINDOW_VERSION = 1;
+/** 2: skater lines gained evG, ppG, shp (2026-11-28); older windows are rebuilt. */
+export const WINDOW_VERSION = 2;
 
 export interface InsightsConfig {
   /** Game nights kept in the window. */
@@ -19,7 +20,7 @@ export interface InsightsConfig {
   /** Team PP seconds a window needs before a PP share is shown. */
   ppShareMinSeconds: number;
 }
-export const DEFAULT_CONFIG: InsightsConfig = { windowNights: 30, correctionNights: 3, correctionHourEt: 8, maxNightsPerRun: 10, ppShareMinSeconds: 240 };
+export const DEFAULT_CONFIG: InsightsConfig = { windowNights: 80, correctionNights: 3, correctionHourEt: 8, maxNightsPerRun: 10, ppShareMinSeconds: 240 };
 
 export interface NightStatus {
   /** complete: every scheduled game stored and valid. */

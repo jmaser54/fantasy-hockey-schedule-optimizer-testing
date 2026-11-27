@@ -1,5 +1,6 @@
 import { useEffect, useState, type MutableRefObject } from 'react';
 import { DEFAULT_LEAGUE, DEFAULT_PERIODS, validateLeague, validatePeriod } from '../domain/league.ts';
+import { GOALIE_CATEGORIES, SKATER_CATEGORIES, type ScoringSettings } from '../domain/scoring.ts';
 import type { LeagueConfig, Period } from '../domain/types.ts';
 import { useApp } from './context.ts';
 import { PosToggles } from './common.tsx';
@@ -18,16 +19,18 @@ export function LeagueSettingsPage({ leaveGuard }: { leaveGuard: LeaveGuard }) {
   const { state, dispatch, toast } = useApp();
   const [league, setLeague] = useState<LeagueConfig>(() => structuredClone(state.league));
   const [periods, setPeriods] = useState<Period[]>(() => structuredClone(state.periods));
+  const [scoring, setScoring] = useState<ScoringSettings>(() => structuredClone(state.scoring));
   // The saved values the draft started from: edits are anything that differs from these.
-  const [base, setBase] = useState(() => ({ league: state.league, periods: state.periods }));
-  const dirty = !same(league, base.league) || !same(periods, base.periods);
+  const [base, setBase] = useState(() => ({ league: state.league, periods: state.periods, scoring: state.scoring }));
+  const dirty = !same(league, base.league) || !same(periods, base.periods) || !same(scoring, base.scoring);
   // Saved settings changed elsewhere (another browser tab) while nothing is edited here: show them.
   useEffect(() => {
-    if (dirty || (same(state.league, base.league) && same(state.periods, base.periods))) return;
+    if (dirty || (same(state.league, base.league) && same(state.periods, base.periods) && same(state.scoring, base.scoring))) return;
     setLeague(structuredClone(state.league));
     setPeriods(structuredClone(state.periods));
-    setBase({ league: state.league, periods: state.periods });
-  }, [state.league, state.periods]); // eslint-disable-line react-hooks/exhaustive-deps
+    setScoring(structuredClone(state.scoring));
+    setBase({ league: state.league, periods: state.periods, scoring: state.scoring });
+  }, [state.league, state.periods, state.scoring]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     leaveGuard.current = () => !dirty || globalThis.confirm('Discard your unsaved league settings changes?');
     return () => {
@@ -47,17 +50,29 @@ export function LeagueSettingsPage({ leaveGuard }: { leaveGuard: LeaveGuard }) {
   const leagueErrors = validateLeague(league, { allowBlank: true });
   const filledActive = league.slots.reduce((n, s) => n + (Number.isNaN(s.count) ? 0 : s.count), 0);
   const periodErrors = periods.map(validatePeriod);
-  const hasErrors = leagueErrors.length > 0 || periodErrors.some(Boolean) || periods.length === 0;
+  const scoringError = scoring.skater.length === 0 ? 'Choose at least one skater category.' : null;
+  const hasErrors = leagueErrors.length > 0 || periodErrors.some(Boolean) || periods.length === 0 || !!scoringError;
 
+  // Saving confirms the scoring categories shown (the user has reviewed them on this page).
   const save = () => {
+    const confirmed = { ...scoring, confirmed: true };
     dispatch({ type: 'setLeague', league });
     dispatch({ type: 'setPeriods', periods });
-    setBase({ league, periods });
+    dispatch({ type: 'setScoring', scoring: confirmed });
+    setScoring(confirmed);
+    setBase({ league, periods, scoring: confirmed });
     toast('Settings saved');
   };
   const discard = () => {
     setLeague(structuredClone(base.league));
     setPeriods(structuredClone(base.periods));
+    setScoring(structuredClone(base.scoring));
+  };
+  const toggleCat = <K extends 'skater' | 'goalie'>(kind: K, id: ScoringSettings[K][number], on: boolean, order: readonly { id: string }[]) => {
+    const set = new Set<string>(scoring[kind]);
+    if (on) set.add(id);
+    else set.delete(id);
+    setScoring({ ...scoring, [kind]: order.map((c) => c.id).filter((x) => set.has(x)) });
   };
   const num = (v: string) => (v === '' ? NaN : Math.floor(Number(v)));
   const updSlot = (i: number, patch: Partial<LeagueConfig['slots'][number]>) =>
@@ -111,6 +126,43 @@ export function LeagueSettingsPage({ leaveGuard }: { leaveGuard: LeaveGuard }) {
           {leagueErrors.length > 0 && (
             <div className="notice error" style={{ marginTop: 8 }}>
               {leagueErrors.join(' ')}
+            </div>
+          )}
+
+          <h3>
+            Scoring Categories{' '}
+            {!base.scoring.confirmed && (
+              <span className="needs-mark" aria-hidden="true">
+                !
+              </span>
+            )}
+          </h3>
+          <p className="small muted cat-note">
+            Used by Custom Insights. {base.scoring.confirmed ? 'Saved.' : 'Review the categories your league uses, then Save to confirm.'}
+          </p>
+          <div className="cat-grid">
+            <fieldset>
+              <legend>Skaters</legend>
+              {SKATER_CATEGORIES.map((c) => (
+                <label key={c.id} className="cat-check">
+                  <input type="checkbox" checked={scoring.skater.includes(c.id)} onChange={(e) => toggleCat('skater', c.id, e.target.checked, SKATER_CATEGORIES)} />
+                  {c.label}
+                </label>
+              ))}
+            </fieldset>
+            <fieldset>
+              <legend>Goalies</legend>
+              {GOALIE_CATEGORIES.map((c) => (
+                <label key={c.id} className="cat-check">
+                  <input type="checkbox" checked={scoring.goalie.includes(c.id)} onChange={(e) => toggleCat('goalie', c.id, e.target.checked, GOALIE_CATEGORIES)} />
+                  {c.label}
+                </label>
+              ))}
+            </fieldset>
+          </div>
+          {scoringError && (
+            <div className="notice error" style={{ marginTop: 8 }}>
+              {scoringError}
             </div>
           )}
 

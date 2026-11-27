@@ -148,6 +148,22 @@ async function main() {
     }
   }
 
+  // The previous season (the Talent baseline): fetched once and kept in the private repository.
+  const PREV = `${Number(SEASON.slice(0, 4)) - 1}${SEASON.slice(0, 4)}`;
+  let previousSeason = await readJson<SeasonData & { season?: string }>(`${STATE_DIR}/past-season.json`);
+  if (!previousSeason || previousSeason.season !== PREV) {
+    try {
+      previousSeason = { ...(await fetchSeasonData(getJson, PREV, nowIso)), season: PREV };
+      await writeFile(`${STATE_DIR}/past-season.json`, JSON.stringify(previousSeason));
+      changed = true;
+      log(`Insights: previous season ${PREV}: ${Object.keys(previousSeason.skaters).length} skaters`);
+    } catch (err) {
+      previousSeason = undefined;
+      warn(`previous season reports failed; Talent baselines fall back to position averages: ${(err as Error).message}`);
+    }
+  }
+  const previousSkaterStats = await readJson<SkaterStatsFile>(`public/data/skater-stats-${PREV}.json`);
+
   const previous = await readJson<InsightsInputsFile>(OUT);
   if (changed) {
     state.meta.updatedAt = nowIso;
@@ -157,7 +173,7 @@ async function main() {
     log(`Insights: nothing new; ${requests} requests`);
     return;
   }
-  const next = buildInsightsInputs({ state, season, players, skaterStats, target: plan.target, cfg: CFG, nowIso });
+  const next = buildInsightsInputs({ state, season, players, skaterStats, previousSeason, previousSkaterStats: previousSkaterStats?.season === PREV ? previousSkaterStats : undefined, target: plan.target, cfg: CFG, nowIso });
   const problems = insightsUpdateProblems(next, previous, players, skaterStats, !!season);
   if (problems.length) {
     warn(`insights-inputs.json NOT updated; kept the previous file: ${problems.join('; ')}`);

@@ -1,6 +1,7 @@
 import { isValidISODate } from '../domain/dates.ts';
 import { DEFAULT_LEAGUE, DEFAULT_PERIODS, NEW_USER_LEAGUE, isLeagueComplete, validateLeague } from '../domain/league.ts';
 import { isEmptyOverride, type DayOverride } from '../domain/optimizer.ts';
+import { DEFAULT_SCORING, isScoringComplete, loadScoring, type ScoringSettings } from '../domain/scoring.ts';
 import { POSITIONS, type ISODate, type LeagueConfig, type Period, type Player, type Position, type RosterEntry } from '../domain/types.ts';
 
 /**
@@ -25,6 +26,8 @@ export type Selection = string; // a playoff round id, 'all', or a custom period
 export interface AppState {
   version: number;
   league: LeagueConfig;
+  /** Scoring categories for Custom Insights; unconfirmed until saved in League Settings. */
+  scoring: ScoringSettings;
   periods: Period[];
   custom: { start: ISODate; end: ISODate };
   selection: Selection;
@@ -38,9 +41,18 @@ export interface AppState {
 
 export const EMPTY_SCENARIO: Scenario = { drops: [], adds: [] };
 
-/** What still needs the user's input (2026-11-26): each clears on its own, never by visiting a tab. */
-export function setupNeeds(state: Pick<AppState, 'league' | 'roster'>): { league: boolean; roster: boolean } {
-  return { league: !isLeagueComplete(state.league), roster: state.roster.length === 0 };
+/**
+ * What still needs the user's input (2026-11-26): each clears on its own, never by visiting a tab.
+ * League Settings also needs confirmed scoring categories (2026-11-28), for new and existing users.
+ */
+export function setupNeeds(state: Pick<AppState, 'league' | 'roster' | 'scoring'>): { league: boolean; roster: boolean } {
+  return { league: !isLeagueComplete(state.league) || !isScoringComplete(state.scoring), roster: state.roster.length === 0 };
+}
+
+/** Custom Insights opens only when all setup is complete: roster, league and confirmed scoring categories. */
+export function customInsightsReady(state: Pick<AppState, 'league' | 'roster' | 'scoring'>): boolean {
+  const n = setupNeeds(state);
+  return !n.league && !n.roster;
 }
 
 export function initialState(): AppState {
@@ -48,6 +60,7 @@ export function initialState(): AppState {
     version: STATE_VERSION,
     // New users start with a blank league (roster size, IR slots, slot counts); playoff rounds keep their defaults.
     league: structuredClone(NEW_USER_LEAGUE),
+    scoring: structuredClone(DEFAULT_SCORING),
     periods: structuredClone(DEFAULT_PERIODS),
     custom: { start: DEFAULT_PERIODS[0]!.start, end: DEFAULT_PERIODS[DEFAULT_PERIODS.length - 1]!.end },
     selection: DEFAULT_PERIODS[0]!.id,
@@ -63,6 +76,7 @@ export type Action =
   | { type: 'setCustom'; start: ISODate; end: ISODate }
   | { type: 'setPeriods'; periods: Period[] }
   | { type: 'setLeague'; league: LeagueConfig }
+  | { type: 'setScoring'; scoring: ScoringSettings }
   | { type: 'addPlayers'; ids: string[] }
   | { type: 'removePlayer'; id: string }
   | { type: 'updateEntry'; id: string; patch: Partial<Omit<RosterEntry, 'playerId'>> }
@@ -118,6 +132,8 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'setLeague':
       // Roster and lineups are kept; conflicts are reported for the user to resolve.
       return { ...state, league: action.league };
+    case 'setScoring':
+      return { ...state, scoring: action.scoring };
     case 'addPlayers': {
       const have = new Set(state.roster.map((e) => e.playerId));
       const added = action.ids.filter((id) => !have.has(id) && (have.add(id), true));
@@ -291,6 +307,8 @@ export function deserialize(raw: string | null): { state: AppState; notice?: str
     // Saved data means an existing user: an unreadable saved league falls back to the standard defaults
     // as before, never to the new-user blank league.
     league: league ?? structuredClone(DEFAULT_LEAGUE),
+    // Saves from before scoring categories existed load as the preselected, unconfirmed default.
+    scoring: loadScoring(data.scoring),
     periods: periods ?? base.periods,
     custom,
     selection: typeof data.selection === 'string' ? data.selection : base.selection,

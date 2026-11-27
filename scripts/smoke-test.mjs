@@ -54,7 +54,7 @@ if (existsSync('public/data/insights-inputs.json')) {
   if (!res?.ok) console.log(`insights inputs: not served yet (${res ? `HTTP ${res.status}` : 'no response'}); the deploy may still be propagating`);
   else {
     const ins = await res.json();
-    if (ins.version !== 1 || !ins.players || !ins.teams || !ins.goalies || typeof ins.complete !== 'boolean') fail('insights-inputs.json is malformed');
+    if (![1, 2].includes(ins.version) || !ins.players || !ins.teams || !ins.goalies || typeof ins.complete !== 'boolean') fail('insights-inputs.json is malformed');
     if (Object.values(ins.players).some((p) => p.games || p.lines)) fail('insights-inputs.json contains raw game lines');
     console.log(`insights inputs OK: ${Object.keys(ins.players).length} skaters, ${Object.keys(ins.goalies).length} goalies, nights ${ins.windowNights}/${ins.windowTarget}`);
   }

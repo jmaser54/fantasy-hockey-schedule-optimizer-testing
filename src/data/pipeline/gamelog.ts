@@ -13,11 +13,11 @@ export type GetJson = (url: string) => Promise<unknown>;
 export const PAGE = 100;
 const MAX_PAGES = 200;
 
-/** Skater line: team, g, a, a1, a2, pts, evPts, ppp, sog, hit, blk, pim, pm, toi, evToi, ppToi, shToi. */
+/** Skater line: team, g, a, a1, a2, pts, evPts, ppp, sog, hit, blk, pim, pm, toi, evToi, ppToi, shToi, evG, ppG, shp. */
 export type SkaterLine = [string, ...(number | null)[]];
 /** Goalie line: team, gs, sv, sa, ga, toi, result ("W" | "L" | "OTL" | null). */
 export type GoalieLine = [string, number, number, number, number, number, 'W' | 'L' | 'OTL' | null];
-export const SKATER_FIELDS = ['g', 'a', 'a1', 'a2', 'pts', 'evPts', 'ppp', 'sog', 'hit', 'blk', 'pim', 'pm', 'toi', 'evToi', 'ppToi', 'shToi'] as const;
+export const SKATER_FIELDS = ['g', 'a', 'a1', 'a2', 'pts', 'evPts', 'ppp', 'sog', 'hit', 'blk', 'pim', 'pm', 'toi', 'evToi', 'ppToi', 'shToi', 'evG', 'ppG', 'shp'] as const;
 
 export interface TeamGame {
   home: boolean;
@@ -157,6 +157,7 @@ export function assembleGames(rows: Record<GameReport, Json[]>): AssembleResult 
         int(r.goals), int(r.assists), int(c.totalPrimaryAssists), int(c.totalSecondaryAssists), int(r.points), int(r.evPoints), int(r.ppPoints),
         int(r.shots), int(c.hits), int(c.blockedShots), int(r.penaltyMinutes), int(r.plusMinus),
         int(t.timeOnIce), int(t.evTimeOnIce), int(t.ppTimeOnIce), int(t.shTimeOnIce),
+        int(r.evGoals), int(r.ppGoals), int(r.shPoints),
       ];
       const teamPpToi = rec.teams[line[0]]?.ppToi;
       const ppToi = line[15];

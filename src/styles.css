@@ -774,3 +774,33 @@ input[aria-invalid='true'] { border-color: var(--bad); }
 }
 @keyframes sh-slide { from { transform: translateX(0); } to { transform: translateX(calc(-1 * var(--sh-max, 0px))); } }
 @keyframes sh-hold { from { transform: translateX(0); } to { transform: translateX(var(--sh-max, 0px)); } }
+
+/* League Settings: scoring categories, two compact columns (2026-11-28). */
+.cat-note { margin: 2px 0 8px; }
+.cat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
+.cat-grid fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.cat-grid legend { font-weight: 600; font-size: 13px; padding: 0; margin-bottom: 4px; }
+.cat-check { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 2px 0; line-height: 1.3; }
+.cat-check input { width: 16px; height: 16px; margin: 0; flex: none; }
+
+/* Insights (2026-11-28). */
+.insight-body { display: grid; gap: 14px; }
+.insight-group h3 { margin: 0 0 2px; font-size: 14px; }
+.insight-note { margin: 0 0 8px; }
+.insight-cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.insight-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface); min-width: 0; }
+.insight-title { font-weight: 600; margin-bottom: 4px; overflow-wrap: anywhere; }
+.insight-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 13px; }
+.insight-line { overflow-wrap: anywhere; }
+.insight-line.expectation { color: var(--muted); }
+.insight-tag { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-right: 6px; vertical-align: 1px; }
+.insight-actions { margin-top: 8px; }
+.insight-warnings { margin: 0; padding: 8px 12px 8px 28px; border-radius: 8px; background: var(--warn-soft); font-size: 13px; }
+.cat-leaders { display: contents; }
+.leaders { margin: 0; padding-left: 20px; font-size: 13px; display: grid; gap: 2px; }
+.leaders .num { float: right; font-variant-numeric: tabular-nums; }
+.setup-list { margin: 4px 0 8px; padding-left: 20px; display: grid; gap: 6px; }
+.goalie-schedule { border-top: 1px solid var(--border); padding-top: 10px; }
+@media (max-width: 420px) {
+  .insight-cards { grid-template-columns: 1fr; }
+}

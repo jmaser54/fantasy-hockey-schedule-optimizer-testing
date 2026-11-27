@@ -1,3 +1,5 @@
+import type { PosGroup } from '../domain/insightsSettings.ts';
+import type { PpStatus } from '../domain/ppStatus.ts';
 import type { Game, Player, Team } from '../domain/types.ts';
 
 /** Bump when the on-disk shape changes incompatibly. */
@@ -47,7 +49,7 @@ export interface OwnershipFile {
 }
 
 /** Shape version of insights-inputs.json. */
-export const INSIGHTS_VERSION = 1;
+export const INSIGHTS_VERSION = 2;
 export const INSIGHTS_PATH = 'data/insights-inputs.json';
 
 /** Production evidence (Talent) for a window of games. Sums; null when a game had the value missing. */
@@ -64,6 +66,10 @@ export interface TalentEvidence {
   blk: number | null;
   pim: number | null;
   pm: number | null;
+  /** Even-strength goals, power-play goals, short-handed points (version 2). */
+  evG: number | null;
+  ppG: number | null;
+  shp: number | null;
 }
 
 /**
@@ -134,7 +140,9 @@ export interface InsightsInputsFile {
     season: string;
     evidence: { talent: true; opportunity: { toi: boolean; ppShare: boolean; linemates: boolean; ppUnit: boolean; teammateQuality: boolean } };
   };
-  players: Record<string, { team: string; last5?: SkaterWindow; last10?: SkaterWindow; season?: SkaterSeason }>;
+  players: Record<string, { team: string; last5?: SkaterWindow; last10?: SkaterWindow; window?: SkaterWindow; season?: SkaterSeason; features?: SkaterFeatures }>;
+  /** League-wide context: average team PP seconds per game this season. */
+  league: { ppToiPg: number | null };
   teams: Record<
     string,
     {
@@ -142,7 +150,47 @@ export interface InsightsInputsFile {
       last10?: { gp: number; gf: number; sf: number; ppOpp: number; ppGoals: number; ppToi: number; ppPct: number | null };
     }
   >;
-  goalies: Record<string, { team: string; lastStart: string | null; last5?: GoalieWindow; season?: GoalieWindow & { gaa: number | null } }>;
+  goalies: Record<
+    string,
+    {
+      team: string;
+      lastStart: string | null;
+      last5?: GoalieWindow;
+      season?: GoalieWindow & { gaa: number | null };
+      /** Verified starts (gamesStarted) against his current team's games in the window, newest first. */
+      starts?: { teamGames: number; starts: number; last10TeamGames: number; startsLast10: number; consecutiveStarts: number };
+    }
+  >;
+}
+
+/** Blended Talent rates per 60 minutes of the matching situation (sog, hit, blk, pim, pm, fow: per 60 of all ice time). */
+export type TalentRates = Record<'evPts' | 'ppPts' | 'shPts' | 'evG' | 'ppG' | 'shG' | 'sog' | 'hit' | 'blk' | 'pim' | 'pm' | 'fow', number | null>;
+
+/** Expected minutes per game (ice time in minutes; ppShare = share of his team's PP time, 0–1). */
+export interface ExpectedMinutes {
+  toi: number;
+  evToi: number;
+  shToi: number;
+  ppShare: number;
+}
+
+/** Derived per-skater features (computed privately from the game window; no game lines). */
+export interface SkaterFeatures {
+  group: PosGroup;
+  rates: TalentRates;
+  /** Current-season games behind the rates. */
+  rateGames: number;
+  /** Baseline used: his previous season, or players at his position. */
+  prior: 'player' | 'position';
+  minutes: { nextWeek: ExpectedMinutes; playoffs: ExpectedMinutes };
+  pp: PpStatus;
+  /** Even-strength minutes per game (supporting evidence only). */
+  evMinutes: { last5: number | null; window: number | null; windowGames: number };
+  /** Latest appearance in the window and his current team's games since then (a fact; the cause is unknown). */
+  lastGame: string | null;
+  teamGamesSinceLast: number | null;
+  /** Points per game this season and last season (for production changes judged on full samples). */
+  production: { gp: number; ptsPg: number | null; prevGp: number; prevPtsPg: number | null };
 }
 
 /** NHL skater position codes as reported by the stats API. */

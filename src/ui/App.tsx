@@ -13,6 +13,7 @@ import { AboutView } from './About.tsx';
 import { EvaluatorView } from './Evaluator.tsx';
 import { ContactForm } from './Contact.tsx';
 import { LineupView } from './Lineup.tsx';
+import { CustomInsightsView, GeneralInsightsView } from './Insights.tsx';
 import { GridView, RankingsView } from './Rankings.tsx';
 import { RosterView } from './Roster.tsx';
 import { LeagueSettingsPage } from './Settings.tsx';
@@ -35,20 +36,27 @@ const TEAM_TABS = [
   { id: 'roster', label: 'My Roster' },
   { id: 'league-settings', label: 'League Settings' },
 ] as const;
-const ALL_TABS = [...TABS, ...EVALUATOR_TABS, ...TEAM_TABS];
+/** Insights' destinations (2026-11-28): General (always available) and Custom (needs setup). */
+const INSIGHTS_TABS = [
+  { id: 'insights-general', label: 'General Insights' },
+  { id: 'insights-custom', label: 'Custom Insights' },
+] as const;
+const ALL_TABS = [...TABS, ...EVALUATOR_TABS, ...INSIGHTS_TABS, ...TEAM_TABS];
 type TabId = (typeof ALL_TABS)[number]['id'];
 const isEvaluatorTab = (t: TabId) => EVALUATOR_TABS.some((e) => e.id === t);
 const isTeamTab = (t: TabId) => TEAM_TABS.some((e) => e.id === t);
+const isInsightsTab = (t: TabId) => INSIGHTS_TABS.some((e) => e.id === t);
 
 /** The product areas (primary navigation), in this order; each shows its own destinations beneath. */
-type AreaId = 'planner' | 'evaluator' | 'team';
+type AreaId = 'planner' | 'evaluator' | 'insights' | 'team';
 const AREAS: { id: AreaId; label: string; first: TabId }[] = [
   { id: 'planner', label: 'Games Optimizer', first: 'rankings' },
   { id: 'evaluator', label: 'Player Normalizer', first: 'evaluator' },
+  { id: 'insights', label: 'Insights', first: 'insights-general' },
   { id: 'team', label: 'My Team', first: 'roster' },
 ];
-const AREA_TABS: Record<AreaId, readonly { id: TabId; label: string }[]> = { planner: TABS, evaluator: EVALUATOR_TABS, team: TEAM_TABS };
-const areaOf = (t: TabId): AreaId => (isEvaluatorTab(t) ? 'evaluator' : isTeamTab(t) ? 'team' : 'planner');
+const AREA_TABS: Record<AreaId, readonly { id: TabId; label: string }[]> = { planner: TABS, evaluator: EVALUATOR_TABS, insights: INSIGHTS_TABS, team: TEAM_TABS };
+const areaOf = (t: TabId): AreaId => (isEvaluatorTab(t) ? 'evaluator' : isTeamTab(t) ? 'team' : isInsightsTab(t) ? 'insights' : 'planner');
 
 const isAboutHash = () => globalThis.location?.hash === '#about';
 
@@ -221,6 +229,8 @@ export function App() {
             {!about && tab === 'league-settings' && <LeagueSettingsPage leaveGuard={leaveGuard} />}
             {!about && tab === 'lineup' && <LineupView onGoRoster={() => go('roster')} />}
             {!about && tab === 'trades' && <TradesView onGoRoster={() => go('roster')} />}
+            {!about && tab === 'insights-general' && <GeneralInsightsView />}
+            {!about && tab === 'insights-custom' && <CustomInsightsView onGoRoster={() => go('roster')} onGoTrades={() => go('trades')} />}
             {/* One element for both destinations, so the shared state survives switching between them. */}
             {!about && isEvaluatorTab(tab) && <EvaluatorView page={tab === 'player-rankings' ? 'rankings' : 'roster'} onGoRoster={() => go('roster')} />}
           </Ready>

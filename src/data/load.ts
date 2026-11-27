@@ -148,3 +148,13 @@ export function insightsTrendsUsable(f: InsightsInputsFile | undefined, now = Da
   const t = Date.parse(f.generatedAt);
   return !Number.isNaN(t) && now - t <= INSIGHTS_STALE_AFTER_MS;
 }
+
+/**
+ * The Insights engine's data rule: the file is fresh (at most 48 hours old). It doesn't wait for a full
+ * window: each insight checks its own evidence (for example, PP confirmation needs 28 usable games).
+ */
+export function insightsDataFresh(f: InsightsInputsFile | undefined, now = Date.now()): boolean {
+  if (!f) return false;
+  const t = Date.parse(f.generatedAt);
+  return !Number.isNaN(t) && now - t <= INSIGHTS_STALE_AFTER_MS;
+}

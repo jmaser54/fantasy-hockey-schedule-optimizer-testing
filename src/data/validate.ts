@@ -3,6 +3,7 @@
  * refresh script (a failing check aborts the write) and by the app at load
  * time (a failing check is surfaced as a data-status error, never ignored).
  */
+import { PP_RULE } from '../domain/insightsSettings.ts';
 import { isValidISODate } from '../domain/dates.ts';
 import { POSITIONS } from '../domain/types.ts';
 import { DATA_VERSION, INSIGHTS_VERSION, OWNERSHIP_VERSION, type PlayersFile, type ScheduleFile, type SkaterStatsFile } from './format.ts';
@@ -241,6 +242,20 @@ export function validateInsightsInputs(data: unknown, opts: { season?: string; p
     if (share !== null && !(typeof share === 'number' && share >= 0 && share <= 1)) errors.push(`${id} ${name}: ppShare ${String(share)}.`);
     return 0;
   };
+  const PP_STATES = ['insufficient', 'none', 'observed', 'confirmed'];
+  const checkFeatures = (id: string, f: unknown) => {
+    if (!isObj(f) || (f.group !== 'F' && f.group !== 'D') || !isObj(f.rates) || !isObj(f.minutes) || !isObj(f.pp)) return errors.push(`${id} features are malformed.`);
+    for (const [k, v] of Object.entries(f.rates)) if (!(v === null || (typeof v === 'number' && Number.isFinite(v) && (k === 'pm' || v >= 0)))) errors.push(`${id} features.rates.${k} ${String(v)}.`);
+    for (const c of ['nextWeek', 'playoffs']) {
+      const m = f.minutes[c];
+      if (!isObj(m) || !['toi', 'evToi', 'shToi'].every((k) => typeof m[k] === 'number' && (m[k] as number) >= 0 && (m[k] as number) < 70) || !(typeof m.ppShare === 'number' && m.ppShare >= 0 && m.ppShare <= 1)) errors.push(`${id} features.minutes.${c} is invalid.`);
+    }
+    if (!PP_STATES.includes(f.pp.state as string)) errors.push(`${id} features.pp.state ${String(f.pp.state)}.`);
+    // Rules that must hold in the data itself: only forwards are confirmed, and only with enough history.
+    if (f.pp.state === 'confirmed' && f.group !== 'F') errors.push(`${id}: a defenceman has a confirmed PP promotion.`);
+    if (f.pp.state !== 'insufficient' && !((f.pp.usableGames as number) >= PP_RULE.minUsableGames)) errors.push(`${id}: PP status without enough usable games.`);
+    return 0;
+  };
   let unknown = 0;
   for (const [id, p] of Object.entries(data.players)) {
     if (!/^nhl-\d+$/.test(id) || !isObj(p) || typeof p.team !== 'string' || !/^[A-Z]{3}$/.test(p.team)) { errors.push(`Insights player ${id} is malformed.`); continue; }
@@ -248,6 +263,8 @@ export function validateInsightsInputs(data: unknown, opts: { season?: string; p
     if (p.last5 !== undefined) checkWindow(id, 'last5', p.last5, 5);
     if (p.last10 !== undefined) checkWindow(id, 'last10', p.last10, 10);
     if (isObj(p.last5) && isObj(p.last10) && (p.last5.gp as number) > (p.last10.gp as number)) errors.push(`${id}: last5 has more games than last10.`);
+    if (p.window !== undefined) checkWindow(id, 'window', p.window, 120);
+    if (p.features !== undefined) checkFeatures(id, p.features);
     if (p.season !== undefined && (!isObj(p.season) || !Number.isInteger(p.season.gp) || (p.season.gp as number) < 1 || !isObj(p.season.talent) || !isObj(p.season.opportunity))) errors.push(`${id} season block is malformed.`);
   }
   for (const [id, g] of Object.entries(data.goalies)) {

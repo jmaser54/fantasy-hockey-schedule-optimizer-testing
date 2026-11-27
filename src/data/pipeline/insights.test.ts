@@ -180,6 +180,27 @@ describe('insights inputs', () => {
     expect(validateInsightsInputs(f).errors).toEqual([]);
   });
 
+  it('publishes derived features only: no game lines, game ids or per-game arrays', () => {
+    const f = build();
+    const text = JSON.stringify(f);
+    expect(text).not.toMatch(/202602030\d/); // no game ids
+    for (const p of Object.values(f.players)) {
+      expect(Object.keys(p).every((k) => ['team', 'last5', 'last10', 'window', 'season', 'features'].includes(k))).toBe(true);
+      const arrays = JSON.stringify(p).match(/\[/g) ?? [];
+      expect(arrays.length).toBe(0);
+    }
+    const feat = f.players['nhl-8470000']!.features!;
+    expect(feat.pp.state).toBe('insufficient'); // six games: far below 28 usable games
+    expect(f.players['nhl-8470000']!.window!.gp).toBe(6);
+    expect(f.goalies['nhl-8470050']!.starts).toMatchObject({ teamGames: 6, starts: 6, consecutiveStarts: 6 });
+  });
+
+  it('does not let an older-format file block the first file of a new format', () => {
+    const f = build();
+    const old = { ...f, version: 1, windowNights: 30, players: { ...f.players, ...Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`nhl-${9000 + i}`, { team: 'BOS' }])) } };
+    expect(insightsUpdateProblems(f, old as typeof f, players, stats, true)).toEqual([]);
+  });
+
   it('keeps unknowns unknown and includes only current NHL roster players', () => {
     const f = build({ ...DEFAULT_CONFIG, ppShareMinSeconds: 5000 });
     expect(f.players['nhl-8470000']!.last5!.opportunity.ppShare).toBeNull(); // too little team PP time to judge

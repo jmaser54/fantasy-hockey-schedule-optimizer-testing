@@ -4,7 +4,10 @@ import { toLineupPlayers, validateRoster } from '../domain/roster.ts';
 import { DEFAULT_LEAGUE, DEFAULT_PERIODS, isLeagueComplete, validateLeague } from '../domain/league.ts';
 import { player as lp, sched, slots } from '../domain/testUtils.ts';
 import type { LeagueConfig, Player } from '../domain/types.ts';
-import { STORAGE_KEY, deserialize, initialState, proposedRoster, reducer, serialize, setupNeeds, storageKeyFor, type AppState } from './appState.ts';
+import { DEFAULT_SCORING } from '../domain/scoring.ts';
+import { STORAGE_KEY, customInsightsReady, deserialize, initialState, proposedRoster, reducer, serialize, setupNeeds, storageKeyFor, type AppState } from './appState.ts';
+
+const CONFIRMED = { ...DEFAULT_SCORING, confirmed: true };
 
 const P = (id: string, team: string, positions: Player['positions'] = ['C']): Player => ({ id, name: id, team, positions, eligibilitySource: 'nhl' });
 
@@ -283,9 +286,12 @@ describe('new-user league setup and completion marks (2026-11-26)', () => {
     expect(state.league).toEqual(saved.league);
     expect(state.periods).toEqual(saved.periods);
     expect(state.roster).toEqual(saved.roster);
-    expect(setupNeeds(state)).toEqual({ league: false, roster: false });
+    // Saved before scoring categories existed: preselected, unconfirmed, so League Settings is marked.
+    expect(state.scoring).toEqual(DEFAULT_SCORING);
+    expect(setupNeeds(state)).toEqual({ league: true, roster: false });
+    expect(setupNeeds({ ...state, scoring: CONFIRMED })).toEqual({ league: false, roster: false });
     // A save made before this change (standard defaults) stays the standard defaults.
-    const old = deserialize(JSON.stringify({ league: DEFAULT_LEAGUE, roster: [] })).state;
+    const old = deserialize(JSON.stringify({ league: DEFAULT_LEAGUE, roster: [], scoring: CONFIRMED })).state;
     expect(old.league).toEqual(DEFAULT_LEAGUE);
     expect(setupNeeds(old)).toEqual({ league: false, roster: true });
   });
@@ -297,7 +303,7 @@ describe('new-user league setup and completion marks (2026-11-26)', () => {
   });
 
   it('the two marks clear independently, only by completing their own section', () => {
-    let s = initialState();
+    let s = reducer(initialState(), { type: 'setScoring', scoring: CONFIRMED });
     expect(setupNeeds(s)).toEqual({ league: true, roster: true });
     s = reducer(s, { type: 'addPlayers', ids: ['a'] });
     expect(setupNeeds(s)).toEqual({ league: true, roster: false });
@@ -307,12 +313,28 @@ describe('new-user league setup and completion marks (2026-11-26)', () => {
     s = reducer(s, { type: 'setLeague', league: DEFAULT_LEAGUE });
     expect(setupNeeds(s)).toEqual({ league: false, roster: false });
     // League first, roster still marked.
-    let t = reducer(initialState(), { type: 'setLeague', league: DEFAULT_LEAGUE });
+    let t = reducer(reducer(initialState(), { type: 'setScoring', scoring: CONFIRMED }), { type: 'setLeague', league: DEFAULT_LEAGUE });
     expect(setupNeeds(t)).toEqual({ league: false, roster: true });
     t = reducer(t, { type: 'addPlayers', ids: ['a'] });
     t = reducer(t, { type: 'clearRoster' });
     expect(setupNeeds(t)).toEqual({ league: false, roster: true });
     expect(complete(t.league)).toBe(true);
+  });
+
+  it('scoring categories: preselected, confirmed only by saving, and required for Custom Insights', () => {
+    const s = initialState();
+    expect(s.scoring.confirmed).toBe(false);
+    expect(s.scoring.skater).toContain('shp');
+    let ready = reducer(reducer(s, { type: 'setLeague', league: DEFAULT_LEAGUE }), { type: 'addPlayers', ids: ['a'] });
+    expect(customInsightsReady(ready)).toBe(false); // categories not confirmed
+    ready = reducer(ready, { type: 'setScoring', scoring: { ...CONFIRMED, skater: ['g', 'hit'] } });
+    expect(customInsightsReady(ready)).toBe(true);
+    expect(customInsightsReady(reducer(ready, { type: 'clearRoster' }))).toBe(false);
+    // Round trip, and tolerant loading of odd saved values.
+    expect(deserialize(serialize(ready)).state.scoring).toEqual({ skater: ['g', 'hit'], goalie: DEFAULT_SCORING.goalie, confirmed: true });
+    expect(deserialize(JSON.stringify({ scoring: { skater: [], goalie: [], confirmed: true } })).state.scoring.confirmed).toBe(false);
+    expect(deserialize(JSON.stringify({ scoring: 'x' })).state.scoring).toEqual(DEFAULT_SCORING);
+    expect(deserialize(JSON.stringify({ scoring: { skater: ['g', 'nope'], goalie: [], confirmed: true } })).state.scoring).toEqual({ skater: ['g'], goalie: [], confirmed: false });
   });
 
   it('an incomplete league yields no lineup seats and no roster-limit warnings', () => {
