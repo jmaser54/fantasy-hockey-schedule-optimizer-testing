@@ -214,13 +214,27 @@ describe('extractRosterNames (whole roster pages, pasted or from screenshots)', 
     // Real OCR lines: the C slot pill ran into "T." and its dot was lost ("BT"); the dot after S read as a hyphen.
     const ocr = ['EDIT SKATERS OPP G', 'L. Draisaitl I }', '\u00ae.c', 'BT Stutzle |', '@ C, LW', '(Co) &  S-Gostisbehere | i', 'w @D', 'Power Play Shorthanded'].join('\n');
     const r = extractRosterNames(ocr, more, teams);
-    expect(ids(r.matched).sort()).toEqual(['10', '11']);
-    // Without a dot the initial is only a suggestion, with the one fitting player preselected.
-    expect(r.review.map((x) => [x.name, x.result.status, x.preselect])).toEqual([['T. Stutzle', 'suggested', '4']]);
+    // "BT": not a team code or slot label, T + Stutzle fits one player and nobody else is called Stützle → added.
+    expect(ids(r.matched).sort()).toEqual(['10', '11', '4']);
+    expect(r.review).toEqual([]);
     expect(r.unrecognized).toEqual([]);
     // A team code is not a slot + initial ("OTT Stutzle" is not "T. Stutzle"), and nothing is added from it.
     expect(extractRosterNames('OTT Stutzle', more, teams).review.map((x) => x.name)).not.toContain('T. Stutzle');
     expect(extractRosterNames('OTT Stutzle', more, teams).matched).toEqual([]);
+  });
+
+  it('adds a slot run into a dotless initial only when the surname is unique; labels and shared surnames stay cautious', () => {
+    const idx = buildPlayerIndex([...players, P('16', 'Will Smithers', 'BUF'), P('17', 'T.J. Hughes', 'MIN')]);
+    const t = new Set([...teams, 'BUF', 'MIN']);
+    expect(ids(extractRosterNames('CW Smithers', idx, t).matched)).toEqual(['16']);
+    // A slot label itself ("LW", "RW", "BN"): its last letter is the label's, not an initial.
+    for (const line of ['LW Smithers', 'RW Smithers']) expect([line, extractRosterNames(line, idx, t).matched]).toEqual([line, []]);
+    // A shared surname (Jack and Quinn Hughes, T.J. Hughes): a stray letter could name the wrong one, so confirm.
+    const h = extractRosterNames('BJ Hughes', idx, t);
+    expect(h.matched).toEqual([]);
+    expect([h.review[0]!.result.status, h.review[0]!.preselect]).toEqual(['suggested', '6']);
+    // A two-initial first name read whole is an exact name, not slot + initial: "TJ Hughes" is T.J., not Jack.
+    expect(ids(extractRosterNames('TJ Hughes', idx, t).matched)).toEqual(['17']);
   });
 
   it('ignores ESPN stat column headings but still lists unknown names and matches Owen Power (2026-11-27)', () => {
