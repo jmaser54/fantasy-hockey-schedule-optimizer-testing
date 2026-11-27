@@ -285,24 +285,27 @@ export function extractRosterNames(text: string, index: PlayerIndex, teamIds: Re
     // automatic when the directory has exactly one such player, a review when several share it. OCR noise
     // glued to the initial (a headshot read as "co": "coS. Gostisbehere") and a comma read for its dot
     // ("S, Gostisbehere"; a colon is turned into a dot in lineTokens) still count as a dotted initial; the
-    // rest must still name exactly one player.
+    // rest must still name exactly one player. A slot pill run into an initial that also lost its dot
+    // ("BT Stutzle" on the owner's ESPN screenshot, 2026-11-27) is read the same way but only ever suggested;
+    // team codes ("OTT") are not initials.
     for (let i = 0; i < tokens.length && !found; i++) {
-      const init = /^(?:[a-z]{0,3}[A-Z]{0,2}([A-Z])[.,]|([ABEHIJKLMNOPQRSTVXYZ]))$/.exec(tokens[i]!);
-      if (!init) continue;
+      const init = /^(?:[a-z]{0,3}[A-Z]{0,2}([A-Z])[.,]|([ABEHIJKLMNOPQRSTVXYZ])|[a-z]{0,3}[A-Z]{1,2}([A-Z]))$/.exec(tokens[i]!);
+      if (!init || (init[3] && teamIds.has(tokens[i]!))) continue;
+      const letter = (init[1] ?? init[2] ?? init[3])!;
       for (let k = Math.min(3, tokens.length - i - 1); k >= 1; k--) {
         const rest = normalizeName(tokens.slice(i + 1, i + 1 + k).join(' '));
         if (!rest || /\d/.test(rest)) continue;
-        const key = `${(init[1] ?? init[2])!.toLowerCase()} ${rest}`;
+        const key = `${letter.toLowerCase()} ${rest}`;
         let same = index.byInitial.get(key) ?? [];
         if (same.length === 0) {
           const u = index.umlauts.filter((x) => x.initial.test(key));
           if (u.length === 1) same = [u[0]!.player];
         }
         if (same.length === 0) continue;
-        const name = `${(init[1] ?? init[2])!}. ${tokens.slice(i + 1, i + 1 + k).join(' ')}`;
+        const name = `${letter}. ${tokens.slice(i + 1, i + 1 + k).join(' ')}`;
         const teamHint = teamNear(tokens, i + 1 + k, teamIds);
         // An initial without its dot and with no team beside it ("P Kane said") is weaker evidence: suggest it.
-        const sure = !!init[1] || !!teamHint;
+        const sure = !!init[1] || (!!init[2] && !!teamHint);
         addFound(
           raw,
           name,

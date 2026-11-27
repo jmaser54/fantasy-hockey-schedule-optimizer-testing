@@ -209,6 +209,20 @@ describe('extractRosterNames (whole roster pages, pasted or from screenshots)', 
     expect(ids(extractRosterNames('Oliver Ekman-Larsson TOR\nJean-Gabriel Pageau', hy, new Set([...teams, 'TOR', 'NYI'])).matched).sort()).toEqual(['13', '14']);
   });
 
+  it("the owner's ESPN screenshot as the app's OCR read it (2026-11-27): Stützle, Gostisbehere and a stat heading together", () => {
+    const more = buildPlayerIndex([...players, P('10', 'Shayne Gostisbehere', 'CAR', ['D']), P('11', 'Leon Draisaitl', 'EDM')]);
+    // Real OCR lines: the C slot pill ran into "T." and its dot was lost ("BT"); the dot after S read as a hyphen.
+    const ocr = ['EDIT SKATERS OPP G', 'L. Draisaitl I }', '\u00ae.c', 'BT Stutzle |', '@ C, LW', '(Co) &  S-Gostisbehere | i', 'w @D', 'Power Play Shorthanded'].join('\n');
+    const r = extractRosterNames(ocr, more, teams);
+    expect(ids(r.matched).sort()).toEqual(['10', '11']);
+    // Without a dot the initial is only a suggestion, with the one fitting player preselected.
+    expect(r.review.map((x) => [x.name, x.result.status, x.preselect])).toEqual([['T. Stutzle', 'suggested', '4']]);
+    expect(r.unrecognized).toEqual([]);
+    // A team code is not a slot + initial ("OTT Stutzle" is not "T. Stutzle"), and nothing is added from it.
+    expect(extractRosterNames('OTT Stutzle', more, teams).review.map((x) => x.name)).not.toContain('T. Stutzle');
+    expect(extractRosterNames('OTT Stutzle', more, teams).matched).toEqual([]);
+  });
+
   it('ignores ESPN stat column headings but still lists unknown names and matches Owen Power (2026-11-27)', () => {
     const pw = buildPlayerIndex([...players, P('15', 'Owen Power', 'BUF', ['D'])]);
     const r = extractRosterNames('Power Play Shorthanded\nOwen Power BUF\nO. Power BUF D\nZed Unknownson', pw, new Set([...teams, 'BUF']));
