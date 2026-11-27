@@ -185,9 +185,11 @@ export interface ExtractedRoster {
 
 const NAME_TOKEN = /^(?:[A-ZÀ-Þ][A-Za-zÀ-ÿ'’.-]*|[A-Z]\.)$/;
 /** Words that make a name-like phrase obviously page furniture rather than a missing player. */
-const PAGE_WORDS = new Set(
-  'my team teams roster rosters player players league leagues week weeks today daily season stats points point total totals period scoring waiver waivers position positions free agent agents trade trades lineup lineups edit move bench starters reserve reserves injured matchup matchups schedule settings standings news research projections projected opponent opp status fantasy hockey home add drop players skaters goalies forwards defense active the of and in on at vs final pm am'.split(' '),
-);
+const PAGE_WORDS = new Set([
+  ...'my team teams roster rosters player players league leagues week weeks today daily season stats points point total totals period scoring waiver waivers position positions free agent agents trade trades lineup lineups edit move bench starters reserve reserves injured matchup matchups schedule settings standings news research projections projected opponent opp status fantasy hockey home add drop players skaters goalies forwards defense active the of and in on at vs final pm am'.split(' '),
+  // ESPN stat column headings ("Power Play Shorthanded"). Not "power": Owen Power is a player.
+  ...'play powerplay shorthanded goals assists shots blocked penalty minutes hits faceoffs wins saves percentage shutouts against average'.split(' '),
+]);
 
 function lineTokens(line: string): string[] {
   return line

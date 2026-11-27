@@ -209,6 +209,13 @@ describe('extractRosterNames (whole roster pages, pasted or from screenshots)', 
     expect(ids(extractRosterNames('Oliver Ekman-Larsson TOR\nJean-Gabriel Pageau', hy, new Set([...teams, 'TOR', 'NYI'])).matched).sort()).toEqual(['13', '14']);
   });
 
+  it('ignores ESPN stat column headings but still lists unknown names and matches Owen Power (2026-11-27)', () => {
+    const pw = buildPlayerIndex([...players, P('15', 'Owen Power', 'BUF', ['D'])]);
+    const r = extractRosterNames('Power Play Shorthanded\nOwen Power BUF\nO. Power BUF D\nZed Unknownson', pw, new Set([...teams, 'BUF']));
+    expect(ids(r.matched)).toEqual(['15']);
+    expect(r.unrecognized).toEqual(['Zed Unknownson']);
+  });
+
   it('matches names regardless of accents, including letters Unicode does not decompose (ø, æ, ł, ß)', () => {
     expect(['Tim Stützle', 'Frédérick Gaudreau', 'Mads Søgaard', 'Æsa Lærke', 'Łukasz Kępa', 'Weiß'].map(normalizeName)).toEqual([
       'tim stutzle',
