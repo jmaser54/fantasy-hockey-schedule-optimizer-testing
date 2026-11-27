@@ -21,7 +21,6 @@ import { mergeClubSchedules, NHL_BASE, parseClubSchedule, parseRoster, parseStan
 import { reconcilePlayers } from '../src/data/pipeline/reconcile.ts';
 import { fetchStatsReport, joinSkaterStats, STATS_BASE, STATS_REPORTS, type StatsReport } from '../src/data/pipeline/stats.ts';
 import { validatePlayers, validateSchedule, validateSkaterStats } from '../src/data/validate.ts';
-import { normalizeName } from '../src/domain/names.ts'; // TEMPORARY ownership diagnostic 2
 import type { Game } from '../src/domain/types.ts';
 
 const SEASON = process.env.SEASON ?? '20262027';
@@ -121,13 +120,11 @@ async function main() {
 
   // ESPN eligibility (optional)
   let espn: EspnPlayer[] | undefined;
-  let diagBody: Record<string, unknown>[] = []; // TEMPORARY ownership diagnostic 2
   if (!SKIP_ESPN) {
     try {
       const body = await getJson(espnPlayersUrl(ESPN_SEASON), { 'x-fantasy-filter': ESPN_FILTER });
       await saveRaw('espn-players-sample.json', Array.isArray(body) ? body.slice(0, 25) : body);
       espn = parseEspnPlayers(body);
-      if (Array.isArray(body)) diagBody = body as Record<string, unknown>[]; // TEMPORARY ownership diagnostic 2
       log(`ESPN players: ${espn.length}`);
       if (Array.isArray(body)) {
         const keys = new Set<string>();
@@ -155,57 +152,6 @@ async function main() {
   pv.warnings.slice(0, 20).forEach((w) => log(`  warning: ${w}`));
   if (pv.errors.length) throw new Error(`Player validation failed:\n${pv.errors.slice(0, 30).join('\n')}`);
   log(`Directory: ${players.players.length} players; eligibility: ${rec.eligibility.detail}`);
-  // TEMPORARY ownership diagnostic 2 (2026-11-27, Testing only): log-only, to be reverted after one run.
-  if (diagBody.length) {
-    const pct = (r: Record<string, unknown> | undefined) => {
-      const o = r?.ownership as Record<string, unknown> | undefined;
-      return typeof o?.percentOwned === 'number' ? o.percentOwned : undefined;
-    };
-    const byId = new Map(diagBody.map((r) => [r.id as number, r]));
-    const current = players.players.filter((p) => !p.inactive && p.nhlId !== undefined);
-    // ESPN proTeamId -> NHL team, from matched players (majority).
-    const votes = new Map<unknown, Map<string, number>>();
-    for (const p of current) {
-      const r = p.espnId !== undefined ? byId.get(p.espnId) : undefined;
-      if (!r) continue;
-      const m = votes.get(r.proTeamId) ?? new Map<string, number>();
-      m.set(p.team, (m.get(p.team) ?? 0) + 1);
-      votes.set(r.proTeamId, m);
-    }
-    const teamOf = (id: unknown) => [...(votes.get(id)?.entries() ?? [])].sort((a, b) => b[1] - a[1])[0]?.[0] ?? `proTeam ${String(id)}`;
-    const bands: [string, (x: number) => boolean][] = [['0%', (x) => x === 0], ['>0-<1%', (x) => x > 0 && x < 1], ['1-<5%', (x) => x >= 1 && x < 5], ['5-<10%', (x) => x >= 5 && x < 10], ['10-<20%', (x) => x >= 10 && x < 20], ['20-<30%', (x) => x >= 20 && x < 30], ['30-<40%', (x) => x >= 30 && x < 40], ['>=40%', (x) => x >= 40]];
-    const summarize = (label: string, group: typeof current) => {
-      const vals = group.flatMap((p) => {
-        const v = p.espnId !== undefined ? pct(byId.get(p.espnId)) : undefined;
-        return v === undefined ? [] : [{ name: p.name, team: p.team, espnId: p.espnId, pct: v }];
-      }).sort((a, b) => a.pct - b.pct);
-      const n = vals.length;
-      const q = (f: number) => (n ? vals[Math.max(0, Math.ceil(f * n) - 1)]!.pct : NaN);
-      log(`  NHL OWNERSHIP DIAG [${label}]: current NHL players ${group.length}; matched ESPN id with numeric ownership ${n}; not matched ${group.length - n}`);
-      log(`  NHL OWNERSHIP DIAG [${label}]: min ${q(0)} median ${q(0.5)} p75 ${q(0.75)} max ${n ? vals[n - 1]!.pct : NaN} (nearest-rank)`);
-      for (const [b, inBand] of bands) {
-        const g = vals.filter((x) => inBand(x.pct));
-        const ex = g.length <= 4 ? g : [0, 1 / 3, 2 / 3, 1].map((f) => g[Math.round(f * (g.length - 1))]!);
-        log(`  NHL OWNERSHIP DIAG [${label}] band ${b}: ${g.length} (${n ? ((100 * g.length) / n).toFixed(1) : '0'}%)${ex.length ? ` e.g. ${ex.map((x) => `${x.name} ${x.team} (${x.espnId}) ${x.pct}`).join('; ')}` : ''}`);
-      }
-    };
-    summarize('all', current);
-    summarize('skaters', current.filter((p) => !p.positions.includes('G')));
-    summarize('goalies', current.filter((p) => p.positions.includes('G')));
-    // Current NHL players without an ESPN id: ESPN records sharing the surname (alternate first names).
-    const surname = (n: string) => normalizeName(n).split(' ').slice(1).join(' ');
-    for (const p of current.filter((x) => x.espnId === undefined)) {
-      const cands = diagBody.filter((r) => typeof r.fullName === 'string' && surname(r.fullName) === surname(p.name));
-      log(`  NHL OWNERSHIP DIAG missing ESPN id: ${p.name} ${p.team} ${p.positions.join('/')} -> ESPN same-surname records: ${cands.length ? cands.map((r) => `${String(r.fullName)} (${String(r.id)}) ${teamOf(r.proTeamId)} pos ${String(r.defaultPositionId)} own ${pct(r)}`).join('; ') : 'none'}`);
-    }
-    // ESPN duplicates: other ESPN records with the same normalized name as a current NHL player.
-    const dupes: string[] = [];
-    for (const p of current) {
-      const others = diagBody.filter((r) => typeof r.fullName === 'string' && r.id !== p.espnId && normalizeName(r.fullName) === normalizeName(p.name));
-      if (others.length) dupes.push(`${p.name} ${p.team} (matched ${p.espnId ?? 'none'} own ${p.espnId !== undefined ? pct(byId.get(p.espnId)) : '-'}) also ${others.map((r) => `${String(r.id)} ${teamOf(r.proTeamId)} own ${pct(r)}`).join(', ')}`);
-    }
-    log(`  NHL OWNERSHIP DIAG same-name ESPN records beside a current NHL player: ${dupes.length}${dupes.length ? ` -> ${dupes.join(' | ')}` : ''}`);
-  }
 
   await writeFile(`${OUT_DIR}/schedule.json`, JSON.stringify(schedule));
   await writeFile(`${OUT_DIR}/players.json`, JSON.stringify(players));
