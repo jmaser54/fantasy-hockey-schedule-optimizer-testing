@@ -1,273 +1,107 @@
 /**
- * Player Evaluator data proof of concept (investigation only; the app doesn't use it).
- *
- * Probes the NHL Stats REST API (api.nhle.com/stats/rest) skater reports for
- * one season and game type, and prints a report: fields and types, totals,
- * pagination behaviour, player-ID uniqueness, overlap between reports, field
- * agreement, traded players, and coverage against the bundled player
- * directory (public/data/players.json). Raw samples go to data-raw/stats-probe/.
- *
- *   node scripts/probe-nhl-stats.mjs
- *   SEASON=20262027 GAME_TYPE=2 node scripts/probe-nhl-stats.mjs
- *
- * Run by .github/workflows/probe-nhl-stats.yml (the dev container can't reach
- * the NHL APIs). No dependencies.
+ * TEMPORARY diagnostic on the throwaway branch diag/nhl-landing (2026-11-27). Never merged.
+ * Read-only: checks whether the NHL player landing endpoint distinguishes current NHL players,
+ * injured players absent from the current-roster feed, and players assigned elsewhere.
+ * Population: players on a team's season roster but on no current roster ("dropped"),
+ * skaters and goalies, plus a control sample of current-roster players. At most 100 profile requests.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 const SEASON = process.env.SEASON ?? '20262027';
-const GAME_TYPE = Number(process.env.GAME_TYPE ?? 2);
-const BASE = 'https://api.nhle.com/stats/rest/en';
-const REPORTS = ['summary', 'realtime', 'faceoffwins', 'faceoffpercentages'];
+const BASE = 'https://api-web.nhle.com/v1';
 const RAW = 'data-raw/stats-probe';
-const PAGE = 100;
+const MAX_PROFILES = 100;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const log = (s) => console.log(s);
 
-const out = [];
-const log = (s = '') => { out.push(s); console.log(s); };
-const result = { season: SEASON, gameType: GAME_TYPE, fetchedAt: new Date().toISOString(), reports: {} };
-
-async function getJson(url) {
-  let last;
-  for (let i = 0; i < 4; i++) {
-    if (i) await new Promise((r) => setTimeout(r, 1000 * 2 ** i));
+async function get(path) {
+  for (let i = 0; i < 3; i++) {
     try {
-      const t0 = Date.now();
-      const res = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'fantasy-playoff-optimizer stats probe' } });
-      const text = await res.text();
-      if (!res.ok) throw new Error(`HTTP ${res.status} ${url} :: ${text.slice(0, 200)}`);
-      return { body: JSON.parse(text), ms: Date.now() - t0, bytes: text.length };
-    } catch (e) { last = e; }
+      const res = await fetch(`${BASE}${path}`, { headers: { accept: 'application/json', 'user-agent': 'fantasy-playoff-optimizer roster-status probe' } });
+      if (res.status === 404) return { status: 404 };
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return { status: res.status, body: await res.json() };
+    } catch (e) {
+      if (i === 2) return { status: 0, error: String(e) };
+      await sleep(2000);
+    } finally {
+      await sleep(150);
+    }
   }
-  throw last;
 }
+const name = (p) => `${p.firstName?.default ?? ''} ${p.lastName?.default ?? ''}`.trim();
+const rosterIds = (body) => ['forwards', 'defensemen', 'goalies'].flatMap((g) => (Array.isArray(body?.[g]) ? body[g] : []).map((p) => ({ id: p.id, name: name(p), pos: p.positionCode })));
 
-const cayenne = (extra = '') => `gameTypeId=${GAME_TYPE} and seasonId<=${SEASON} and seasonId>=${SEASON}${extra}`;
-function url(report, { start = 0, limit = PAGE, sort = 'playerId', aggregate = false, extra = '' } = {}) {
-  const p = new URLSearchParams({
-    isAggregate: String(aggregate),
-    isGame: 'false',
-    start: String(start),
-    limit: String(limit),
-    cayenneExp: cayenne(extra),
+await mkdir(RAW, { recursive: true });
+const teams = JSON.parse(await readFile('public/data/schedule.json', 'utf8')).teams.map((t) => t.id);
+const dir = JSON.parse(await readFile('public/data/players.json', 'utf8')).players;
+const dirByNhl = new Map(dir.filter((p) => p.nhlId).map((p) => [p.nhlId, p]));
+
+const current = new Map(); // id -> {team, ...}
+const season = new Map(); // id -> {teams:[], ...}
+let rosterRequests = 0;
+for (const t of teams) {
+  const c = await get(`/roster/${t}/current`); rosterRequests++;
+  const s = await get(`/roster/${t}/${SEASON}`); rosterRequests++;
+  if (!c.body || !s.body) log(`roster fetch problem ${t}: current ${c.status} ${c.error ?? ''} season ${s.status} ${s.error ?? ''}`);
+  for (const p of rosterIds(c.body)) current.set(p.id, { ...p, team: t });
+  for (const p of rosterIds(s.body)) {
+    const e = season.get(p.id) ?? { ...p, teams: [] };
+    e.teams.push(t);
+    season.set(p.id, e);
+  }
+}
+const dropped = [...season.values()].filter((p) => !current.has(p.id));
+log(`ROSTER PROBE: ${rosterRequests} roster requests; current-roster players ${current.size}; season-roster players ${season.size}; on a season roster but no current roster ${dropped.length} (goalies ${dropped.filter((p) => p.pos === 'G').length})`);
+
+// Profiles: all dropped goalies, then dropped skaters, then controls (current players, incl. goalies, spread over teams).
+const droppedSorted = [...dropped.filter((p) => p.pos === 'G'), ...dropped.filter((p) => p.pos !== 'G')];
+const curList = [...current.values()];
+const controls = [
+  ...teams.slice(0, 8).map((t) => curList.find((p) => p.team === t && p.pos === 'G')),
+  ...teams.slice(8, 24).map((t) => curList.find((p) => p.team === t && p.pos !== 'G')),
+].filter(Boolean);
+const budgetDropped = Math.min(droppedSorted.length, MAX_PROFILES - controls.length);
+const targets = [...droppedSorted.slice(0, budgetDropped).map((p) => ({ ...p, group: 'dropped', team: p.teams.join('/') })), ...controls.map((p) => ({ ...p, group: 'current' }))];
+log(`PROFILE PROBE: ${targets.length} profile requests (dropped ${budgetDropped} of ${dropped.length}, current controls ${controls.length})`);
+
+const keyCount = {};
+const rows = [];
+let saved = 0;
+for (const p of targets) {
+  const r = await get(`/player/${p.id}/landing`);
+  if (!r.body) { rows.push({ ...p, error: `${r.status} ${r.error ?? ''}` }); continue; }
+  const b = r.body;
+  for (const k of Object.keys(b)) keyCount[k] = (keyCount[k] ?? 0) + 1;
+  if (saved < 6 && (p.group === 'current' || saved < 4)) { await writeFile(`${RAW}/landing-${p.group}-${p.id}.json`, JSON.stringify(b, null, 2)); saved++; }
+  const totals = Array.isArray(b.seasonTotals) ? b.seasonTotals.filter((x) => String(x.season) === SEASON) : [];
+  const lines = totals.map((x) => `${x.leagueAbbrev}:${x.teamName?.default ?? x.teamCommonName?.default ?? '?'} gt${x.gameTypeId} gp${x.gamesPlayed}`);
+  const last5 = Array.isArray(b.last5Games) ? b.last5Games.map((g) => g.gameDate).filter(Boolean) : [];
+  const d = dirByNhl.get(p.id);
+  rows.push({
+    ...p,
+    isActive: b.isActive,
+    currentTeamId: b.currentTeamId,
+    currentTeamAbbrev: b.currentTeamAbbrev,
+    statusLike: Object.fromEntries(Object.entries(b).filter(([k]) => /status|injur|roster|assign|transac|reserve|active/i.test(k)).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v).slice(0, 80) : v])),
+    lines,
+    nhlGp: totals.filter((x) => x.leagueAbbrev === 'NHL').reduce((a, x) => a + (x.gamesPlayed ?? 0), 0),
+    otherGp: totals.filter((x) => x.leagueAbbrev !== 'NHL').reduce((a, x) => a + (x.gamesPlayed ?? 0), 0),
+    otherLeagues: [...new Set(totals.filter((x) => x.leagueAbbrev !== 'NHL').map((x) => x.leagueAbbrev))],
+    lastNhlGame: last5[0],
+    directory: d ? (d.inactive ? 'inactive' : 'active') : 'no nhlId in directory',
   });
-  if (sort) p.set('sort', JSON.stringify([{ property: sort, direction: 'ASC' }]));
-  return `${BASE}/skater/${report}?${p}`;
 }
+await writeFile(`${RAW}/landing-summary.json`, JSON.stringify(rows, null, 2));
 
-function describeFields(rows) {
-  const fields = {};
-  for (const r of rows) for (const [k, v] of Object.entries(r)) {
-    const f = (fields[k] ??= { types: new Set(), nulls: 0, min: undefined, max: undefined, example: undefined, distinct: new Set() });
-    if (v === null || v === undefined) { f.nulls++; continue; }
-    f.types.add(Number.isInteger(v) ? 'int' : typeof v === 'number' ? 'float' : typeof v);
-    if (typeof v === 'number') { f.min = f.min === undefined ? v : Math.min(f.min, v); f.max = f.max === undefined ? v : Math.max(f.max, v); }
-    if (f.example === undefined) f.example = v;
-    if (f.distinct.size < 12) f.distinct.add(typeof v === 'string' ? v.slice(0, 30) : v);
-  }
-  return Object.fromEntries(Object.entries(fields).map(([k, f]) => [k, {
-    types: [...f.types].join('|') || 'null', nulls: f.nulls, min: f.min, max: f.max, example: f.example,
-    distinct: f.distinct.size < 12 ? [...f.distinct] : undefined,
-  }]));
+log(`LANDING FIELDS (profiles having each): ${JSON.stringify(keyCount)}`);
+log(`LANDING status-like fields seen: ${JSON.stringify([...new Set(rows.flatMap((r) => Object.keys(r.statusLike ?? {})))])}`);
+const tab = {};
+for (const r of rows) {
+  const k = `${r.group}|${r.pos === 'G' ? 'G' : 'S'}|isActive=${r.isActive}|currentTeam=${r.currentTeamAbbrev ?? (r.currentTeamId ? 'id' + r.currentTeamId : 'none')}${r.group === 'dropped' ? (r.team.split('/').includes(r.currentTeamAbbrev) ? '(same as season roster)' : '(different/none)') : r.currentTeamAbbrev === r.team ? '(same)' : '(different/none)'}|otherLeague2627=${r.otherGp > 0 ? 'yes' : 'no'}`;
+  tab[k.replace(/currentTeam=[A-Z]{3}/, 'currentTeam=XXX')] = (tab[k.replace(/currentTeam=[A-Z]{3}/, 'currentTeam=XXX')] ?? 0) + 1;
 }
-
-async function fetchAll(report, opts = {}) {
-  const rows = [];
-  let total;
-  for (let start = 0; ; start += PAGE) {
-    const { body } = await getJson(url(report, { ...opts, start, limit: PAGE }));
-    if (!Array.isArray(body.data) || typeof body.total !== 'number') throw new Error(`${report}: unexpected shape ${JSON.stringify(Object.keys(body))}`);
-    total = body.total;
-    rows.push(...body.data);
-    if (body.data.length < PAGE || rows.length >= total) break;
-    if (start > 20000) throw new Error(`${report}: pagination did not end`);
-  }
-  return { rows, total };
+for (const [k, v] of Object.entries(tab).sort()) log(`LANDING CROSSTAB ${k}: ${v}`);
+for (const r of rows) {
+  log(`LANDING ${r.group} ${r.pos} ${r.name} (${r.id}) season-team ${r.team} | ${r.error ? 'ERROR ' + r.error : `isActive=${r.isActive} currentTeam=${r.currentTeamAbbrev ?? r.currentTeamId ?? 'none'} | ${SEASON}: ${r.lines.join(', ') || 'no season lines'} | last NHL game ${r.lastNhlGame ?? '-'} | status-like ${JSON.stringify(r.statusLike)} | directory ${r.directory}`}`);
 }
-
-const ids = (rows) => rows.map((r) => r.playerId);
-const dupes = (list) => { const s = new Set(), d = new Set(); for (const x of list) (s.has(x) ? d : s).add(x); return [...d]; };
-
-async function main() {
-  await mkdir(RAW, { recursive: true });
-  log(`NHL Stats REST probe: season ${SEASON}, gameTypeId ${GAME_TYPE}, ${result.fetchedAt}`);
-  log(`Base: ${BASE}/skater/{report}`);
-
-  // Season sanity: does the API list the season?
-  try {
-    const { body } = await getJson(`${BASE}/season?sort=${encodeURIComponent('[{"property":"id","direction":"DESC"}]')}&limit=3`);
-    log(`Seasons endpoint (latest 3): ${JSON.stringify((body.data ?? []).map((s) => ({ id: s.id, startDate: s.startDate, regularSeasonEndDate: s.regularSeasonEndDate, numberOfGames: s.numberOfGames })))}`);
-  } catch (e) { log(`Seasons endpoint failed: ${e.message}`); }
-
-  const byReport = {};
-  for (const report of REPORTS) {
-    log(`\n=== ${report} ===`);
-    const r = (result.reports[report] = {});
-    // 1. One request for everything (limit=-1)
-    try {
-      const all = await getJson(url(report, { limit: -1 }));
-      r.limitAll = { total: all.body.total, rows: all.body.data.length, ms: all.ms, bytes: all.bytes };
-      log(`limit=-1: total ${all.body.total}, rows ${all.body.data.length}, ${all.ms} ms, ${(all.bytes / 1024).toFixed(0)} KB${all.body.data.length < all.body.total ? '  <-- CAPPED, not a full fetch' : ''}`);
-      r.limitAllRows = all.body.data;
-      await writeFile(`${RAW}/${report}-all.json`, JSON.stringify(all.body));
-    } catch (e) { log(`limit=-1 failed: ${e.message}`); r.limitAllError = e.message; }
-    // 2. Paginated with a stable sort
-    try {
-      const pag = await fetchAll(report, { sort: 'playerId' });
-      const d = dupes(ids(pag.rows));
-      r.paginated = { total: pag.total, rows: pag.rows.length, duplicateIds: d.length };
-      log(`paginated (limit ${PAGE}, sort playerId): total ${pag.total}, rows ${pag.rows.length}, duplicate playerIds ${d.length}${d.length ? ' e.g. ' + d.slice(0, 5) : ''}`);
-      byReport[report] = pag.rows;
-      await writeFile(`${RAW}/${report}-paginated.json`, JSON.stringify(pag.rows));
-      if (r.limitAllRows) {
-        const b = new Set(ids(pag.rows));
-        log(`  limit=-1 rows all inside the paginated set: ${r.limitAllRows.every((x) => b.has(x.playerId))}`);
-        delete r.limitAllRows;
-      }
-    } catch (e) { log(`paginated failed: ${e.message}`); r.paginatedError = e.message; if (r.limitAllRows) byReport[report] = r.limitAllRows; delete r.limitAllRows; }
-    // 3. Pagination WITHOUT a sort: does it drift?
-    try {
-      const pag = await fetchAll(report, { sort: '' });
-      const d = dupes(ids(pag.rows));
-      const missing = new Set(ids(byReport[report] ?? [])); ids(pag.rows).forEach((x) => missing.delete(x));
-      r.unsortedPagination = { rows: pag.rows.length, duplicateIds: d.length, missing: missing.size };
-      log(`paginated WITHOUT sort: rows ${pag.rows.length}, duplicate ids ${d.length}, missing ids ${missing.size}`);
-    } catch (e) { log(`unsorted pagination failed: ${e.message}`); }
-
-    const rows = byReport[report] ?? [];
-    if (!rows.length) continue;
-    r.fields = describeFields(rows);
-    log(`fields (${Object.keys(r.fields).length}):`);
-    for (const [k, f] of Object.entries(r.fields)) {
-      log(`  ${k.padEnd(28)} ${f.types.padEnd(12)} nulls ${String(f.nulls).padStart(4)}  ${f.min !== undefined ? `range ${f.min}..${f.max}` : ''}${f.distinct ? `  values ${JSON.stringify(f.distinct)}` : ''}  e.g. ${JSON.stringify(f.example)}`);
-    }
-    const d = dupes(ids(rows));
-    log(`rows ${rows.length}; distinct playerIds ${new Set(ids(rows)).size}; duplicate ids ${d.length}`);
-    if (d.length) log(`  duplicate example rows: ${JSON.stringify(rows.filter((x) => x.playerId === d[0]))}`);
-    log(`sample rows: ${JSON.stringify(rows.slice(0, 2))}`);
-    const pos = rows.reduce((a, x) => ((a[x.positionCode ?? '?'] = (a[x.positionCode ?? '?'] ?? 0) + 1), a), {});
-    log(`positionCode counts: ${JSON.stringify(pos)}`);
-    const seasons = [...new Set(rows.map((x) => x.seasonId))], gtypes = [...new Set(rows.map((x) => x.gameTypeId))];
-    log(`seasonId values: ${JSON.stringify(seasons)}; gameTypeId values: ${JSON.stringify(gtypes)}`);
-    const multiTeam = rows.filter((x) => typeof x.teamAbbrevs === 'string' && x.teamAbbrevs.includes(','));
-    log(`rows with more than one team in teamAbbrevs: ${multiTeam.length}${multiTeam.length ? ' e.g. ' + JSON.stringify(multiTeam.slice(0, 3).map((x) => [x.playerId, x.skaterFullName, x.teamAbbrevs, x.gamesPlayed])) : ''}`);
-    const zeroGp = rows.filter((x) => !x.gamesPlayed).length;
-    log(`rows with gamesPlayed 0/missing: ${zeroGp}`);
-  }
-
-  // isAggregate=true vs false (traded players)
-  try {
-    const agg = await fetchAll('summary', { aggregate: true });
-    const non = byReport.summary ?? [];
-    log(`\nsummary isAggregate=true (paginated): total ${agg.total}, rows ${agg.rows.length} (isAggregate=false: ${non.length}); duplicate ids ${dupes(ids(agg.rows)).length}`);
-    const nonById = new Map(non.map((x) => [x.playerId, x]));
-    const diff = agg.rows.filter((a) => { const n = nonById.get(a.playerId); return !n || n.gamesPlayed !== a.gamesPlayed || n.points !== a.points || n.teamAbbrevs !== a.teamAbbrevs; });
-    log(`  rows whose GP/points differ between aggregate modes: ${diff.length}${diff.length ? ' e.g. ' + JSON.stringify(diff.slice(0, 3)) : ''}`);
-  } catch (e) { log(`aggregate comparison failed: ${e.message}`); }
-
-  // Cross-report overlap and field agreement
-  log('\n=== cross-report ===');
-  const sets = Object.fromEntries(Object.entries(byReport).map(([k, v]) => [k, new Set(ids(v))]));
-  const names = Object.keys(sets);
-  for (const a of names) for (const b of names) if (a < b) {
-    const inter = [...sets[a]].filter((x) => sets[b].has(x)).length;
-    log(`${a} (${sets[a].size}) ∩ ${b} (${sets[b].size}) = ${inter}; only ${a}: ${sets[a].size - inter}; only ${b}: ${sets[b].size - inter}`);
-  }
-  const summaryById = new Map((byReport.summary ?? []).map((x) => [x.playerId, x]));
-  for (const report of names.filter((n) => n !== 'summary')) {
-    const rows = byReport[report];
-    const common = Object.keys(rows[0] ?? {}).filter((k) => summaryById.size && k in [...summaryById.values()][0]);
-    const mismatches = {};
-    for (const row of rows) {
-      const s = summaryById.get(row.playerId); if (!s) continue;
-      for (const k of common) if (JSON.stringify(s[k]) !== JSON.stringify(row[k])) (mismatches[k] ??= []).push([row.playerId, s[k], row[k]]);
-    }
-    log(`${report}: fields shared with summary: ${common.join(', ')}`);
-    log(`  disagreements with summary: ${Object.keys(mismatches).length ? Object.entries(mismatches).map(([k, v]) => `${k}: ${v.length} (e.g. ${JSON.stringify(v.slice(0, 3))})`).join('; ') : 'none'}`);
-    const notInSummary = rows.filter((x) => !summaryById.has(x.playerId));
-    if (notInSummary.length) log(`  in ${report} but not summary: ${notInSummary.length} e.g. ${JSON.stringify(notInSummary.slice(0, 3))}`);
-  }
-  // Faceoff report coverage: who's missing from it, and what do they look like in summary?
-  for (const report of ['faceoffwins', 'faceoffpercentages']) {
-    if (!byReport[report] || !summaryById.size) continue;
-    const s = sets[report];
-    const missing = [...summaryById.values()].filter((x) => !s.has(x.playerId));
-    const missingPos = missing.reduce((a, x) => ((a[x.positionCode] = (a[x.positionCode] ?? 0) + 1), a), {});
-    log(`${report}: summary players missing from it: ${missing.length} by position ${JSON.stringify(missingPos)}; e.g. ${JSON.stringify(missing.slice(0, 3).map((x) => [x.playerId, x.skaterFullName, x.positionCode, x.gamesPlayed, x.faceoffWinPct]))}`);
-    const withZeroFo = byReport[report].filter((x) => (x.totalFaceoffs ?? x.faceoffs ?? 0) === 0).length;
-    log(`  rows in ${report} with zero total faceoffs: ${withZeroFo}`);
-  }
-
-
-  // Page-size cap, filter behaviour, arithmetic identities
-  log('\n=== API behaviour and internal consistency ===');
-  for (const lim of [101, 500, 1000]) {
-    try { const { body } = await getJson(url('summary', { limit: lim })); log(`summary limit=${lim}: rows ${body.data.length} of ${body.total}`); }
-    catch (e) { log(`summary limit=${lim} failed: ${e.message}`); }
-  }
-  for (const [label, extraCay] of [['preseason gameTypeId=1', 1], ['playoffs gameTypeId=3', 3]]) {
-    try {
-      const p = new URLSearchParams({ isAggregate: 'false', isGame: 'false', start: '0', limit: '5', sort: JSON.stringify([{ property: 'points', direction: 'DESC' }]), cayenneExp: `gameTypeId=${extraCay} and seasonId<=${SEASON} and seasonId>=${SEASON}` });
-      const { body } = await getJson(`${BASE}/skater/summary?${p}`);
-      log(`${label}: total ${body.total}; top: ${JSON.stringify(body.data.slice(0, 2).map((x) => [x.skaterFullName, x.gamesPlayed, x.points]))}`);
-    } catch (e) { log(`${label} failed: ${e.message}`); }
-  }
-  try {
-    const p = new URLSearchParams({ isAggregate: 'false', isGame: 'false', start: '0', limit: '5', cayenneExp: `seasonId<=${SEASON} and seasonId>=${SEASON}` });
-    const { body } = await getJson(`${BASE}/skater/summary?${p}`);
-    log(`no gameTypeId filter: total ${body.total} (regular season ${byReport.summary?.length}) - filter must always be sent`);
-  } catch (e) { log(`no gameTypeId filter failed: ${e.message}`); }
-  try {
-    const { body } = await getJson(`${BASE}/skater/summary?limit=5&cayenneExp=${encodeURIComponent('seasonId=20262027 and gameTypeId=2')}`);
-    log(`simple cayenneExp (seasonId=.. and gameTypeId=2), no sort: total ${body.total}`);
-  } catch (e) { log(`simple cayenneExp failed: ${e.message}`); }
-  try {
-    const p = new URLSearchParams({ start: '0', limit: '5', cayenneExp: `gameTypeId=2 and seasonId=${SEASON} and bogusField=1` });
-    const r = await fetch(`${BASE}/skater/summary?${p}`); log(`bad cayenne field: HTTP ${r.status} ${(await r.text()).slice(0, 150)}`);
-  } catch (e) { log(`bad cayenne probe failed: ${e.message}`); }
-
-  const S = byReport.summary ?? [], R = new Map((byReport.realtime ?? []).map((x) => [x.playerId, x])), F = new Map((byReport.faceoffwins ?? []).map((x) => [x.playerId, x]));
-  const bad = (name, pred) => { const b = S.filter(pred); log(`${name}: ${b.length} violations${b.length ? ' e.g. ' + JSON.stringify(b.slice(0, 3).map((x) => x.playerId)) : ''}`); };
-  bad('goals + assists = points', (x) => x.goals + x.assists !== x.points);
-  bad('evGoals + ppGoals + shGoals = goals', (x) => x.evGoals + x.ppGoals + x.shGoals !== x.goals);
-  bad('ppPoints >= ppGoals and shPoints >= shGoals', (x) => x.ppPoints < x.ppGoals || x.shPoints < x.shGoals);
-  bad('evPoints + ppPoints + shPoints = points', (x) => x.evPoints + x.ppPoints + x.shPoints !== x.points);
-  bad('shootingPct = goals/shots (±0.0001, null iff 0 shots)', (x) => x.shots === 0 ? x.shootingPct !== null : Math.abs(x.shootingPct - x.goals / x.shots) > 1e-4);
-  bad('pointsPerGame = points/GP (±0.0001)', (x) => Math.abs(x.pointsPerGame - x.points / x.gamesPlayed) > 1e-4);
-  bad('faceoffwins: wins + losses = total', (x) => { const f = F.get(x.playerId); return f && f.totalFaceoffWins + f.totalFaceoffLosses !== f.totalFaceoffs; });
-  bad('faceoffWinPct = wins/total (null iff 0 faceoffs)', (x) => { const f = F.get(x.playerId); if (!f) return false; return f.totalFaceoffs === 0 ? x.faceoffWinPct !== null : Math.abs(x.faceoffWinPct - f.totalFaceoffWins / f.totalFaceoffs) > 1e-4; });
-  bad('realtime/faceoffwins gamesPlayed equals summary', (x) => (R.get(x.playerId)?.gamesPlayed ?? x.gamesPlayed) !== x.gamesPlayed || (F.get(x.playerId)?.gamesPlayed ?? x.gamesPlayed) !== x.gamesPlayed);
-  bad('realtime otGoals equals summary', (x) => R.has(x.playerId) && R.get(x.playerId).otGoals !== x.otGoals);
-  const tot = (k, rows) => rows.reduce((a, x) => a + (x[k] ?? 0), 0);
-  log(`league totals: GP ${tot('gamesPlayed', S)}, goals ${tot('goals', S)}, points ${tot('points', S)}, shots ${tot('shots', S)}, hits ${tot('hits', [...R.values()])}, blocks ${tot('blockedShots', [...R.values()])}, FOW ${tot('totalFaceoffWins', [...F.values()])}, FOL ${tot('totalFaceoffLosses', [...F.values()])}`);
-  const gp = S.map((x) => x.gamesPlayed); log(`gamesPlayed range ${Math.min(...gp)}..${Math.max(...gp)}; positions ${JSON.stringify(S.reduce((a, x) => ((a[x.positionCode] = (a[x.positionCode] ?? 0) + 1), a), {}))}`);
-  const teams = new Set(S.flatMap((x) => String(x.teamAbbrevs).split(','))); log(`distinct teams in teamAbbrevs: ${teams.size} ${JSON.stringify([...teams].sort())}`);
-
-  // Coverage against the bundled player directory
-  try {
-    const players = JSON.parse(await readFile('public/data/players.json', 'utf8'));
-    const dirSkaters = players.players.filter((p) => p.nhlId !== undefined && !(p.positions.length === 1 && p.positions[0] === 'G'));
-    const dirById = new Map(players.players.filter((p) => p.nhlId !== undefined).map((p) => [p.nhlId, p]));
-    const statIds = sets.summary ?? new Set();
-    const withStats = dirSkaters.filter((p) => statIds.has(p.nhlId));
-    const activeNoStats = dirSkaters.filter((p) => !statIds.has(p.nhlId) && !p.inactive);
-    const statsNotInDir = [...statIds].filter((id) => !dirById.has(id));
-    log(`\n=== coverage vs public/data/players.json (fetched ${players.fetchedAt}) ===`);
-    log(`directory skaters with an NHL id: ${dirSkaters.length}; with a summary row: ${withStats.length}; active-roster skaters with no row (likely 0 GP): ${activeNoStats.length}`);
-    log(`  e.g. active with no stats: ${JSON.stringify(activeNoStats.slice(0, 8).map((p) => [p.nhlId, p.name, p.team]))}`);
-    log(`summary players not in the directory: ${statsNotInDir.length} e.g. ${JSON.stringify(statsNotInDir.slice(0, 8).map((id) => { const x = summaryById.get(id); return [id, x?.skaterFullName, x?.teamAbbrevs, x?.gamesPlayed]; }))}`);
-    const teamMismatch = withStats.filter((p) => { const x = summaryById.get(p.nhlId); const last = String(x.teamAbbrevs ?? '').split(',').at(-1); return last && last !== p.team; });
-    log(`directory team differs from the last team in summary.teamAbbrevs: ${teamMismatch.length} e.g. ${JSON.stringify(teamMismatch.slice(0, 5).map((p) => [p.name, p.team, summaryById.get(p.nhlId).teamAbbrevs]))}`);
-    result.coverage = { dirSkaters: dirSkaters.length, withStats: withStats.length, activeNoStats: activeNoStats.length, statsNotInDir: statsNotInDir.length };
-  } catch (e) { log(`coverage check failed: ${e.message}`); }
-
-  await writeFile(`${RAW}/probe-result.json`, JSON.stringify(result, null, 2));
-  await writeFile(`${RAW}/probe-report.txt`, out.join('\n'));
-  log('\nDone.');
-}
-
-main().catch(async (e) => {
-  log(`PROBE FAILED: ${e.stack ?? e}`);
-  await mkdir(RAW, { recursive: true });
-  await writeFile(`${RAW}/probe-report.txt`, out.join('\n'));
-  process.exit(1);
-});
