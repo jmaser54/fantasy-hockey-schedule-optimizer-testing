@@ -35,8 +35,7 @@ export function TradesView({ onGoRoster }: { onGoRoster: () => void }) {
   if (state.roster.length === 0) {
     return (
       <div className="panel empty">
-        <strong>Add your roster first</strong>
-        Then try adding, dropping or swapping players here without changing it.
+        <strong>Add your roster to test a trade or pickup</strong>
         <div style={{ marginTop: 8 }}>
           <button className="btn primary" onClick={onGoRoster}>
             Add Players
