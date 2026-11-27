@@ -1,0 +1,25 @@
+name: Historical study (temporary diagnostic)
+
+# Throwaway branch diag/nhl-landing only; never merged. One-off 2025-26 per-game study for the
+# Insights design. Read-only access, no artifacts; results are printed only in encrypted form.
+on:
+  push:
+    branches: [diag/nhl-landing]
+    paths:
+      - 'scripts/historical-study.mjs'
+      - '.github/workflows/historical-study.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run the historical study
+        run: node scripts/historical-study.mjs
