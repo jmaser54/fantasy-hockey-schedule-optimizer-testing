@@ -195,6 +195,10 @@ function lineTokens(line: string): string[] {
     .replace(/(^|\s)[§$](?=[.:]\s*[A-ZÀ-Þ])/g, '$1S')
     // …and its dot as a colon ("S: Gostisbehere"): a lone capital + colon before a name word is an initial.
     .replace(/(^|\s)([A-Z]):(?=\s*[A-ZÀ-Þ][a-zà-ÿ])/g, '$1$2.')
+    // …or as a hyphen ("Co S-Gostisbehere", "T-Stutzle", seen on an ESPN screenshot 2026-11-27): a single
+    // capital joined by a hyphen to a name word is an initial. Real hyphenated names ("Ekman-Larsson",
+    // "Jean-Gabriel") have more than one letter before the hyphen, so they are untouched.
+    .replace(/(^|[^A-Za-zÀ-ÿ])([A-Z])-(?=[A-ZÀ-Þ][a-zà-ÿ])/g, '$1$2. ')
     .replace(/[•·|\t()[\]{}]/g, ' ')
     .replace(/\b([A-Z])\.(?=[A-Za-zÀ-ÿ])/g, '$1. ') // OCR often drops the space after an initial ("A.Fox")
     .split(/\s+/)

@@ -186,6 +186,11 @@ describe('extractRosterNames (whole roster pages, pasted or from screenshots)', 
       ['co §. Gostisbehere', '10'],
       ['$. Gostisbehere Car D', '10'],
       ['D 2 $: Gostisbehere DTD', '10'],
+      ['Co S-Gostisbehere', '10'],
+      ['D Co S-Gostisbehere Car D', '10'],
+      ['T-Stutzle', '4'],
+      ['C T-Stutzle Ott C, LW', '4'],
+      ['T-Stiitzle', '4'],
       ['coS. Gostisbehere', '10'],
       ['co S. Gostisbehere', '10'],
       ['S, Gostisbehere CAR', '10'],
@@ -199,6 +204,9 @@ describe('extractRosterNames (whole roster pages, pasted or from screenshots)', 
     const two = extractRosterNames('coE. Pettersson VAN', more, t);
     expect([two.matched, two.review[0]!.result.status]).toEqual([[], 'ambiguous']);
     expect(extractRosterNames('Price $. 5\nCost $.99 Gostisbehere', more, t).matched).toEqual([]);
+    // Real hyphenated names are untouched by the hyphen-initial rule.
+    const hy = buildPlayerIndex([...players, P('13', 'Oliver Ekman-Larsson', 'TOR', ['D']), P('14', 'Jean-Gabriel Pageau', 'NYI')]);
+    expect(ids(extractRosterNames('Oliver Ekman-Larsson TOR\nJean-Gabriel Pageau', hy, new Set([...teams, 'TOR', 'NYI'])).matched).sort()).toEqual(['13', '14']);
   });
 
   it('matches names regardless of accents, including letters Unicode does not decompose (ø, æ, ł, ß)', () => {
