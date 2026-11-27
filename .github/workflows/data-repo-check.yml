@@ -1,0 +1,49 @@
+name: Check private data repository access
+
+# Manual check that the data-refresh environment's DATA_REPO_TOKEN can reach the private data
+# repository (jmaser54/playoff-planner-data) for the Insights game-night history. Prints only
+# non-secret facts (settings, visibility, file names, token expiry); never the token. Writes nothing.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: data-refresh
+    timeout-minutes: 5
+    steps:
+      - name: Environment and deployment branch rule
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/environments/data-refresh" \
+            --jq '{name, deployment_branch_policy, protection_rules: [.protection_rules[]?.type]}' \
+            || echo "environment settings are not readable with the workflow token"
+          gh api "repos/${{ github.repository }}/environments/data-refresh/deployment-branch-policies" \
+            --jq '{total_count, branch_policies: [.branch_policies[] | {name, type}]}' \
+            || echo "deployment branch policies are not readable with the workflow token"
+      - name: Private data repository access (read, and push authorisation by dry run)
+        env:
+          DATA_TOKEN: ${{ secrets.DATA_REPO_TOKEN }}
+          DATA_REPO: jmaser54/playoff-planner-data
+        run: |
+          if [ -z "$DATA_TOKEN" ]; then echo "DATA_REPO_TOKEN is not available to this job"; exit 1; fi
+          GH_TOKEN="$DATA_TOKEN" gh api "repos/$DATA_REPO" --jq '{full_name, private, visibility, default_branch}'
+          GH_TOKEN="$DATA_TOKEN" gh api "repos/$DATA_REPO/contents" --jq '[.[].name]'
+          GH_TOKEN="$DATA_TOKEN" gh api -i "repos/$DATA_REPO" 2>/dev/null | grep -i '^github-authentication-token-expiration' || echo "token expiry header not reported"
+          AUTH="$(printf 'x-access-token:%s' "$DATA_TOKEN" | base64 -w0)"
+          echo "::add-mask::$AUTH"
+          git init -q probe && cd probe
+          git -c user.name=check -c user.email=check@example.invalid commit -q --allow-empty -m "dry-run access check"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $AUTH" ls-remote --heads "https://github.com/$DATA_REPO.git" | sed 's/^[0-9a-f]*\t/ref: /'
+          # A dry-run push authenticates against git-receive-pack (needs Contents write) but sends nothing.
+          if git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $AUTH" push --dry-run --quiet \
+               "https://github.com/$DATA_REPO.git" HEAD:refs/heads/access-check-dry-run 2>/dev/null; then
+            echo "push authorisation: OK (dry run, nothing written)"
+          else
+            echo "push authorisation: FAILED"; exit 1
+          fi
