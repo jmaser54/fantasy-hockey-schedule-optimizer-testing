@@ -1,7 +1,7 @@
 import { ScheduleIndex } from '../domain/schedule.ts';
 import type { Player, Team } from '../domain/types.ts';
-import { OWNERSHIP_PATH, type OwnershipFile, type PlayersFile, type ScheduleFile } from './format.ts';
-import { validateOwnership, validatePlayers, validateSchedule } from './validate.ts';
+import { INSIGHTS_PATH, OWNERSHIP_PATH, type InsightsInputsFile, type OwnershipFile, type PlayersFile, type ScheduleFile } from './format.ts';
+import { validateInsightsInputs, validateOwnership, validatePlayers, validateSchedule } from './validate.ts';
 
 export type DirectoryPlayer = PlayersFile['players'][number];
 
@@ -123,4 +123,28 @@ export function isOwnershipStale(o: OwnershipData, now = Date.now()): boolean {
 /** Ownership the Insights ranking may use: none when it is missing, invalid or stale. */
 export function ownershipForRanking(o: OwnershipData | undefined, now = Date.now()): OwnershipData | undefined {
   return o && !isOwnershipStale(o, now) ? o : undefined;
+}
+
+/** Insights inputs older than this are stale; their trends must not be used for ranking. */
+export const INSIGHTS_STALE_AFTER_MS = 48 * 3_600_000;
+
+/** Parse insights-inputs.json for this season; undefined when invalid or for another season (never throws). */
+export function parseInsightsInputs(raw: unknown, season: string): InsightsInputsFile | undefined {
+  return validateInsightsInputs(raw, { season }).errors.length ? undefined : (raw as InsightsInputsFile);
+}
+
+/** Optional: the app works without Insights inputs. Missing, unreadable or invalid files give undefined. */
+export async function loadInsightsInputs(season: string, base = import.meta.env.BASE_URL): Promise<InsightsInputsFile | undefined> {
+  try {
+    return parseInsightsInputs(await getJson(`${base}${INSIGHTS_PATH}`), season);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Recent-game trends may be used only when the window is complete and the file is fresh. */
+export function insightsTrendsUsable(f: InsightsInputsFile | undefined, now = Date.now()): boolean {
+  if (!f || !f.complete) return false;
+  const t = Date.parse(f.generatedAt);
+  return !Number.isNaN(t) && now - t <= INSIGHTS_STALE_AFTER_MS;
 }

@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { buildDataset } from '../src/data/load.ts';
 import { HISTORICAL_SEASONS, skaterStatsPath } from '../src/data/format.ts';
-import { validateOwnership, validateSkaterStats } from '../src/data/validate.ts';
+import { validateInsightsInputs, validateOwnership, validateSkaterStats } from '../src/data/validate.ts';
 
 const schedule = JSON.parse(await readFile('public/data/schedule.json', 'utf8'));
 const players = JSON.parse(await readFile('public/data/players.json', 'utf8'));
@@ -66,4 +66,22 @@ if (ownershipRaw !== undefined) {
   }
   const hours = Math.round((Date.now() - Date.parse(own.fetchedAt)) / 3_600_000);
   console.log(`OK: ownership for ${Object.keys(own.players).length} NHL players (ESPN read ${own.fetchedAt}, ${hours} h ago)`);
+}
+
+// Insights inputs: validated when present (created by the first insights refresh with the private data repository).
+let insightsRaw: string | undefined;
+try {
+  insightsRaw = await readFile('public/data/insights-inputs.json', 'utf8');
+} catch {
+  console.log('warning: public/data/insights-inputs.json not present yet');
+}
+if (insightsRaw !== undefined) {
+  const ins = JSON.parse(insightsRaw);
+  const v = validateInsightsInputs(ins, { season: data.season, playerIds: new Set(data.players.map((p) => p.id)) });
+  for (const w of v.warnings.slice(0, 10)) console.log(`warning (insights): ${w}`);
+  if (v.errors.length) {
+    console.error(`Insights inputs failed validation:\n${v.errors.slice(0, 20).join('\n')}`);
+    process.exit(1);
+  }
+  console.log(`OK: insights inputs for ${Object.keys(ins.players).length} skaters, ${Object.keys(ins.goalies).length} goalies; nights ${ins.windowNights}/${ins.windowTarget}${ins.complete ? '' : ' (incomplete)'}; games through ${ins.gamesThrough ?? '-'}`);
 }

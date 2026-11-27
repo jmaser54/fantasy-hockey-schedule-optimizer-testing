@@ -46,6 +46,105 @@ export interface OwnershipFile {
   players: Record<string, { espnId: number; /** Share of ESPN leagues rostering the player, 0–100. */ pct: number }>;
 }
 
+/** Shape version of insights-inputs.json. */
+export const INSIGHTS_VERSION = 1;
+export const INSIGHTS_PATH = 'data/insights-inputs.json';
+
+/** Production evidence (Talent) for a window of games. Sums; null when a game had the value missing. */
+export interface TalentEvidence {
+  g: number | null;
+  a: number | null;
+  a1: number | null;
+  a2: number | null;
+  pts: number | null;
+  evPts: number | null;
+  ppp: number | null;
+  sog: number | null;
+  hit: number | null;
+  blk: number | null;
+  pim: number | null;
+  pm: number | null;
+}
+
+/**
+ * Deployment evidence (Opportunity) for a window of games, in seconds. ppShare = Σ player PP seconds ÷
+ * Σ team PP seconds over the same games; null when the team had too little PP time to judge. Future
+ * keys (linemates, ppUnit, teammateQuality, ozStartPct) are optional: absent means "not measured".
+ */
+export interface OpportunityEvidence {
+  toi: number | null;
+  evToi: number | null;
+  ppToi: number | null;
+  shToi: number | null;
+  teamPpToi: number | null;
+  ppShare: number | null;
+  linemates?: { nhlId: number; evShared: number; ppShared: number }[];
+  ppUnit?: 1 | 2 | null;
+  teammateQuality?: number | null;
+  ozStartPct?: number | null;
+}
+
+export interface SkaterWindow {
+  gp: number;
+  from: string;
+  to: string;
+  talent: TalentEvidence;
+  opportunity: OpportunityEvidence;
+}
+
+export interface SkaterSeason {
+  gp: number;
+  talent: TalentEvidence;
+  /** Per-game averages in seconds; ppSharePg is the NHL's share of team PP time in the games he played. */
+  opportunity: { toiPg: number | null; evToiPg: number | null; ppToiPg: number | null; shToiPg: number | null; ppSharePg: number | null };
+}
+
+export interface GoalieWindow {
+  gp: number;
+  gs: number;
+  sv: number;
+  sa: number;
+  ga: number;
+  svPct: number | null;
+  toi: number;
+  w: number;
+  l: number;
+  otl: number;
+}
+
+/**
+ * Derived evidence for future Insights (public/data/insights-inputs.json): current NHL roster players
+ * only, keyed "nhl-<nhlId>", with Talent and Opportunity kept apart. Raw game lines are never published.
+ */
+export interface InsightsInputsFile {
+  version: number;
+  season: string;
+  generatedAt: string;
+  /** Latest game night fully stored; null before the first night is in. */
+  gamesThrough: string | null;
+  /** Latest night past the correction window (values not expected to change). */
+  settledThrough: string | null;
+  /** Complete nights held / nights wanted. Trends are usable only when complete is true. */
+  windowNights: number;
+  windowTarget: number;
+  complete: boolean;
+  settings: { ppShareMinSeconds: number; correctionNights: number };
+  sources: {
+    gameLogs: string;
+    season: string;
+    evidence: { talent: true; opportunity: { toi: boolean; ppShare: boolean; linemates: boolean; ppUnit: boolean; teammateQuality: boolean } };
+  };
+  players: Record<string, { team: string; last5?: SkaterWindow; last10?: SkaterWindow; season?: SkaterSeason }>;
+  teams: Record<
+    string,
+    {
+      season?: { gp: number; gfPg: number | null; sfPg: number | null; ppPct: number | null; ppOpp: number; ppOppPg: number | null; ppGoals: number; ppToiPg: number | null; pkPct: number | null };
+      last10?: { gp: number; gf: number; sf: number; ppOpp: number; ppGoals: number; ppToi: number; ppPct: number | null };
+    }
+  >;
+  goalies: Record<string, { team: string; lastStart: string | null; last5?: GoalieWindow; season?: GoalieWindow & { gaa: number | null } }>;
+}
+
 /** NHL skater position codes as reported by the stats API. */
 export type SkaterPositionCode = 'C' | 'L' | 'R' | 'D';
 

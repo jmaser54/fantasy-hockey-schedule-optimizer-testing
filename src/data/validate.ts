@@ -5,7 +5,7 @@
  */
 import { isValidISODate } from '../domain/dates.ts';
 import { POSITIONS } from '../domain/types.ts';
-import { DATA_VERSION, OWNERSHIP_VERSION, type PlayersFile, type ScheduleFile, type SkaterStatsFile } from './format.ts';
+import { DATA_VERSION, INSIGHTS_VERSION, OWNERSHIP_VERSION, type PlayersFile, type ScheduleFile, type SkaterStatsFile } from './format.ts';
 
 export interface ValidationResult {
   errors: string[];
@@ -207,5 +207,58 @@ export function validateOwnership(data: unknown, opts: { season?: string; player
     if (opts.playerIds && !opts.playerIds.has(id)) unknownIds++;
   }
   if (unknownIds) warnings.push(`${unknownIds} ownership entries are not in the player directory.`);
+  return { errors, warnings };
+}
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * insights-inputs.json: structure, keys, windows and value ranges. Missing evidence is null or an absent
+ * key, never 0; a player id not in the directory is a warning (the files can be a refresh apart).
+ */
+export function validateInsightsInputs(data: unknown, opts: { season?: string; playerIds?: ReadonlySet<string> } = {}): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (!isObj(data)) return { errors: ['Insights inputs file is not an object.'], warnings };
+  if (data.version !== INSIGHTS_VERSION) errors.push(`Unsupported insights inputs version ${String(data.version)}.`);
+  if (typeof data.season !== 'string' || !/^\d{8}$/.test(data.season)) errors.push('Insights inputs have no season.');
+  else if (opts.season && data.season !== opts.season) errors.push(`Insights inputs are for season ${data.season}; expected ${opts.season}.`);
+  if (typeof data.generatedAt !== 'string' || Number.isNaN(Date.parse(data.generatedAt))) errors.push('Insights inputs have no valid generatedAt.');
+  for (const k of ['gamesThrough', 'settledThrough'] as const) if (data[k] !== null && !(typeof data[k] === 'string' && ISO_DAY.test(data[k] as string))) errors.push(`Insights inputs ${k} is not a date or null.`);
+  if (!Number.isInteger(data.windowNights) || !Number.isInteger(data.windowTarget) || (data.windowNights as number) < 0 || (data.windowNights as number) > (data.windowTarget as number)) errors.push('Insights inputs window counts are invalid.');
+  if (typeof data.complete !== 'boolean') errors.push('Insights inputs have no complete flag.');
+  if (!isObj(data.settings) || !isObj(data.sources)) errors.push('Insights inputs have no settings or sources.');
+  if (!isObj(data.players) || !isObj(data.teams) || !isObj(data.goalies)) return { errors: [...errors, 'Insights inputs have no players, teams or goalies.'], warnings };
+  const nonNeg = (v: unknown) => v === null || (typeof v === 'number' && Number.isFinite(v) && v >= 0);
+  const intOrNull = (v: unknown, allowNeg = false) => v === null || (typeof v === 'number' && Number.isInteger(v) && (allowNeg || v >= 0));
+  const checkWindow = (id: string, name: string, w: unknown, maxGp: number) => {
+    if (!isObj(w) || !isObj(w.talent) || !isObj(w.opportunity)) return errors.push(`${id} ${name}: missing talent/opportunity.`);
+    if (!Number.isInteger(w.gp) || (w.gp as number) < 1 || (w.gp as number) > maxGp) errors.push(`${id} ${name}: games ${String(w.gp)}.`);
+    if (typeof w.from !== 'string' || typeof w.to !== 'string' || !ISO_DAY.test(w.from) || !ISO_DAY.test(w.to) || w.from > w.to) errors.push(`${id} ${name}: dates.`);
+    for (const [k, v] of Object.entries(w.talent)) if (!intOrNull(v, k === 'pm')) errors.push(`${id} ${name}: talent.${k} ${String(v)}.`);
+    for (const k of ['toi', 'evToi', 'ppToi', 'shToi', 'teamPpToi']) if (!nonNeg(w.opportunity[k])) errors.push(`${id} ${name}: opportunity.${k}.`);
+    const share = w.opportunity.ppShare;
+    if (share !== null && !(typeof share === 'number' && share >= 0 && share <= 1)) errors.push(`${id} ${name}: ppShare ${String(share)}.`);
+    return 0;
+  };
+  let unknown = 0;
+  for (const [id, p] of Object.entries(data.players)) {
+    if (!/^nhl-\d+$/.test(id) || !isObj(p) || typeof p.team !== 'string' || !/^[A-Z]{3}$/.test(p.team)) { errors.push(`Insights player ${id} is malformed.`); continue; }
+    if (opts.playerIds && !opts.playerIds.has(id)) unknown++;
+    if (p.last5 !== undefined) checkWindow(id, 'last5', p.last5, 5);
+    if (p.last10 !== undefined) checkWindow(id, 'last10', p.last10, 10);
+    if (isObj(p.last5) && isObj(p.last10) && (p.last5.gp as number) > (p.last10.gp as number)) errors.push(`${id}: last5 has more games than last10.`);
+    if (p.season !== undefined && (!isObj(p.season) || !Number.isInteger(p.season.gp) || (p.season.gp as number) < 1 || !isObj(p.season.talent) || !isObj(p.season.opportunity))) errors.push(`${id} season block is malformed.`);
+  }
+  for (const [id, g] of Object.entries(data.goalies)) {
+    if (!/^nhl-\d+$/.test(id) || !isObj(g) || typeof g.team !== 'string') { errors.push(`Insights goalie ${id} is malformed.`); continue; }
+    if (opts.playerIds && !opts.playerIds.has(id)) unknown++;
+    for (const w of [g.last5, g.season]) {
+      if (w === undefined) continue;
+      if (!isObj(w) || (w.sv as number) > (w.sa as number) || !(w.svPct === null || (typeof w.svPct === 'number' && w.svPct >= 0 && w.svPct <= 1))) errors.push(`${id} goalie window is invalid.`);
+    }
+  }
+  for (const id of Object.keys(data.teams)) if (!/^[A-Z]{3}$/.test(id)) errors.push(`Insights team key ${id} is invalid.`);
+  if (unknown) warnings.push(`${unknown} insights entries are not in the player directory.`);
   return { errors, warnings };
 }

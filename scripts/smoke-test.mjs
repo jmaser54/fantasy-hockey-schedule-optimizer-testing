@@ -10,6 +10,7 @@
  * Exits non-zero on any failure.
  */
 import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const base = (process.argv[2] ?? '').replace(/\/?$/, '/');
@@ -45,6 +46,21 @@ for (let attempt = 1; attempt <= 20; attempt++) {
 }
 if (!live || !atLeastLocal(live)) fail('live site does not serve the committed data snapshot (or a newer one)');
 console.log(`live data OK: ${live.games.length} games, ${live.teams.length} teams, fetched ${live.fetchedAt}${live.fetchedAt !== local.fetchedAt ? ` (newer than this checkout's ${local.fetchedAt})` : ''}`);
+
+// Insights inputs (testing): served and well-formed when the checkout has them; derived windows only,
+// never raw game lines. Before the first insights refresh the file doesn't exist yet.
+if (existsSync('public/data/insights-inputs.json')) {
+  const res = await fetch(`${base}data/insights-inputs.json?check=${Date.now()}`, { cache: 'no-store' }).catch(() => undefined);
+  if (!res?.ok) console.log(`insights inputs: not served yet (${res ? `HTTP ${res.status}` : 'no response'}); the deploy may still be propagating`);
+  else {
+    const ins = await res.json();
+    if (ins.version !== 1 || !ins.players || !ins.teams || !ins.goalies || typeof ins.complete !== 'boolean') fail('insights-inputs.json is malformed');
+    if (Object.values(ins.players).some((p) => p.games || p.lines)) fail('insights-inputs.json contains raw game lines');
+    console.log(`insights inputs OK: ${Object.keys(ins.players).length} skaters, ${Object.keys(ins.goalies).length} goalies, nights ${ins.windowNights}/${ins.windowTarget}`);
+  }
+} else {
+  console.log('insights inputs: not present in this checkout yet');
+}
 
 // 2. Drive the app.
 const browser = await chromium.launch();

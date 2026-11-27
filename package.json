@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc -b",
     "data:refresh": "node --experimental-strip-types --no-warnings scripts/refresh-data.ts",
-    "data:historical": "node --experimental-strip-types --no-warnings scripts/fetch-historical-stats.ts"
+    "data:historical": "node --experimental-strip-types --no-warnings scripts/fetch-historical-stats.ts",
+    "data:insights": "node --experimental-strip-types --no-warnings scripts/refresh-insights.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
