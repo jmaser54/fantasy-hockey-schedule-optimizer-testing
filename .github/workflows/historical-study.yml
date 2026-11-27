@@ -7,6 +7,7 @@ on:
     branches: [diag/nhl-landing]
     paths:
       - 'scripts/historical-study.mjs'
+      - 'scripts/historical-study-pp.mjs'
       - '.github/workflows/historical-study.yml'
 
 permissions:
@@ -21,5 +22,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Run the historical study
-        run: node scripts/historical-study.mjs
+      - name: Run the power-play promotion follow-up study
+        run: node scripts/historical-study-pp.mjs
