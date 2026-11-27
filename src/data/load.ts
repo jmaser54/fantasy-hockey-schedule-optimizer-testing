@@ -1,7 +1,7 @@
 import { ScheduleIndex } from '../domain/schedule.ts';
 import type { Player, Team } from '../domain/types.ts';
-import type { PlayersFile, ScheduleFile } from './format.ts';
-import { validatePlayers, validateSchedule } from './validate.ts';
+import { OWNERSHIP_PATH, type OwnershipFile, type PlayersFile, type ScheduleFile } from './format.ts';
+import { validateOwnership, validatePlayers, validateSchedule } from './validate.ts';
 
 export type DirectoryPlayer = PlayersFile['players'][number];
 
@@ -78,4 +78,49 @@ export function buildPlayerLookup(players: readonly Player[], custom: readonly P
       return byId.get(id) ?? alias.get(id);
     },
   };
+}
+
+/**
+ * Insights candidate rule (owner decision 2026-11-27): a player must be on a current NHL roster at the
+ * latest refresh (the NHL roster/{team}/current feed). Injured players still on that roster stay
+ * eligible; players off it are not, whatever their games, AHL lines, ESPN team or ownership.
+ */
+export function isOnCurrentNhlRoster(p: Pick<DirectoryPlayer, 'nhlId' | 'inactive'>): boolean {
+  return p.nhlId !== undefined && !p.inactive;
+}
+
+export interface OwnershipData {
+  season: string;
+  fetchedAt: string;
+  /** Directory id ("nhl-<nhlId>") → ESPN ownership. A player with no entry has unknown ownership. */
+  byPlayerId: ReadonlyMap<string, { espnId: number; pct: number }>;
+}
+
+/** Ownership older than this is stale and must not be used for ranking. The refresh runs four times a day. */
+export const OWNERSHIP_STALE_AFTER_MS = 48 * 3_600_000;
+
+/** Parse ownership.json for this season; undefined when it is invalid or for another season (never throws). */
+export function buildOwnershipData(raw: unknown, season: string): OwnershipData | undefined {
+  if (validateOwnership(raw, { season }).errors.length) return undefined;
+  const file = raw as OwnershipFile;
+  return { season: file.season, fetchedAt: file.fetchedAt, byPlayerId: new Map(Object.entries(file.players)) };
+}
+
+/** Optional: the app works without ownership. Missing, unreadable or invalid files give undefined. */
+export async function loadOwnership(season: string, base = import.meta.env.BASE_URL): Promise<OwnershipData | undefined> {
+  try {
+    return buildOwnershipData(await getJson(`${base}${OWNERSHIP_PATH}`), season);
+  } catch {
+    return undefined;
+  }
+}
+
+export function isOwnershipStale(o: OwnershipData, now = Date.now()): boolean {
+  const t = Date.parse(o.fetchedAt);
+  return Number.isNaN(t) || now - t > OWNERSHIP_STALE_AFTER_MS;
+}
+
+/** Ownership the Insights ranking may use: none when it is missing, invalid or stale. */
+export function ownershipForRanking(o: OwnershipData | undefined, now = Date.now()): OwnershipData | undefined {
+  return o && !isOwnershipStale(o, now) ? o : undefined;
 }

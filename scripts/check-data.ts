@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { buildDataset } from '../src/data/load.ts';
 import { HISTORICAL_SEASONS, skaterStatsPath } from '../src/data/format.ts';
-import { validateSkaterStats } from '../src/data/validate.ts';
+import { validateOwnership, validateSkaterStats } from '../src/data/validate.ts';
 
 const schedule = JSON.parse(await readFile('public/data/schedule.json', 'utf8'));
 const players = JSON.parse(await readFile('public/data/players.json', 'utf8'));
@@ -46,4 +46,24 @@ for (const { season, teamGames } of HISTORICAL_SEASONS) {
     process.exit(1);
   }
   console.log(`OK: ${season}: ${stats.skaters.length} skaters with stats (fetched ${stats.fetchedAt})`);
+}
+
+// ESPN ownership (future Insights): validated when present. The file is created by the first
+// successful refresh after the ownership step was added; age is reported, not enforced here.
+let ownershipRaw: string | undefined;
+try {
+  ownershipRaw = await readFile('public/data/ownership.json', 'utf8');
+} catch {
+  console.log('warning: public/data/ownership.json not present yet');
+}
+if (ownershipRaw !== undefined) {
+  const own = JSON.parse(ownershipRaw);
+  const v = validateOwnership(own, { season: data.season, playerIds: new Set(data.players.map((p) => p.id)) });
+  for (const w of v.warnings.slice(0, 10)) console.log(`warning (ownership): ${w}`);
+  if (v.errors.length) {
+    console.error(`Ownership failed validation:\n${v.errors.slice(0, 20).join('\n')}`);
+    process.exit(1);
+  }
+  const hours = Math.round((Date.now() - Date.parse(own.fetchedAt)) / 3_600_000);
+  console.log(`OK: ownership for ${Object.keys(own.players).length} NHL players (ESPN read ${own.fetchedAt}, ${hours} h ago)`);
 }

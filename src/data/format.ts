@@ -28,6 +28,24 @@ export interface PlayersFile {
   })[];
 }
 
+/** Shape version of ownership.json (separate from DATA_VERSION: players.json is unchanged). */
+export const OWNERSHIP_VERSION = 1;
+export const OWNERSHIP_PATH = 'data/ownership.json';
+
+/**
+ * ESPN fantasy ownership for NHL players (Insights ranking signal only, never eligibility or
+ * availability). Keyed by directory id "nhl-<nhlId>". A player with no entry has unknown ownership.
+ */
+export interface OwnershipFile {
+  version: number;
+  /** NHL season id, e.g. "20262027". */
+  season: string;
+  /** When ESPN was read. */
+  fetchedAt: string;
+  source: string;
+  players: Record<string, { espnId: number; /** Share of ESPN leagues rostering the player, 0–100. */ pct: number }>;
+}
+
 /** NHL skater position codes as reported by the stats API. */
 export type SkaterPositionCode = 'C' | 'L' | 'R' | 'D';
 

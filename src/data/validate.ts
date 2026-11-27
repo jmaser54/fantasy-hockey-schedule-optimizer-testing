@@ -5,7 +5,7 @@
  */
 import { isValidISODate } from '../domain/dates.ts';
 import { POSITIONS } from '../domain/types.ts';
-import { DATA_VERSION, type PlayersFile, type ScheduleFile, type SkaterStatsFile } from './format.ts';
+import { DATA_VERSION, OWNERSHIP_VERSION, type PlayersFile, type ScheduleFile, type SkaterStatsFile } from './format.ts';
 
 export interface ValidationResult {
   errors: string[];
@@ -171,5 +171,41 @@ export function validateSkaterStats(
       warnings.push(`${prev.skaters.length - file.skaters.length} fewer skaters than the previous snapshot.`);
     }
   }
+  return { errors, warnings };
+}
+
+/**
+ * ownership.json: structure, season and 0–100 percentages. A player id not in the directory is a
+ * warning (the files can be a refresh apart); anything else wrong is an error.
+ */
+export function validateOwnership(data: unknown, opts: { season?: string; playerIds?: ReadonlySet<string> } = {}): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (!isObj(data)) return { errors: ['Ownership file is not an object.'], warnings };
+  if (data.version !== OWNERSHIP_VERSION) errors.push(`Unsupported ownership version ${String(data.version)}.`);
+  if (typeof data.season !== 'string' || !/^\d{8}$/.test(data.season)) errors.push('Ownership file has no season.');
+  else if (opts.season && data.season !== opts.season) errors.push(`Ownership is for season ${data.season}; expected ${opts.season}.`);
+  if (typeof data.fetchedAt !== 'string' || Number.isNaN(Date.parse(data.fetchedAt))) errors.push('Ownership file has no valid fetchedAt.');
+  if (typeof data.source !== 'string' || !data.source) errors.push('Ownership file has no source.');
+  if (!isObj(data.players)) return { errors: [...errors, 'Ownership file has no players.'], warnings };
+  const espnIds = new Set<number>();
+  let unknownIds = 0;
+  for (const [id, entry] of Object.entries(data.players)) {
+    if (!/^nhl-\d+$/.test(id)) {
+      errors.push(`Ownership key ${id} is not an NHL player id.`);
+      continue;
+    }
+    if (!isObj(entry)) {
+      errors.push(`Ownership entry ${id} is not an object.`);
+      continue;
+    }
+    const { espnId, pct } = entry;
+    if (typeof espnId !== 'number' || !Number.isInteger(espnId) || espnId <= 0) errors.push(`Ownership entry ${id} has an invalid ESPN id.`);
+    else if (espnIds.has(espnId)) errors.push(`ESPN id ${espnId} appears twice in ownership.`);
+    else espnIds.add(espnId);
+    if (typeof pct !== 'number' || !Number.isFinite(pct) || pct < 0 || pct > 100) errors.push(`Ownership entry ${id} has an invalid percentage ${String(pct)}.`);
+    if (opts.playerIds && !opts.playerIds.has(id)) unknownIds++;
+  }
+  if (unknownIds) warnings.push(`${unknownIds} ownership entries are not in the player directory.`);
   return { errors, warnings };
 }

@@ -7,7 +7,9 @@
  * Fetches from the NHL web API (schedule, teams, rosters) and, optionally,
  * ESPN's fantasy player pool (eligibility). Every response is parsed
  * strictly and the merged result is validated; if validation fails nothing
- * is written. Then refreshes Player Evaluator skater stats from the NHL Stats
+ * is written. ESPN ownership for NHL players (public/data/ownership.json)
+ * comes from the same ESPN response; if ESPN fails or the result looks
+ * incomplete, the previous ownership file is kept. Then refreshes Player Evaluator skater stats from the NHL Stats
  * REST API (public/data/skater-stats.json); that step is independent: if it
  * fails, the previous stats file is kept, the failure is logged, and the
  * schedule/player refresh still succeeds. Raw samples and a report go to
@@ -15,9 +17,10 @@
  * .github/workflows/refresh-data.yml on a schedule.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { DATA_VERSION, type PlayersFile, type ScheduleFile, type SkaterStatsFile } from '../src/data/format.ts';
+import { DATA_VERSION, type OwnershipFile, type PlayersFile, type ScheduleFile, type SkaterStatsFile } from '../src/data/format.ts';
 import { ESPN_FILTER, espnPlayersUrl, parseEspnPlayers, type EspnPlayer } from '../src/data/pipeline/espn.ts';
 import { mergeClubSchedules, NHL_BASE, parseClubSchedule, parseRoster, parseStandingsTeams, type NhlRosterPlayer } from '../src/data/pipeline/nhl.ts';
+import { buildOwnership, ownershipUpdateProblems } from '../src/data/pipeline/ownership.ts';
 import { reconcilePlayers } from '../src/data/pipeline/reconcile.ts';
 import { fetchStatsReport, joinSkaterStats, STATS_BASE, STATS_REPORTS, type StatsReport } from '../src/data/pipeline/stats.ts';
 import { validatePlayers, validateSchedule, validateSkaterStats } from '../src/data/validate.ts';
@@ -120,9 +123,11 @@ async function main() {
 
   // ESPN eligibility (optional)
   let espn: EspnPlayer[] | undefined;
+  let espnFetchedAt: string | undefined;
   if (!SKIP_ESPN) {
     try {
       const body = await getJson(espnPlayersUrl(ESPN_SEASON), { 'x-fantasy-filter': ESPN_FILTER });
+      espnFetchedAt = new Date().toISOString();
       await saveRaw('espn-players-sample.json', Array.isArray(body) ? body.slice(0, 25) : body);
       espn = parseEspnPlayers(body);
       log(`ESPN players: ${espn.length}`);
@@ -157,6 +162,8 @@ async function main() {
   await writeFile(`${OUT_DIR}/players.json`, JSON.stringify(players));
   log('Wrote public/data/schedule.json and public/data/players.json');
 
+  await refreshOwnership(players, espn, espnFetchedAt);
+
   try {
     await refreshSkaterStats(new Set(teams.map((t) => t.id)), fetchedAt);
   } catch (err) {
@@ -165,6 +172,31 @@ async function main() {
     console.log(`::warning title=Skater stats refresh failed::${(err as Error).message.replace(/\s+/g, ' ').slice(0, 300)}`);
   }
   await writeFile(`${RAW_DIR}/report.txt`, report.join('\n'));
+}
+
+/**
+ * ESPN ownership (future Insights ranking), from the ESPN response fetched above: no extra request.
+ * Never blocks the refresh, and never replaces the previous file with an incomplete or invalid one.
+ */
+async function refreshOwnership(players: PlayersFile, espn: EspnPlayer[] | undefined, fetchedAt: string | undefined) {
+  const path = `${OUT_DIR}/ownership.json`;
+  const keep = (why: string) => {
+    log(`Ownership NOT updated; kept the previous ${path}: ${why}`);
+    console.log(`::warning title=Ownership not updated::${why.replace(/\s+/g, ' ').slice(0, 300)}`);
+  };
+  if (!espn || !fetchedAt) return keep('ESPN players unavailable this run');
+  try {
+    const previous = await readPrevious<OwnershipFile>(path);
+    const built = buildOwnership({ players: players.players, espn, season: SEASON, fetchedAt });
+    built.report.forEach((l) => log(`  ${l}`));
+    built.warnings.forEach((w) => log(`  warning: ${w}`));
+    const problems = ownershipUpdateProblems(built, previous, new Set(players.players.map((p) => p.id)));
+    if (problems.length) return keep(problems.slice(0, 5).join('; '));
+    await writeFile(path, JSON.stringify(built.file));
+    log(`Wrote ${path}: ${Object.keys(built.file.players).length} players (ESPN read ${fetchedAt})`);
+  } catch (err) {
+    keep(`failed: ${(err as Error).message}`);
+  }
 }
 
 /** Player Evaluator stats: fetch 3 reports, join, validate, then write. Throws on any problem (nothing written). */

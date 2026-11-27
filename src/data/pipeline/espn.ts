@@ -20,6 +20,8 @@ export interface EspnPlayer {
   defaultPositionId: number;
   eligibleSlots: number[];
   injuryStatus?: string;
+  /** ownership.percentOwned when it is a number from 0 to 100; absent (unknown, never 0) otherwise. */
+  percentOwned?: number;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -34,7 +36,17 @@ export function parseEspnPlayers(body: unknown): EspnPlayer[] {
       throw new Error(`ESPN: player entry missing required fields (${JSON.stringify(p).slice(0, 200)})`);
     }
     const injuryStatus = typeof p.injuryStatus === 'string' && p.injuryStatus !== 'ACTIVE' ? p.injuryStatus : undefined;
-    out.push({ espnId: id, name: fullName, proTeamId, defaultPositionId, eligibleSlots: eligibleSlots.filter((x): x is number => typeof x === 'number'), injuryStatus });
+    const owned = isObj(p.ownership) ? p.ownership.percentOwned : undefined;
+    const percentOwned = typeof owned === 'number' && Number.isFinite(owned) && owned >= 0 && owned <= 100 ? owned : undefined;
+    out.push({
+      espnId: id,
+      name: fullName,
+      proTeamId,
+      defaultPositionId,
+      eligibleSlots: eligibleSlots.filter((x): x is number => typeof x === 'number'),
+      injuryStatus,
+      ...(percentOwned !== undefined ? { percentOwned } : {}),
+    });
   }
   return out;
 }
