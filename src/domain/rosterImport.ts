@@ -191,6 +191,10 @@ const PAGE_WORDS = new Set(
 
 function lineTokens(line: string): string[] {
   return line
+    // OCR reads an initial S as "§" or "$" ("§. Gostisbehere", "$: Gostisbehere"): before ". Name" it is the letter S.
+    .replace(/(^|\s)[§$](?=[.:]\s*[A-ZÀ-Þ])/g, '$1S')
+    // …and its dot as a colon ("S: Gostisbehere"): a lone capital + colon before a name word is an initial.
+    .replace(/(^|\s)([A-Z]):(?=\s*[A-ZÀ-Þ][a-zà-ÿ])/g, '$1$2.')
     .replace(/[•·|\t()[\]{}]/g, ' ')
     .replace(/\b([A-Z])\.(?=[A-Za-zÀ-ÿ])/g, '$1. ') // OCR often drops the space after an initial ("A.Fox")
     .split(/\s+/)
@@ -272,9 +276,12 @@ export function extractRosterNames(text: string, index: PlayerIndex, teamIds: Re
     }
     if (found) continue;
     // 2. First initial + last name ("C. McDavid", OCR "C McDavid" or "GD. Tarasov" with the slot run in):
-    // automatic when the directory has exactly one such player, a review when several share it.
+    // automatic when the directory has exactly one such player, a review when several share it. OCR noise
+    // glued to the initial (a headshot read as "co": "coS. Gostisbehere") and a comma read for its dot
+    // ("S, Gostisbehere"; a colon is turned into a dot in lineTokens) still count as a dotted initial; the
+    // rest must still name exactly one player.
     for (let i = 0; i < tokens.length && !found; i++) {
-      const init = /^(?:[A-Z]{0,2}([A-Z])\.|([ABEHIJKLMNOPQRSTVXYZ]))$/.exec(tokens[i]!);
+      const init = /^(?:[a-z]{0,3}[A-Z]{0,2}([A-Z])[.,]|([ABEHIJKLMNOPQRSTVXYZ]))$/.exec(tokens[i]!);
       if (!init) continue;
       for (let k = Math.min(3, tokens.length - i - 1); k >= 1; k--) {
         const rest = normalizeName(tokens.slice(i + 1, i + 1 + k).join(' '));
