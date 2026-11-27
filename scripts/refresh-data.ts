@@ -131,32 +131,6 @@ async function main() {
         for (const p of body.slice(0, 200)) if (p && typeof p === 'object') Object.keys(p).forEach((k) => keys.add(k));
         log(`  ESPN fields: ${[...keys].sort().join(' ')}`);
         log(`  ESPN injury statuses: ${JSON.stringify(espn.reduce<Record<string, number>>((a, p) => ((a[p.injuryStatus ?? 'none'] = (a[p.injuryStatus ?? 'none'] ?? 0) + 1), a), {}))}`);
-        // TEMPORARY ownership diagnostic (2026-11-27, Testing only): log-only, to be reverted after one run.
-        {
-          const kinds: Record<string, number> = {};
-          const keys: Record<string, number> = {};
-          const vals: { name: string; id: unknown; pct: number }[] = [];
-          for (const p of body as Record<string, unknown>[]) {
-            const o = p && typeof p === 'object' ? (p.ownership as Record<string, unknown> | null | undefined) : undefined;
-            const v = o && typeof o === 'object' ? o.percentOwned : undefined;
-            if (o && typeof o === 'object') for (const k of Object.keys(o)) keys[k] = (keys[k] ?? 0) + 1;
-            const kind = o === undefined ? 'ownership missing' : o === null ? 'ownership null' : v === undefined ? 'percentOwned missing' : v === null ? 'percentOwned null' : typeof v === 'number' && !Number.isFinite(v) ? 'non-finite number' : typeof v;
-            kinds[kind] = (kinds[kind] ?? 0) + 1;
-            if (typeof v === 'number' && Number.isFinite(v)) vals.push({ name: String(p.fullName), id: p.id, pct: v });
-          }
-          vals.sort((a, b) => a.pct - b.pct);
-          const n = vals.length;
-          const q = (f: number) => (n ? vals[Math.min(n - 1, Math.ceil(f * n) - 1 < 0 ? 0 : Math.ceil(f * n) - 1)]!.pct : NaN);
-          log(`  OWNERSHIP DIAG: records ${body.length}; numeric percentOwned ${n} (${((100 * n) / body.length).toFixed(1)}%); value kinds ${JSON.stringify(kinds)}`);
-          log(`  OWNERSHIP DIAG: ownership keys (records having each) ${JSON.stringify(keys)}; out of 0-100 range: ${vals.filter((x) => x.pct < 0 || x.pct > 100).length}`);
-          log(`  OWNERSHIP DIAG: min ${q(0)} median ${q(0.5)} p75 ${q(0.75)} max ${n ? vals[n - 1]!.pct : NaN} (nearest-rank)`);
-          const bands: [string, (x: number) => boolean][] = [['0%', (x) => x === 0], ['>0-<1%', (x) => x > 0 && x < 1], ['1-<5%', (x) => x >= 1 && x < 5], ['5-<10%', (x) => x >= 5 && x < 10], ['10-<20%', (x) => x >= 10 && x < 20], ['20-<30%', (x) => x >= 20 && x < 30], ['30-<40%', (x) => x >= 30 && x < 40], ['>=40%', (x) => x >= 40]];
-          for (const [label, inBand] of bands) {
-            const b = vals.filter((x) => inBand(x.pct));
-            const ex = b.length <= 5 ? b : [0, 0.25, 0.5, 0.75, 1].map((f) => b[Math.round(f * (b.length - 1))]!);
-            log(`  OWNERSHIP DIAG band ${label}: ${b.length}${ex.length ? ` e.g. ${ex.map((x) => `${x.name} (${String(x.id)}) ${x.pct}`).join('; ')}` : ''}`);
-          }
-        }
       }
     } catch (err) {
       log(`ESPN unavailable: ${(err as Error).message}`);
