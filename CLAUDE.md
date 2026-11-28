@@ -26,6 +26,13 @@ Vite + React + TypeScript single-page app, deployed to GitHub Pages. The canonic
 - A bot commits daily data refreshes to this branch, so `git pull --rebase` before pushing.
 - Commit only the files the task touched.
 
+## Delegation (specialist subagents)
+- `.claude/agents/` defines three review-only specialists (they report; they never change anything): `insights-analyst`, `qa-reviewer` and `data-auditor`. The main session stays the only implementer, integrator, committer, pusher and deployer, and the only one that triggers workflows or touches Live.
+- Material Insights logic or methodology changes get an independent QA review: implement on Testing, push and name the frozen commit, have `qa-reviewer` review it, address the findings and rerun the checks, then report and ask before any Live promotion. Minor text-only changes can skip it. QA never approves or fixes its own findings.
+- Give each specialist a brief with the question, the pinned commit or data snapshot, the source-of-truth sections to read, what's out of scope, and a scratch folder under the session scratchpad. Don't run overlapping delegations or redo delegated work.
+- Specialists have Bash, so they aren't technically read-only: a PreToolUse guard (`.claude/hooks/specialist-bash-guard.py`, scoped to the agents) blocks common modifying commands, but it isn't a security boundary. After every delegation, check `git status` in both clones and revert and report any change a specialist made.
+- Relay specialist reports with your own assessment; only the main session records decisions in the source of truth.
+
 ## Keep the source of truth current
 - Update `docs/PROJECT_SOURCE_OF_TRUTH.md` in the same commit whenever:
   - the implementation changes something it describes (behavior, architecture, data flow, persistence, commands, workflows);
