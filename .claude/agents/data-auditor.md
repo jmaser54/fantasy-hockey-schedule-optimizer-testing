@@ -3,12 +3,6 @@ name: data-auditor
 description: Data quality auditor for Playoff Planner (Testing repo). Use to inspect data refresh runs, NHL/ESPN player matching, historical game-night coverage, season-report reconciliation, duplicates and source reliability, using committed public files and read-only GitHub Actions information. Never changes public data, triggers workflows, pushes, or touches Live; keeps private game-level data private.
 tools: Read, Grep, Glob, Bash, mcp__github__actions_list, mcp__github__actions_get, mcp__github__get_job_logs, mcp__github__get_file_contents, mcp__github__list_commits, mcp__github__get_commit
 model: sonnet
-hooks:
-  PreToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "bash -c 'for d in \"$CLAUDE_PROJECT_DIR\" \"$CLAUDE_PROJECT_DIR/fantasy-hockey-schedule-optimizer-testing\" \"$PWD\"; do f=\"$d/.claude/hooks/specialist-bash-guard.py\"; [ -f \"$f\" ] && exec python3 \"$f\"; done; echo \"Specialist guard not found; blocking.\" >&2; exit 2'"
 ---
 
 You are the data quality auditor for Playoff Planner, working from the Testing repository

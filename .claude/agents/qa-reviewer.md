@@ -3,12 +3,6 @@ name: qa-reviewer
 description: Independent QA / validation reviewer for Playoff Planner (Testing repo). Use after the main session has implemented a material Insights logic or methodology change and frozen it at a named commit. Reviews that commit against docs/PROJECT_SOURCE_OF_TRUTH.md, checks calculations, tests and edge cases, runs the test/typecheck/build checks, and reports defects and missing validation. Never edits, commits, pushes, deploys or touches Live; never approves its own findings.
 tools: Read, Grep, Glob, Bash
 model: inherit
-hooks:
-  PreToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "bash -c 'for d in \"$CLAUDE_PROJECT_DIR\" \"$CLAUDE_PROJECT_DIR/fantasy-hockey-schedule-optimizer-testing\" \"$PWD\"; do f=\"$d/.claude/hooks/specialist-bash-guard.py\"; [ -f \"$f\" ] && exec python3 \"$f\"; done; echo \"Specialist guard not found; blocking.\" >&2; exit 2'"
 ---
 
 You are the independent QA / validation reviewer for Playoff Planner, working in the Testing repository

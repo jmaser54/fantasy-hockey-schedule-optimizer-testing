@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
-"""PreToolUse guard for the specialist subagents (.claude/agents/*.md); never used by the main session.
+"""PreToolUse guard for the specialist subagents, run from the project hook in .claude/settings.json.
 
-Blocks Bash commands that commit, push, change git state, call GitHub's CLI, install packages, run the data
-refresh scripts, touch the Live repository, send data with curl/wget, or write files outside /tmp.
-Exit 2 blocks the call and shows the reason to the subagent.
+The hook fires for every Bash call (main session and subagents). The guard first reads `agent_type`, which
+Claude Code itself puts in the hook input for calls made inside a subagent (it is the subagent's `name`).
+Only insights-analyst, qa-reviewer and data-auditor are guarded; the main session (no agent_type) and every
+other agent type pass straight through, before any other parsing. Input that can't be parsed is blocked
+only when it names one of the specialists.
+
+For the specialists it blocks Bash commands that commit, push, change git state, call GitHub's CLI, install
+packages, run the data refresh scripts, touch the Live repository, send data with curl/wget, or write files
+outside /tmp. Exit 2 blocks the call and shows the reason to the subagent.
 
 This is a guardrail, not a security boundary: a program started from an allowed command (for example a
-Node or Python script) can still write files itself. The main session therefore checks `git status` in both
-clones after every delegation (CLAUDE.md, "Delegation").
+Node or Python script) can still write files itself, and a guard that fails to start doesn't block. The main
+session therefore checks `git status` in both clones after every delegation (CLAUDE.md, "Delegation").
 """
 import json
 import re
@@ -16,13 +22,27 @@ import sys
 
 
 def block(reason: str) -> None:
-    print(f"Blocked by the specialist guard: {reason}. Specialists are read-only; ask the main session to do this.", file=sys.stderr)
+    print(f"Blocked by the specialist guard: {reason}. Specialists are review-only; ask the main session to do this.", file=sys.stderr)
     sys.exit(2)
 
 
+SPECIALISTS = ("insights-analyst", "qa-reviewer", "data-auditor")
+
+raw = sys.stdin.read()
 try:
-    data = json.load(sys.stdin)
-    cmd = data.get("tool_input", {}).get("command", "")
+    data = json.loads(raw)
+    agent = data.get("agent_type") if isinstance(data, dict) else None
+except Exception:
+    data, agent = None, None
+    # Unparseable input: block only if it identifies a specialist; never block the main session on our error.
+    if any(re.search(r'"agent_type"\s*:\s*"' + a + '"', raw) for a in SPECIALISTS):
+        block("the command could not be read")
+    sys.exit(0)
+if agent not in SPECIALISTS:
+    sys.exit(0)  # main session or another agent type: not guarded
+
+try:
+    cmd = (data.get("tool_input") or {}).get("command")
     if not isinstance(cmd, str):
         raise ValueError("no command")
 except Exception:
