@@ -8,6 +8,7 @@ on:
     paths:
       - 'scripts/historical-study.mjs'
       - 'scripts/historical-study-pp.mjs'
+      - 'scripts/historical-study-returners.mjs'
       - '.github/workflows/historical-study.yml'
 
 permissions:
@@ -22,5 +23,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Run the power-play promotion follow-up study
-        run: node scripts/historical-study-pp.mjs
+      - name: Run the returner opportunity study
+        run: node scripts/historical-study-returners.mjs
