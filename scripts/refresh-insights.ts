@@ -13,7 +13,7 @@ import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import type { InsightsInputsFile, PlayersFile, ScheduleFile, SkaterStatsFile } from '../src/data/format.ts';
 import { assembleGames, fetchRange, GAME_REPORTS, type GameRecord, type GameReport } from '../src/data/pipeline/gamelog.ts';
-import { buildInsightsInputs, fetchSeasonData, insightsUpdateProblems, type SeasonData } from '../src/data/pipeline/insightsInputs.ts';
+import { buildInsightsInputs, FEATURES_REVISION, fetchSeasonData, insightsUpdateProblems, type SeasonData } from '../src/data/pipeline/insightsInputs.ts';
 import { applyFetched, contiguousRanges, DEFAULT_CONFIG, emptyWindow, pastNights, planNights, WINDOW_VERSION, type InsightsConfig, type WindowState } from '../src/data/pipeline/insightsWindow.ts';
 
 const SEASON = process.env.SEASON ?? '20262027';
@@ -184,7 +184,8 @@ async function main() {
     state.meta.updatedAt = nowIso;
     await saveState(state, season, written);
   }
-  if (!changed && previous && previous.season === SEASON && previous.generatedAt >= state.meta.updatedAt) {
+  // Rebuild when the feature model changed, even with no new games.
+  if (!changed && previous && previous.season === SEASON && previous.generatedAt >= state.meta.updatedAt && previous.settings?.featuresRevision === FEATURES_REVISION) {
     log(`Insights: nothing new; ${requests} requests`);
     return;
   }

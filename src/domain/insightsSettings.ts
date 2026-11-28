@@ -154,3 +154,35 @@ export const OWNERSHIP_WEIGHTS = {
 /** Custom Insights: cards shown before See All, and the internal maximum ranked. */
 export const CUSTOM_SHOWN = 3;
 export const CUSTOM_MAX = 5;
+
+/**
+ * Participation model (2026-11-28; src/data/pipeline/participation.ts). The probabilities themselves are
+ * measured from all skaters' game histories on every build and published as aggregates
+ * (`participationModel`); these are the structural choices:
+ * - longAbsenceGames: missed runs at least this long count as an absence spell (unavailable), shorter
+ *   misses as part of his role (scratches, rest). Assumption: depth players' scratch runs are usually
+ *   1–4 games; the published spell counts let this be checked.
+ * - priorGames: a player's role rate is shrunk toward the population rate as if he had this many extra
+ *   games at it (assumption).
+ * - minHistory / nextWeekGames / returnHorizon / minSamples: measurement settings (a state needs 5 games
+ *   of his history; Next Week looks at the next 4 team games; returns are measured over 10; a streak
+ *   bucket needs 30 samples or it borrows from the next shorter streak).
+ */
+export const PARTICIPATION = {
+  longAbsenceGames: 5,
+  priorGames: 10,
+  minHistory: 5,
+  nextWeekGames: 4,
+  returnHorizon: 10,
+  minSamples: 30,
+} as const;
+
+/**
+ * Reliability of a baseline season for shots, hits, blocks, PIM, plus/minus and faceoff wins
+ * (2026-11-28): the season's own rate is shrunk toward players at his position as if it had this many
+ * extra games at the position rate, so a 26-game season isn't trusted like a full one. Derived from the
+ * measured season-to-season correlations of per-game rates (players with 40+ games in both 2024-25 and
+ * 2025-26): games = n × (1 − r) ÷ r with n ≈ 70 games (assumption) — shots r 0.88, hits 0.91, blocks
+ * 0.92, PIM 0.76, plus/minus 0.34. Faceoff wins weren't measured (assumption: like blocks).
+ */
+export const SEASON_RELIABILITY_GAMES = { sog: 9.5, hit: 6.9, blk: 6.1, pim: 22.1, pm: 136, fow: 6 } as const;

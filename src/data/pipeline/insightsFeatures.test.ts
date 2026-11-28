@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PP_PERSISTENCE, SITUATION_MINUTES_PER_GAME, TALENT_HALF_TRUST } from '../../domain/insightsSettings.ts';
+import { PP_PERSISTENCE, SEASON_RELIABILITY_GAMES, SITUATION_MINUTES_PER_GAME, TALENT_HALF_TRUST } from '../../domain/insightsSettings.ts';
 import type { SkaterLine } from './gamelog.ts';
 import { choosePrior, goalieStartFacts, halfTrustMinutes, shrinkByMinutes, skaterFeatures, talentRates, type SeasonTotals, type WindowAppearance } from './insightsFeatures.ts';
 
@@ -136,6 +136,24 @@ describe('talent rates', () => {
     expect(p.prior).toBe('partial');
     expect(choosePrior(undefined, undefined).source).toBe('position');
     expect(choosePrior({ ...season, gp: 50 }, full).source).toBe('player');
+  });
+
+  it('treats a short baseline season as partial evidence for PIM-type categories (Sabourin case)', () => {
+    const posPim = 2.0; // forwards' PIM per 60 of ice time
+    const toiPg = 9.5 * 60;
+    // Last season: 26 games at 3.42 PIM a game; this season: 9 games at 1.89.
+    const prev: SeasonTotals = { ...season, gp: 26, pim: 3.42 * 26, toi: 26 * toiPg };
+    const cur: SeasonTotals = { ...season, gp: 9, pim: 1.89 * 9, toi: 9 * toiPg };
+    const perGame = (r: number) => (r * toiPg) / 3600;
+    const t = talentRates(cur, prev, { ...pos, pim: posPim }, 'F');
+    expect(perGame(t.rates.pim!)).toBeLessThan(2.6); // was about 3.4 a game with the 26-game season trusted fully
+    expect(perGame(t.rates.pim!)).toBeGreaterThan(1.89); // still a PIM specialist, not the position average (0.32 a game)
+    // A full season keeps most of its player-specific rate.
+    const full: SeasonTotals = { ...season, gp: 82, pim: 2.5 * 82, toi: 82 * toiPg };
+    const own = (2.5 * 3600) / toiPg;
+    const prior = talentRates(undefined, full, { ...pos, pim: posPim }, 'F').rates.pim!;
+    expect(prior).toBeGreaterThan(posPim + 0.75 * (own - posPim));
+    expect(SEASON_RELIABILITY_GAMES.pim).toBeCloseTo((70 * 0.24) / 0.76, 0);
   });
 
   it('keeps unknowns unknown', () => {

@@ -142,6 +142,18 @@ describe('Custom Insights', () => {
     expect(JSON.stringify(withOwn)).not.toMatch(/available/i);
   });
 
+  it('values expected contribution: participation scales both candidates and the user\'s players, by period', () => {
+    const s = setup();
+    // The best candidate isn't dressing now but should be back long before the playoffs.
+    s.insights.players['nhl-10']!.features = feat(1.6, { participation: { teamGames: 26, played: 9, streak: 17, roleRate: 1, nextWeek: 0.1, playoffs: 0.9 } });
+    expect(customInsights(base(s)).cards.map((c) => c.addId)).not.toContain('nhl-10');
+    expect(customInsights(base(s, { ctx: 'playoffs', dates: rounds.flatMap((r) => r.dates) })).cards.map((c) => c.addId)).toContain('nhl-10');
+    // A rostered player who isn't dressing becomes the natural drop even though his per-game value is high.
+    const t = setup();
+    t.insights.players['nhl-3']!.features = feat(1.2, { participation: { teamGames: 26, played: 5, streak: 21, roleRate: 1, nextWeek: 0.05, playoffs: 0.4 } });
+    expect(customInsights(base(t)).cards[0]!.dropId).toBe('nhl-3');
+  });
+
   it('treats missing ownership as 1.0 (no bonus or penalty), a stale file as no ownership, and never filters on it', () => {
     expect([ownershipWeight(undefined), ownershipWeight(3), ownershipWeight(10), ownershipWeight(29.9), ownershipWeight(30), ownershipWeight(100)]).toEqual([1, 1, 0.6, 0.6, 0.3, 0.3]);
     const s = setup({ players: { 1: feat(0.5), 2: feat(0.4), 3: feat(1.0), 4: feat(1.0), 10: feat(1.5), 11: feat(1.45), 12: feat(0.4), 13: feat(0.4) } });

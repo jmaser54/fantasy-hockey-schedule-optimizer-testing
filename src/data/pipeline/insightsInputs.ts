@@ -7,6 +7,8 @@ import { INSIGHTS_VERSION, type GoalieWindow, type InsightsInputsFile, type Play
 import { validateInsightsInputs } from '../validate.ts';
 import type { GetJson, SkaterLine } from './gamelog.ts';
 import { goalieStartFacts, posGroup, positionRates, skaterFeatures, type SeasonTotals, type WindowAppearance } from './insightsFeatures.ts';
+import { buildSequence, fitParticipation, playerParticipation } from './participation.ts';
+import { teamOnDate } from '../../domain/schedule.ts';
 import type { InsightsConfig, WindowState } from './insightsWindow.ts';
 import { STATS_BASE } from './stats.ts';
 
@@ -122,6 +124,12 @@ function skaterWindow(apps: Appearance[], cfg: InsightsConfig): SkaterWindow {
   };
 }
 
+/**
+ * Revision of the derived-feature model. Bump it whenever feature calculations change: the refresh
+ * rebuilds the published file when the previous one came from another revision, even with no new games.
+ */
+export const FEATURES_REVISION = '2026-11-28.participation';
+
 /** Build the published file from the window, season data and the current directory. */
 export function buildInsightsInputs(input: {
   state: WindowState;
@@ -192,6 +200,19 @@ export function buildInsightsInputs(input: {
     };
   });
   const teamDates = (team: string) => (teamGames.get(team) ?? []).map((x) => x.date);
+  // Participation: each skater's team games (his team on each date) from his first appearance; the model
+  // is fitted on every skater's history in the window (current roster or not) and published as aggregates.
+  const windowDates = Object.keys(state.nights).sort();
+  const teamDateSets = new Map([...teamGames.entries()].map(([t, g]) => [t, new Set(g.map((x) => x.date))]));
+  const sequences = new Map<string, boolean[]>();
+  for (const p of players.players) {
+    if (p.nhlId === undefined || p.positions.includes('G')) continue;
+    const apps = skaterApps.get(String(p.nhlId));
+    if (!apps?.length) continue;
+    const own = windowDates.filter((d) => teamDateSets.get(teamOnDate(p, d))?.has(d));
+    sequences.set(String(p.nhlId), buildSequence(own, new Set(apps.map((a) => a.date))));
+  }
+  const participationModel = fitParticipation([...sequences.values()]);
   const out: InsightsInputsFile = {
     version: INSIGHTS_VERSION,
     season: state.meta.season,
@@ -201,7 +222,7 @@ export function buildInsightsInputs(input: {
     windowNights: complete.length,
     windowTarget: target.length,
     complete: target.length > 0 && complete.length === target.length,
-    settings: { ppShareMinSeconds: cfg.ppShareMinSeconds, correctionNights: cfg.correctionNights },
+    settings: { ppShareMinSeconds: cfg.ppShareMinSeconds, correctionNights: cfg.correctionNights, featuresRevision: FEATURES_REVISION },
     sources: {
       gameLogs: 'NHL Stats REST per-game reports (skater summary, scoringpergame, timeonice; team powerplay, summary; goalie summary)',
       season: 'NHL Stats REST season reports (skater scoringpergame, timeonice, powerplay; team summary, powerplay; goalie summary) and skater-stats.json',
@@ -209,6 +230,7 @@ export function buildInsightsInputs(input: {
     },
     players: {},
     league: { ppToiPg: null },
+    participationModel,
     teams: {},
     goalies: {},
   };
@@ -252,6 +274,8 @@ export function buildInsightsInputs(input: {
     entry.features = skaterFeatures({
       apps: apps as WindowAppearance[], group, current: cur.get(id), previous: prev.get(id), previous2: prev2.get(id), posAvg: posAvg[group], posMinutes: posMinutes[group === 'F' ? 0 : 1]!, teamDates: teamDates(p.team),
     });
+    const part = playerParticipation(sequences.get(id) ?? [], participationModel);
+    if (part) entry.features.participation = part;
     if (s) {
       const st = statsById.get(id);
       const evPts = st && st.gamesPlayed === s.gp ? st.points - st.ppPoints - st.shPoints : null;

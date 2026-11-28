@@ -251,6 +251,11 @@ export function validateInsightsInputs(data: unknown, opts: { season?: string; p
       if (!isObj(m) || !['toi', 'evToi', 'shToi'].every((k) => typeof m[k] === 'number' && (m[k] as number) >= 0 && (m[k] as number) < 70) || !(typeof m.ppShare === 'number' && m.ppShare >= 0 && m.ppShare <= 1)) errors.push(`${id} features.minutes.${c} is invalid.`);
     }
     if (!PP_STATES.includes(f.pp.state as string)) errors.push(`${id} features.pp.state ${String(f.pp.state)}.`);
+    if (f.participation !== undefined) {
+      const q = f.participation;
+      const unit = (v: unknown) => typeof v === 'number' && v >= 0 && v <= 1;
+      if (!isObj(q) || !unit(q.roleRate) || !unit(q.nextWeek) || !unit(q.playoffs) || !Number.isInteger(q.streak) || !Number.isInteger(q.played) || (q.played as number) > (q.teamGames as number)) errors.push(`${id} features.participation is invalid.`);
+    }
     // Rules that must hold in the data itself: only forwards are confirmed, and only with enough history.
     if (f.pp.state === 'confirmed' && f.group !== 'F') errors.push(`${id}: a defenceman has a confirmed PP promotion.`);
     if (f.pp.state !== 'insufficient' && !((f.pp.usableGames as number) >= PP_RULE.minUsableGames)) errors.push(`${id}: PP status without enough usable games.`);

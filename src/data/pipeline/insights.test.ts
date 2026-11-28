@@ -193,6 +193,10 @@ describe('insights inputs', () => {
     expect(feat.pp.state).toBe('insufficient'); // six games: far below 28 usable games
     expect(f.players['nhl-8470000']!.window!.gp).toBe(6);
     expect(f.goalies['nhl-8470050']!.starts).toMatchObject({ teamGames: 6, starts: 6, consecutiveStarts: 6 });
+    // Participation: per player and the measured model (aggregates only).
+    expect(f.players['nhl-8470000']!.features!.participation).toMatchObject({ teamGames: 6, played: 6, streak: 0 });
+    expect(f.participationModel!.samples.players).toBeGreaterThan(0);
+    expect(JSON.stringify(f.participationModel)).not.toMatch(/nhl-|\d{10}/);
   });
 
   it('uses the season before last as the baseline when last season is too short', () => {

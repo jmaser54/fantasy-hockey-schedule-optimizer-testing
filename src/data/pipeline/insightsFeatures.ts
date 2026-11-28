@@ -4,7 +4,7 @@
  * status, appearance facts and goalie start facts. Settings: src/domain/insightsSettings.ts.
  */
 import type { PosGroup } from '../../domain/insightsSettings.ts';
-import { MIN_MINUTES_SHARE, MINUTES_HALF_TRUST, PP_PERSISTENCE, PP_RULE, PRIOR_MIN_GAMES, RECENT_MINUTES_GAMES, SITUATION_MINUTES_PER_GAME, TALENT_HALF_TRUST } from '../../domain/insightsSettings.ts';
+import { MIN_MINUTES_SHARE, MINUTES_HALF_TRUST, PP_PERSISTENCE, PP_RULE, PRIOR_MIN_GAMES, RECENT_MINUTES_GAMES, SEASON_RELIABILITY_GAMES, SITUATION_MINUTES_PER_GAME, TALENT_HALF_TRUST } from '../../domain/insightsSettings.ts';
 import { ppStatus, type PpGame } from '../../domain/ppStatus.ts';
 import type { ExpectedMinutes, SkaterFeatures, TalentRates } from '../format.ts';
 import type { SkaterLine } from './gamelog.ts';
@@ -107,8 +107,9 @@ export function choosePrior(previous: SeasonTotals | undefined, previous2: Seaso
  *   rate shrunk toward players at his position, then the current season's rate shrunk toward that,
  *   each weighted by its own minutes in that situation (shrinkByMinutes).
  * - Shots, hits, blocks, PIM, plus/minus, faceoff wins (per 60 of all ice time), by games as measured:
- *   current weight = gp ÷ (gp + half-trust games); a partial baseline season is itself shrunk toward the
- *   position by its games.
+ *   current weight = gp ÷ (gp + half-trust games). The baseline season (any source) is first shrunk toward
+ *   the position by its own games (SEASON_RELIABILITY_GAMES), so a short season counts as partial
+ *   evidence while a full season keeps most of its player-specific rate.
  */
 export function talentRates(
   current: SeasonTotals | undefined,
@@ -130,7 +131,8 @@ export function talentRates(
     } else {
       const K = TALENT_HALF_TRUST[HALF_TRUST_KEY[k]][group];
       const own = base ? per60(base[k], base[RATE_MINUTES[k]]) : null;
-      const rp = own === null ? r0 : source === 'partial' && r0 !== null ? (base!.gp * own + K * r0) / (base!.gp + K) : own;
+      const G = SEASON_RELIABILITY_GAMES[k as keyof typeof SEASON_RELIABILITY_GAMES];
+      const rp = own === null ? r0 : r0 === null ? own : (base!.gp * own + G * r0) / (base!.gp + G);
       const rc = current ? per60(current[k], current[RATE_MINUTES[k]]) : null;
       v = rc === null ? rp : rp === null ? rc : (gp * rc + K * rp) / (gp + K);
     }

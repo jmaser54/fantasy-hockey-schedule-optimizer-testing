@@ -138,8 +138,12 @@ export function customInsights(input: CustomInput): CustomResult {
     const e = key ? insights.players[key] : undefined;
     if (!e?.features) return undefined;
     const pg = perGame(e.features, teamPpSeconds(insights, e.team), ctx);
-    const value = valuePerGame(pg, scale);
-    return value === null ? undefined : { value, f: e.features, pg };
+    const perGameValue = valuePerGame(pg, scale);
+    // Expected contribution per team game = value when he plays × how likely he is to dress in this
+    // period (Next Week: current participation; playoffs: longer-term availability). Same for the
+    // user's players and candidates. Players without participation data count as dressing.
+    const dress = e.features.participation?.[ctx] ?? 1;
+    return perGameValue === null ? undefined : { value: perGameValue * dress, f: e.features, pg };
   };
 
   // The user's active skaters. Players without data keep a modest value (the pool's lower quartile) so

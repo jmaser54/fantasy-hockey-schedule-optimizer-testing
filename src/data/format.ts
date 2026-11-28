@@ -134,7 +134,7 @@ export interface InsightsInputsFile {
   windowNights: number;
   windowTarget: number;
   complete: boolean;
-  settings: { ppShareMinSeconds: number; correctionNights: number };
+  settings: { ppShareMinSeconds: number; correctionNights: number; /** Feature-model revision that built this file. */ featuresRevision?: string };
   sources: {
     gameLogs: string;
     season: string;
@@ -143,6 +143,8 @@ export interface InsightsInputsFile {
   players: Record<string, { team: string; last5?: SkaterWindow; last10?: SkaterWindow; window?: SkaterWindow; season?: SkaterSeason; features?: SkaterFeatures }>;
   /** League-wide context: average team PP seconds per game this season. */
   league: { ppToiPg: number | null };
+  /** The participation model measured on this build (aggregates only); optional for older files. */
+  participationModel?: import('./pipeline/participation.ts').ParticipationModel;
   teams: Record<
     string,
     {
@@ -189,6 +191,12 @@ export interface SkaterFeatures {
   /** Latest appearance in the window and his current team's games since then (a fact; the cause is unknown). */
   lastGame: string | null;
   teamGamesSinceLast: number | null;
+  /**
+   * How likely he is to dress (2026-11-28; src/data/pipeline/participation.ts): team games since his first
+   * appearance, games played, current missed streak (a fact; cause unknown), role rate, and the expected
+   * share of games he dresses for Next Week and in the playoffs. Absent when he has no window games.
+   */
+  participation?: { teamGames: number; played: number; streak: number; roleRate: number; nextWeek: number; playoffs: number };
   /** Points per game this season and last season (for production changes judged on full samples). */
   production: { gp: number; ptsPg: number | null; prevGp: number; prevPtsPg: number | null };
 }
