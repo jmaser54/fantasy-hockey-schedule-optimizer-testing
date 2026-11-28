@@ -175,6 +175,12 @@ export const PARTICIPATION = {
   nextWeekGames: 4,
   returnHorizon: 10,
   minSamples: 30,
+  /**
+   * Candidate role-rate cutoffs between regulars and intermittent players for the Next Week factors
+   * (2026-11-28). The cutoff used is the one whose predictions best match the observed next-4 shares on
+   * each build; the grid itself is an assumption.
+   */
+  cohortCutoffs: [0.8, 0.85, 0.9, 0.95],
 } as const;
 
 /**

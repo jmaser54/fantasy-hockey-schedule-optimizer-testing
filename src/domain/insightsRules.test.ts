@@ -154,6 +154,35 @@ describe('Custom Insights', () => {
     expect(customInsights(base(t)).cards[0]!.dropId).toBe('nhl-3');
   });
 
+  it('IR alternative: keeps a prolonged absentee on IR instead of dropping him, only when that is better and a slot is free', () => {
+    const absent = (q: number) => feat(q, { participation: { teamGames: 26, played: 14, streak: 10, roleRate: 0.97, nextWeek: 0.05, playoffs: 0.9 } });
+    const playoffDates = rounds.flatMap((r) => r.dates);
+    const s = setup();
+    s.insights.players['nhl-3']!.features = absent(1.5); // valuable, out now, back for the playoffs
+    const card = customInsights(base(s, { futureDates: playoffDates })).cards[0]!;
+    expect(card.irId).toBe('nhl-3');
+    expect(card.dropId).toBeUndefined();
+    expect(card.headline).toMatch(/move P3 to IR \(if eligible\)/);
+    expect(card.laterDropName).toBe('P4');
+    const text = card.lines.map((l) => l.text).join(' ');
+    expect(text).toMatch(/only if he qualifies under your league's rules; the app can't confirm an injury/i);
+    expect(text).not.toMatch(/\bis injured\b|\binjured\b/i);
+    // No free IR slot (2 slots: one already used, fill the other): the drop stays.
+    const full = customInsights(base(s, { futureDates: playoffDates, league: { ...league, rosterSize: 4, irSlots: 1 } })).cards[0]!;
+    expect(full.dropId).toBe('nhl-3');
+    expect(full.irId).toBeUndefined();
+    // Not a prolonged absence: the drop stays.
+    const t = setup();
+    t.insights.players['nhl-3']!.features = feat(1.2, { participation: { teamGames: 26, played: 24, streak: 2, roleRate: 0.97, nextWeek: 0.05, playoffs: 0.9 } });
+    expect(customInsights(base(t, { futureDates: playoffDates })).cards.every((c) => !c.irId)).toBe(true);
+    // Keeping him isn't better (no playoff value): the drop stays.
+    const u = setup();
+    u.insights.players['nhl-3']!.features = feat(1.2, { participation: { teamGames: 26, played: 14, streak: 10, roleRate: 0.97, nextWeek: 0.05, playoffs: 0 } });
+    const c3 = customInsights(base(u, { futureDates: playoffDates })).cards[0]!;
+    expect(c3.irId).toBeUndefined();
+    expect(c3.dropId).toBe('nhl-3');
+  });
+
   it('treats missing ownership as 1.0 (no bonus or penalty), a stale file as no ownership, and never filters on it', () => {
     expect([ownershipWeight(undefined), ownershipWeight(3), ownershipWeight(10), ownershipWeight(29.9), ownershipWeight(30), ownershipWeight(100)]).toEqual([1, 1, 0.6, 0.6, 0.3, 0.3]);
     const s = setup({ players: { 1: feat(0.5), 2: feat(0.4), 3: feat(1.0), 4: feat(1.0), 10: feat(1.5), 11: feat(1.45), 12: feat(0.4), 13: feat(0.4) } });

@@ -145,6 +145,7 @@ export function CustomInsightsView({ onGoRoster, onGoTrades }: { onGoRoster: () 
       ctx,
       dates: ctx === 'nextWeek' ? weekWindow.dates : playoffDates,
       rounds: ctx === 'playoffs' ? rounds : undefined,
+      futureDates: playoffDates,
       roster: state.roster,
       resolve,
       directory: data.players,

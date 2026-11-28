@@ -9,8 +9,11 @@
  *   missed in a row, including one still going on), shrunk toward the population rate. It describes how
  *   often he dresses while available (regular vs part-time), so a finished long absence doesn't count
  *   against him;
- * - Next Week = role rate × the measured factor for his current absence streak (how much of their next
- *   4 team games players in that state actually played, relative to their role rate);
+ * - Next Week = role rate × the measured factor for his current absence streak and cohort (how much of
+ *   their next 4 team games players in that state actually played, relative to their role rate). The
+ *   cohorts (regulars vs intermittent) split on role rate at a cutoff chosen from NEXT_WEEK_COHORT_CUTOFFS
+ *   by which predicts the observed next-4 outcomes best; each cohort × streak factor is shrunk toward the
+ *   pooled streak factor by its sample size (2026-11-28);
  * - Playoffs = role rate × league-wide availability (share of team games not lost to long absence spells)
  *   × for a player in a long absence now, the measured share of players in that state who played again
  *   within the next 10 team games (the longest horizon the window can measure).
@@ -64,8 +67,21 @@ export interface ParticipationModel {
   priorRate: number;
   /** League-wide share of team games not lost to long absence spells. */
   availability: number;
-  /** Next Week factor by current streak: Σ share of next 4 games played ÷ Σ role rate at the time. */
+  /** Next Week factor by current streak, all players pooled: Σ share of next 4 games played ÷ Σ role rate at the time. */
   nextWeekFactor: Record<StreakBucket, number>;
+  /**
+   * Next Week factors by cohort (2026-11-28): regulars have a role rate at or above `roleCutoff`. Each
+   * cell is shrunk toward the pooled factor: (n × cell + minSamples × pooled) ÷ (n + minSamples).
+   * `fit` is the mean squared error of predicted vs observed next-4 share for each candidate cutoff and
+   * for the pooled model, so the choice is checked against the data on every build.
+   */
+  cohorts?: {
+    roleCutoff: number;
+    regular: Record<StreakBucket, number>;
+    intermittent: Record<StreakBucket, number>;
+    samples: { regular: Record<StreakBucket, number>; intermittent: Record<StreakBucket, number> };
+    fit: { pooled: number; byCutoff: Record<string, number> };
+  };
   /** Share who played again within the next 10 team games, by current streak (long absences only; 1 otherwise). */
   returnWithin10: Record<StreakBucket, number>;
   samples: { players: number; states: Record<StreakBucket, number>; returnStates: Record<StreakBucket, number> };
@@ -82,14 +98,18 @@ export function fitParticipation(seqs: readonly (readonly boolean[])[]): Partici
   const availability = total ? 1 - long.reduce((a, c) => a + c.lost, 0) / total : 1;
   const z = () => Object.fromEntries(STREAK_BUCKETS.map((b) => [b, 0])) as Record<StreakBucket, number>;
   const next = z(), rho = z(), n = z(), back = z(), backN = z();
+  const states: { role: number; b: StreakBucket; next4: number }[] = [];
   for (const seq of seqs) {
     for (let t = P.minHistory - 1; t < seq.length; t++) {
       const b = bucketOf(streakAt(seq, t));
       if (t + P.nextWeekGames < seq.length) {
         const c = roleCounts(seq, t + 1);
-        next[b] += seq.slice(t + 1, t + 1 + P.nextWeekGames).filter(Boolean).length / P.nextWeekGames;
-        rho[b] += shrinkRate(c.played, c.counted, priorRate);
+        const next4 = seq.slice(t + 1, t + 1 + P.nextWeekGames).filter(Boolean).length / P.nextWeekGames;
+        const role = shrinkRate(c.played, c.counted, priorRate);
+        next[b] += next4;
+        rho[b] += role;
         n[b]++;
+        states.push({ role, b, next4 });
       }
       if (streakAt(seq, t) >= P.longAbsenceGames && t + P.returnHorizon < seq.length) {
         back[b] += seq.slice(t + 1, t + 1 + P.returnHorizon).some(Boolean) ? 1 : 0;
@@ -113,7 +133,38 @@ export function fitParticipation(seqs: readonly (readonly boolean[])[]): Partici
     nextWeekFactor[b] = r3(Math.min(1.2, pooled(next, rho, n, b, 0) ?? 1));
     returnWithin10[b] = STREAK_BUCKETS.indexOf(b) < longFrom ? 1 : r3(pooled(back, backN, backN, b, longFrom) ?? 0.5);
   }
-  return { longAbsenceGames: P.longAbsenceGames, priorGames: P.priorGames, priorRate: r3(priorRate), availability: r3(availability), nextWeekFactor, returnWithin10, samples: { players: seqs.length, states: n, returnStates: backN } };
+  // Cohorts: for each candidate cutoff, factors per cohort × streak (shrunk toward the pooled factor), and
+  // the mean squared error of the resulting predictions against the observed next-4 shares.
+  const predictErr = (f: (st: (typeof states)[number]) => number) => (states.length ? states.reduce((a, st) => a + (Math.min(1, st.role * f(st)) - st.next4) ** 2, 0) / states.length : 0);
+  const cohortFactors = (cut: number) => {
+    const sums = { regular: [z(), z(), z()], intermittent: [z(), z(), z()] } as Record<'regular' | 'intermittent', Record<StreakBucket, number>[]>;
+    for (const st of states) {
+      const [nx, rh, cn] = sums[st.role >= cut ? 'regular' : 'intermittent'];
+      nx![st.b] += st.next4; rh![st.b] += st.role; cn![st.b]++;
+    }
+    const out = { regular: z(), intermittent: z() };
+    for (const g of ['regular', 'intermittent'] as const) for (const b of STREAK_BUCKETS) {
+      const [nx, rh, cn] = sums[g];
+      const cell = rh![b] > 0 ? nx![b] / rh![b] : nextWeekFactor[b];
+      out[g][b] = r3(Math.min(1.2, (cn![b] * cell + P.minSamples * nextWeekFactor[b]) / (cn![b] + P.minSamples)));
+    }
+    return { out, counts: { regular: sums.regular[2]!, intermittent: sums.intermittent[2]! } };
+  };
+  const byCutoff: Record<string, number> = {};
+  let best: { cut: number; err: number } | undefined;
+  for (const cut of P.cohortCutoffs) {
+    const { out } = cohortFactors(cut);
+    const err = predictErr((st) => out[st.role >= cut ? 'regular' : 'intermittent'][st.b]);
+    byCutoff[String(cut)] = Math.round(err * 1e5) / 1e5;
+    if (!best || err < best.err - 1e-12) best = { cut, err };
+  }
+  const pooledErr = Math.round(predictErr((st) => nextWeekFactor[st.b]) * 1e5) / 1e5;
+  let cohorts: ParticipationModel['cohorts'];
+  if (best) {
+    const { out, counts } = cohortFactors(best.cut);
+    cohorts = { roleCutoff: best.cut, regular: out.regular, intermittent: out.intermittent, samples: counts, fit: { pooled: pooledErr, byCutoff } };
+  }
+  return { longAbsenceGames: P.longAbsenceGames, priorGames: P.priorGames, priorRate: r3(priorRate), availability: r3(availability), nextWeekFactor, ...(cohorts ? { cohorts } : {}), returnWithin10, samples: { players: seqs.length, states: n, returnStates: backN } };
 }
 
 export interface PlayerParticipation {
@@ -140,7 +191,7 @@ export function playerParticipation(seq: readonly boolean[], m: ParticipationMod
     played: c.played,
     streak: s,
     roleRate: r3(role),
-    nextWeek: r3(Math.min(1, role * m.nextWeekFactor[b])),
+    nextWeek: r3(Math.min(1, role * (m.cohorts ? m.cohorts[role >= m.cohorts.roleCutoff ? 'regular' : 'intermittent'][b] : m.nextWeekFactor[b]))),
     playoffs: r3(Math.min(1, role * m.availability * m.returnWithin10[b])),
   };
 }

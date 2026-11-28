@@ -83,3 +83,31 @@ describe('fitting the model from histories', () => {
     expect(fitParticipation(pop)).toEqual(m); // deterministic
   });
 });
+
+describe('Next Week cohorts (regulars vs intermittent)', () => {
+  // Regulars who miss one game come straight back; part-timers who miss one keep missing more often.
+  const pop: boolean[][] = [];
+  for (let i = 0; i < 80; i++) pop.push(seq('xxxxxxxx.xxxxxxxxx.xxxxxxxx'));
+  for (let i = 0; i < 60; i++) pop.push(seq('xx.x..x.xx..x.x..xx.x..x.x.'));
+  const m = fitParticipation(pop);
+
+  it('chooses the cutoff that best predicts the observed outcomes, from the grid', () => {
+    expect(PARTICIPATION.cohortCutoffs).toContain(m.cohorts!.roleCutoff);
+    const { fit } = m.cohorts!;
+    expect(fit.byCutoff[String(m.cohorts!.roleCutoff)]).toBeLessThanOrEqual(Math.min(...Object.values(fit.byCutoff)));
+    expect(fit.byCutoff[String(m.cohorts!.roleCutoff)]).toBeLessThan(fit.pooled); // better than one pooled factor
+  });
+
+  it('gives regulars a higher factor than intermittent players after a one-game miss', () => {
+    expect(m.cohorts!.regular['1']).toBeGreaterThan(m.cohorts!.intermittent['1']);
+    const regular = playerParticipation(seq('x'.repeat(24) + '.'), m)!;
+    const partTime = playerParticipation(seq('x.x..x.xx..x.x..xx.x..x.'), m)!;
+    expect(regular.nextWeek).toBeGreaterThan(partTime.nextWeek);
+  });
+
+  it('shrinks sparse cells toward the pooled factor', () => {
+    // No regular in this population has a 10+ game streak: that cell is exactly the pooled factor.
+    expect(m.cohorts!.samples.regular['10+']).toBe(0);
+    expect(m.cohorts!.regular['10+']).toBe(m.nextWeekFactor['10+']);
+  });
+});

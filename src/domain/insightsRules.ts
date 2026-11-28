@@ -9,8 +9,8 @@
 import type { InsightsInputsFile, SkaterFeatures } from '../data/format.ts';
 import { isOnCurrentNhlRoster, type DirectoryPlayer, type OwnershipData } from '../data/load.ts';
 import { formatShort, weekday } from './dates.ts';
-import { CUSTOM_MAX, PP_PERSISTENCE, TALENT_HALF_TRUST, TYPICAL_ERROR_PER_GAME } from './insightsSettings.ts';
-import { searchMoves, skaterSeats, type DayLineup, type RosterValue, type ValuedPlayer } from './insightsSearch.ts';
+import { CUSTOM_MAX, PARTICIPATION, PP_PERSISTENCE, TALENT_HALF_TRUST, TYPICAL_ERROR_PER_GAME } from './insightsSettings.ts';
+import { rosterValue, searchMoves, skaterSeats, type DayLineup, type RosterValue, type ValuedPlayer } from './insightsSearch.ts';
 import { buildScale, errorPerGame, ownershipWeight, perGame, teamPpSeconds, valuePerGame, type CategoryScale, type InsightContext } from './insightsValue.ts';
 import { expandSeats } from './optimizer.ts';
 import { effectivePositions } from './roster.ts';
@@ -31,6 +31,14 @@ export interface CustomCard {
   addTeam: string;
   dropId?: string;
   dropName?: string;
+  /**
+   * IR alternative (2026-11-28): instead of dropping this player, keep him on IR (only if he qualifies under
+   * the league's rules; never inferred from missed games). `laterDropName` is who you'd then clear when he
+   * returns, judged over the playoff rounds. When set, dropId is undefined.
+   */
+  irId?: string;
+  irName?: string;
+  laterDropName?: string;
   headline: string;
   lines: InsightLine[];
   /** Ranking score (cautious gain × ownership weight) and the raw gain, in value units. */
@@ -118,6 +126,8 @@ export interface CustomInput {
   dates: readonly ISODate[];
   /** Playoff Edge: the configured rounds, for per-round usable games. */
   rounds?: readonly { name: string; dates: readonly ISODate[] }[];
+  /** The configured playoff dates: future value for the IR alternative (defaults to `dates` in Playoff Edge). */
+  futureDates?: readonly ISODate[];
   roster: readonly RosterEntry[];
   resolve: (id: string) => Player | undefined;
   directory: readonly DirectoryPlayer[];
@@ -202,6 +212,36 @@ export function customInsights(input: CustomInput): CustomResult {
   };
   const res = searchMoves({ roster, droppable, openSpot, candidates, seats, schedule, dates, k: CUSTOM_MAX, score });
 
+  // IR alternative: when the drop is in a prolonged absence (PARTICIPATION.longAbsenceGames+ missed in a
+  // row) and an IR slot is free, compare dropping him with keeping him on IR and clearing the weakest other
+  // droppable player when he returns, over the playoff rounds (playoff values and availability). The period
+  // gain is the same either way (he's off the active roster now); the IR action is shown only when it is
+  // strictly better over the playoffs.
+  const irUsed = input.roster.filter((e) => e.onIr).length;
+  const freeIr = Number.isFinite(input.league.irSlots) ? input.league.irSlots - irUsed : 0;
+  const future = input.futureDates ?? (ctx === 'playoffs' ? dates : []);
+  const poValue = (id: string, fallbackValue: number) => {
+    const p = input.resolve(id) as DirectoryPlayer | undefined;
+    const e = p?.nhlId !== undefined ? insights.players[`nhl-${p.nhlId}`] : undefined;
+    if (!e?.features) return fallbackValue;
+    const v = valuePerGame(perGame(e.features, teamPpSeconds(insights, e.team), 'playoffs'), scale);
+    return v === null ? fallbackValue : v * (e.features.participation?.playoffs ?? 1);
+  };
+  const irAlternative = (add: string, drop: string): { laterDrop: string; gainOverDrop: number } | undefined => {
+    const q = info.get(drop)?.f.participation;
+    if (freeIr <= 0 || !future.length || !q || q.streak < PARTICIPATION.longAbsenceGames) return undefined;
+    const addP = candidates.find((c) => c.id === add)!;
+    const rosterPo = [...roster, addP].map((p) => ({ ...p, value: poValue(p.id, p.value) }));
+    const withDrop = rosterValue(rosterPo.filter((p) => p.id !== drop), seats, schedule, future).total;
+    let best: { id: string; total: number } | undefined;
+    for (const d of droppable) {
+      if (d === drop || d === add) continue;
+      const total = rosterValue(rosterPo.filter((p) => p.id !== d), seats, schedule, future).total;
+      if (!best || total > best.total + 1e-9) best = { id: d, total };
+    }
+    return best && best.total > withDrop + 1e-9 ? { laterDrop: best.id, gainOverDrop: best.total - withDrop } : undefined;
+  };
+
   const cards: CustomCard[] = res.moves.map((m) => {
     const ai = candInfo.get(m.add)!;
     const addP = input.directory.find((p) => p.id === m.add)!;
@@ -222,13 +262,21 @@ export function customInsights(input: CustomInput): CustomResult {
     if (filled.length) lines.push({ kind: 'fit', basis: 'expectation', text: `Fills an empty lineup spot on ${dateList(filled)}` });
     const own = ownPct(m.add);
     if (own !== undefined) lines.push({ kind: 'ownership', basis: 'fact', text: `Owned in ${Math.round(own)}% of ESPN leagues` });
+    const ir = m.drop ? irAlternative(m.add, m.drop) : undefined;
+    if (ir && m.drop) {
+      const y = names.get(m.drop)!;
+      const streak = info.get(m.drop)!.f.participation!.streak;
+      lines.push({ kind: 'context', basis: 'fact', text: `${y} hasn't played in his team's last ${streak} games (reason unknown). Move him to IR only if he qualifies under your league's rules; the app can't confirm an injury.` });
+      lines.push({ kind: 'context', basis: 'expectation', text: `Keeping him on IR is worth more over your playoff rounds than dropping him. When he returns you'd need to clear a roster spot (weakest then: ${names.get(ir.laterDrop)}).` });
+    }
     return {
       addId: m.add,
       addName: names.get(m.add)!,
       addTeam: addP.team,
-      dropId: m.drop,
-      dropName: m.drop ? names.get(m.drop) : undefined,
-      headline: m.drop ? `Add ${names.get(m.add)} for ${names.get(m.drop)}` : `Add ${names.get(m.add)} to an open roster spot`,
+      dropId: ir ? undefined : m.drop,
+      dropName: ir ? undefined : m.drop ? names.get(m.drop) : undefined,
+      ...(ir && m.drop ? { irId: m.drop, irName: names.get(m.drop), laterDropName: names.get(ir.laterDrop) } : {}),
+      headline: ir && m.drop ? `Add ${names.get(m.add)}, move ${names.get(m.drop)} to IR (if eligible)` : m.drop ? `Add ${names.get(m.add)} for ${names.get(m.drop)}` : `Add ${names.get(m.add)} to an open roster spot`,
       lines,
       score: m.score,
       gain: m.gain,
