@@ -82,6 +82,16 @@ export const MINUTES_HALF_TRUST = { evToi: 2, ppShare: 1, shToi: 3, toi: 5 } as 
 /** Recent games used for Next Week expected minutes. */
 export const RECENT_MINUTES_GAMES = 10;
 /**
+ * Prior-season minutes anchor (owner decision 2026-11-28; a general small-sample correction, not a returner
+ * rule): each context's expected total, even-strength and short-handed minutes (Next Week and playoffs) are
+ * blended with his previous season's per-game minutes as if that season were this many extra games:
+ * (n × current + 2 × previous) ÷ (n + 2), n = games played this season. Its weight falls as the season
+ * grows (4 games: 33%; 27 games: 7%). The previous season counts only if it has PRIOR_MIN_GAMES games (else
+ * the season before that, if it does); otherwise no anchor. PP share is not anchored. Validated on 2025-26
+ * (historical study, chronological splits) and the 2026-27 snapshot holdout.
+ */
+export const PRIOR_SEASON_MINUTES_GAMES = 2;
+/**
  * Talent baseline (prior) chain, 2026-11-28: his previous season if it has at least PRIOR_MIN_GAMES,
  * otherwise the season before that if it does; otherwise the larger of those two samples counts only
  * as partial evidence, shrunk toward players at his position; with neither, players at his position.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PP_PERSISTENCE, SEASON_RELIABILITY_GAMES, SITUATION_MINUTES_PER_GAME, TALENT_HALF_TRUST } from '../../domain/insightsSettings.ts';
+import { PP_PERSISTENCE, PRIOR_SEASON_MINUTES_GAMES, SEASON_RELIABILITY_GAMES, SITUATION_MINUTES_PER_GAME, TALENT_HALF_TRUST } from '../../domain/insightsSettings.ts';
 import type { SkaterLine } from './gamelog.ts';
 import { choosePrior, goalieStartFacts, halfTrustMinutes, shrinkByMinutes, skaterFeatures, talentRates, type SeasonTotals, type WindowAppearance } from './insightsFeatures.ts';
 
@@ -72,6 +72,46 @@ describe('expected minutes and the power-play status', () => {
     const f = skaterFeatures({ apps, group: 'F', current: season, previous: undefined, posAvg: {}, posMinutes, teamDates: ['2026-11-20', '2026-11-18', ...apps.map((a) => a.date)] });
     expect(f.lastGame).toBe(apps[0]!.date);
     expect(f.teamGamesSinceLast).toBe(2);
+  });
+});
+
+describe('prior-season minutes anchor (small-sample correction, 2026-11-28)', () => {
+  const W = PRIOR_SEASON_MINUTES_GAMES;
+  /** A season of gp games at the given per-game minutes (seconds stored as totals). */
+  const seasonOf = (gp: number, toi: number, ev: number, sh: number): SeasonTotals => ({ ...season, gp, toi: gp * toi * 60, evToi: gp * ev * 60, shToi: gp * sh * 60, ppToi: gp * 60, ppSharePg: 0.2 });
+  const featsP = (apps: WindowAppearance[], current: SeasonTotals, previous?: SeasonTotals, previous2?: SeasonTotals) =>
+    skaterFeatures({ apps, group: 'F', current, previous, previous2, posAvg: {}, posMinutes, teamDates: apps.map((a) => a.date) });
+  const four = history(Array(4).fill({ ev: 10, share: 0.4 })); // returner-like: 4 games this season, 11.2 total minutes
+  const cur4 = seasonOf(4, 12.2, 10, 1);
+  const last = seasonOf(67, 20.3, 15.5, 1.5);
+
+  it('anchors total, even-strength and short-handed minutes in both contexts at 2 games of weight; PP share unchanged', () => {
+    const base = featsP(four, cur4).minutes;
+    const got = featsP(four, cur4, last).minutes;
+    for (const ctx of ['nextWeek', 'playoffs'] as const) {
+      expect(Math.abs(got[ctx].toi - (4 * base[ctx].toi + W * 20.3) / (4 + W))).toBeLessThanOrEqual(0.1); // minutes are rounded to 0.1
+      expect(Math.abs(got[ctx].evToi - (4 * base[ctx].evToi + W * 15.5) / (4 + W))).toBeLessThanOrEqual(0.1); // minutes are rounded to 0.1
+      expect(Math.abs(got[ctx].shToi - (4 * base[ctx].shToi + W * 1.5) / (4 + W))).toBeLessThanOrEqual(0.1); // minutes are rounded to 0.1
+      expect(got[ctx].toi).toBeGreaterThan(base[ctx].toi);
+      expect(got[ctx].ppShare).toBe(base[ctx].ppShare);
+    }
+  });
+
+  it('fades as this season grows, so current-season minutes keep driving the estimate', () => {
+    const many = history(Array(40).fill({ ev: 10, share: 0.4 }));
+    const cur40 = seasonOf(40, 12.2, 10, 1);
+    const shift4 = featsP(four, cur4, last).minutes.playoffs.toi - featsP(four, cur4).minutes.playoffs.toi;
+    const shift40 = featsP(many, cur40, last).minutes.playoffs.toi - featsP(many, cur40).minutes.playoffs.toi;
+    expect(shift40).toBeGreaterThan(0);
+    expect(shift40).toBeLessThan(shift4 / 4); // weight 2/42 vs 2/6
+  });
+
+  it('uses only a previous season with enough games (else the one before), never a partial season', () => {
+    const short = seasonOf(10, 25, 20, 2);
+    const base = featsP(four, cur4).minutes.playoffs.toi;
+    expect(featsP(four, cur4, short).minutes.playoffs.toi).toBe(base); // 10 games: no anchor
+    expect(featsP(four, cur4, short, last).minutes.playoffs.toi).toBe(featsP(four, cur4, last).minutes.playoffs.toi); // falls back to the season before
+    expect(featsP(four, cur4, undefined, short).minutes.playoffs.toi).toBe(base);
   });
 });
 

@@ -4,7 +4,7 @@
  * status, appearance facts and goalie start facts. Settings: src/domain/insightsSettings.ts.
  */
 import type { PosGroup } from '../../domain/insightsSettings.ts';
-import { MIN_MINUTES_SHARE, MINUTES_HALF_TRUST, PP_PERSISTENCE, PP_RULE, PRIOR_MIN_GAMES, RECENT_MINUTES_GAMES, SEASON_RELIABILITY_GAMES, SITUATION_MINUTES_PER_GAME, TALENT_HALF_TRUST } from '../../domain/insightsSettings.ts';
+import { MIN_MINUTES_SHARE, MINUTES_HALF_TRUST, PP_PERSISTENCE, PP_RULE, PRIOR_MIN_GAMES, PRIOR_SEASON_MINUTES_GAMES, RECENT_MINUTES_GAMES, SEASON_RELIABILITY_GAMES, SITUATION_MINUTES_PER_GAME, TALENT_HALF_TRUST } from '../../domain/insightsSettings.ts';
 import { ppStatus, type PpGame } from '../../domain/ppStatus.ts';
 import type { ExpectedMinutes, SkaterFeatures, TalentRates } from '../format.ts';
 import type { SkaterLine } from './gamelog.ts';
@@ -157,8 +157,12 @@ const blend = (sample: number | null, n: number, prior: number | null, H: number
  * window (a brief change counts only in proportion to its share of the window). PP share: a confirmed
  * forward promotion uses baseline + retained share × rise (10-game figure for Next Week, 30-game figure
  * for the playoffs); an observed (unconfirmed) rise counts at his baseline for the playoffs.
+ * Total, even-strength and short-handed minutes in both contexts are then anchored to his previous season's
+ * per-game minutes (`previous`, a season with PRIOR_MIN_GAMES games, chosen by the caller) as if it were
+ * PRIOR_SEASON_MINUTES_GAMES extra games, so the anchor fades as this season's games accumulate. PP share is
+ * not anchored.
  */
-export function expectedMinutes(apps: readonly WindowAppearance[], season: SeasonTotals | undefined, posMinutes: { toi: number; evToi: number; shToi: number; ppShare: number }, pp: ReturnType<typeof ppStatus>): { nextWeek: ExpectedMinutes; playoffs: ExpectedMinutes } {
+export function expectedMinutes(apps: readonly WindowAppearance[], season: SeasonTotals | undefined, posMinutes: { toi: number; evToi: number; shToi: number; ppShare: number }, pp: ReturnType<typeof ppStatus>, previous?: SeasonTotals): { nextWeek: ExpectedMinutes; playoffs: ExpectedMinutes } {
   const priorPg = (secs: number | null | undefined, fallback: number) => (season && season.gp > 0 && secs !== null && secs !== undefined ? secs / season.gp / 60 : fallback);
   const prior = { toi: priorPg(season?.toi, posMinutes.toi), evToi: priorPg(season?.evToi, posMinutes.evToi), shToi: priorPg(season?.shToi, posMinutes.shToi) };
   const recent = apps.slice(0, RECENT_MINUTES_GAMES);
@@ -169,13 +173,19 @@ export function expectedMinutes(apps: readonly WindowAppearance[], season: Seaso
     return { v: team > 0 ? Math.min(1, u.reduce((s, a) => s + (a.line[15] as number), 0) / team) : null, n: u.length };
   };
   const seasonShare = season?.ppSharePg ?? posMinutes.ppShare;
+  // Prior-season anchor: (n × current + W × previous) ÷ (n + W), n = games played this season.
+  const n = season ? season.gp : apps.length;
+  const prevPg = (secs: number | null | undefined) => (previous && previous.gp >= PRIOR_MIN_GAMES && secs !== null && secs !== undefined ? secs / previous.gp / 60 : null);
+  const anchor = { toi: prevPg(previous?.toi), evToi: prevPg(previous?.evToi), shToi: prevPg(previous?.shToi) };
+  const W = PRIOR_SEASON_MINUTES_GAMES;
+  const anchored = (v: number, a: number | null) => (a === null ? v : (n * v + W * a) / (n + W));
   const ctx = (list: readonly WindowAppearance[], ppShareOverride: number | null): ExpectedMinutes => {
     const s = share(list);
-    const v = (i: number, H: number, p: number) => r1(blend(mins(list, i), list.length, p, H) ?? p);
+    const v = (i: number, H: number, p: number, a: number | null) => r1(anchored(blend(mins(list, i), list.length, p, H) ?? p, a));
     return {
-      toi: v(13, MINUTES_HALF_TRUST.toi, prior.toi),
-      evToi: v(14, MINUTES_HALF_TRUST.evToi, prior.evToi),
-      shToi: v(16, MINUTES_HALF_TRUST.shToi, prior.shToi),
+      toi: v(13, MINUTES_HALF_TRUST.toi, prior.toi, anchor.toi),
+      evToi: v(14, MINUTES_HALF_TRUST.evToi, prior.evToi, anchor.evToi),
+      shToi: v(16, MINUTES_HALF_TRUST.shToi, prior.shToi, anchor.shToi),
       ppShare: r4(ppShareOverride ?? blend(s.v, s.n, seasonShare, MINUTES_HALF_TRUST.ppShare) ?? seasonShare),
     };
   };
@@ -216,12 +226,15 @@ export function skaterFeatures(input: {
     return v.length ? r1(v.reduce((s, x) => s + x, 0) / v.length / 60) : null;
   };
   const last = apps[0]?.date ?? null;
+  // Minutes anchor: only a previous season with PRIOR_MIN_GAMES games (or the one before), never partial.
+  const chosen = choosePrior(input.previous, input.previous2);
+  const minutesPrior = chosen.source === 'player' || chosen.source === 'player2' ? chosen.season : undefined;
   return {
     group,
     rates: t.rates,
     rateGames: t.gp,
     prior: t.prior,
-    minutes: expectedMinutes(apps, input.current, input.posMinutes, pp),
+    minutes: expectedMinutes(apps, input.current, input.posMinutes, pp, minutesPrior),
     pp,
     evMinutes: { last5: ev(apps.slice(0, 5)), window: ev(apps), windowGames: apps.length },
     lastGame: last,
