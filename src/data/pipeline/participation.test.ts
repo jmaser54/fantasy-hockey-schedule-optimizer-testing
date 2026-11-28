@@ -98,6 +98,11 @@ describe('Next Week cohorts (regulars vs intermittent)', () => {
     expect(fit.byCutoff[String(m.cohorts!.roleCutoff)]).toBeLessThan(fit.pooled); // better than one pooled factor
   });
 
+  it('decides the cohort from participation before the current streak, so regulars who just missed a game still count as regulars', () => {
+    expect(m.cohorts!.basis).toBe('role before current streak');
+    expect(m.cohorts!.samples.regular['1']).toBeGreaterThan(0);
+  });
+
   it('gives regulars a higher factor than intermittent players after a one-game miss', () => {
     expect(m.cohorts!.regular['1']).toBeGreaterThan(m.cohorts!.intermittent['1']);
     const regular = playerParticipation(seq('x'.repeat(24) + '.'), m)!;
