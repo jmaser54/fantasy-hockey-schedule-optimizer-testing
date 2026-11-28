@@ -122,11 +122,12 @@ export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
     </div>
   );
 
-  // Shown once above the switcher (2026-11-26): the period cards and the period summary.
+  // Shown once at the top of both views: the period cards and the period summary, which holds the switcher
+  // (2026-11-28 redesign: one compact strip so the schedule starts near the top of the screen).
   const shared = (
     <>
       {windows.length > 1 && <SummaryCards />}
-      <PeriodOverview window={selected} date={date} onDate={setDate} part="summary" />
+      <PeriodOverview window={selected} date={date} onDate={setDate} part="summary" switcher={switcher} />
     </>
   );
 
@@ -134,7 +135,6 @@ export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
     return (
       <div className="stack sg-view">
         {shared}
-        {switcher}
         <section className="panel sg-panel" aria-label={`Schedule for ${selected.name}`}>
           <div className="panel-body sg-panel-body">
             <ScheduleGrid
@@ -173,7 +173,6 @@ export function LineupView({ onGoRoster }: { onGoRoster: () => void }) {
   return (
     <div className="stack">
       {shared}
-      {switcher}
       <div className="lu">
         <PeriodOverview window={selected} date={date} onDate={setDate} part="calendar" />
         {date && <DayLineup date={date} onPlayer={openPlayer} onFill={openFill} />}
@@ -189,18 +188,24 @@ function SummaryCards() {
   const { windows, selected, dispatch, summarizeWindow, lineupPlayers } = useApp();
   const shown = windows.filter((w) => w.id !== 'custom' || selected.id === 'custom');
   return (
-    <div className="cards">
+    <div className="cards cards-compact">
       {shown.map((w) => {
         const s = summarizeWindow(w);
         const t = lineupGroupTotals(s.players, lineupPlayers);
         const pct = t.all.scheduled ? Math.round((t.all.inLineup / t.all.scheduled) * 100) : 0;
         return (
-          <button key={w.id} className="card" aria-pressed={w.id === selected.id} onClick={() => dispatch({ type: 'select', selection: w.id })}>
+          <button
+            key={w.id}
+            className="card"
+            aria-pressed={w.id === selected.id}
+            aria-label={`${w.name}: ${t.all.inLineup} of ${t.all.scheduled} games fit your lineup`}
+            onClick={() => dispatch({ type: 'select', selection: w.id })}
+          >
             <div className="label">{w.name}</div>
             <div className="big">
-              {t.all.inLineup} <small>of {t.all.scheduled}</small>
+              {t.all.inLineup}
+              <small>/{t.all.scheduled}</small>
             </div>
-            <div className="sub">games fit your lineup</div>
             <div className="meter">
               <div style={{ width: `${pct}%` }} />
             </div>
@@ -219,10 +224,10 @@ const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const mondayOf = (d: ISODate) => addDays(d, -((new Date(`${d}T12:00:00Z`).getUTCDay() + 6) % 7));
 
 /**
- * The period summary (headline, facts, your-changes bar; shown once above the Team Schedule / Set Lineup
- * switcher since 2026-11-26) or, with part="calendar", the day calendar (Set Lineup's day picker).
+ * The period summary (headline, facts, the Team Schedule / Set Lineup switcher passed in as `switcher`, and the
+ * your-changes bar; shown once above both views) or, with part="calendar", the day calendar (Set Lineup's day picker).
  */
-function PeriodOverview({ window: w, date, onDate, part }: { window: Window; date?: ISODate; onDate: (d: ISODate) => void; part: 'summary' | 'calendar' }) {
+function PeriodOverview({ window: w, date, onDate, part, switcher }: { window: Window; date?: ISODate; onDate: (d: ISODate) => void; part: 'summary' | 'calendar'; switcher?: ReactNode }) {
   const { days, summarizeWindow, lineupPlayers, dispatch } = useApp();
   const seats = useSeats();
   const summary = summarizeWindow(w);
@@ -256,13 +261,14 @@ function PeriodOverview({ window: w, date, onDate, part }: { window: Window; dat
       </section>
     );
   return (
-    <section className="panel lu-summary" aria-label="Period overview">
-      <div className="panel-head">
-        <h2>
-          {w.name}: {summary.usable} of {summary.scheduled} scheduled games fit your lineup
-        </h2>
-      </div>
-      <div className="panel-body lu-overview-body">
+    <section className="panel lu-summary" aria-label={`${w.name} overview`}>
+      <div className="lu-summary-text">
+        <div className="panel-head lu-summary-head">
+          {/* The period's name is in the period selector above, so the headline leads with the numbers. */}
+          <h2>
+            <span className="lu-big">{summary.usable}</span> of {summary.scheduled} scheduled games fit your lineup
+          </h2>
+        </div>
         <p className="lu-facts small">
           Skaters {t.skaters.inLineup}/{t.skaters.scheduled} · Goalies {t.goalies.inLineup}/{t.goalies.scheduled}
           {missed > 0 && <> · {missed} not in your lineup</>}
@@ -273,28 +279,29 @@ function PeriodOverview({ window: w, date, onDate, part }: { window: Window; dat
             </>
           )}
         </p>
-        {manualDates.length > 0 && (
-          <div className="lu-manual-bar">
-            <span className="badge manual" title="Days where you changed the lineup. Other days are fully optimized.">
-              Your changes on {manualDates.length} day{manualDates.length === 1 ? '' : 's'}
-              {summary.usable < summary.optimalUsable ? ` · optimal ${summary.optimalUsable}` : ''}
-            </span>
-            {perDay.some((d) => d.hasIssues) && (
-              <button className="badge warn" style={{ border: 0, cursor: 'pointer' }} onClick={() => onDate(perDay.find((d) => d.hasIssues)!.date)}>
-                {perDay.filter((d) => d.hasIssues).length} day{perDay.filter((d) => d.hasIssues).length === 1 ? ' has' : 's have'} changes that no longer apply
-              </button>
-            )}
-            <button
-              className="btn small"
-              onClick={() => {
-                if (confirm('Revert lineup changes?')) dispatch({ type: 'clearManual', dates: manualDates });
-              }}
-            >
-              Reset {w.name} to Optimal
-            </button>
-          </div>
-        )}
       </div>
+      {switcher}
+      {manualDates.length > 0 && (
+        <div className="lu-manual-bar">
+          <span className="badge manual" title="Days where you changed the lineup. Other days are fully optimized.">
+            Your changes on {manualDates.length} day{manualDates.length === 1 ? '' : 's'}
+            {summary.usable < summary.optimalUsable ? ` · optimal ${summary.optimalUsable}` : ''}
+          </span>
+          {perDay.some((d) => d.hasIssues) && (
+            <button className="badge warn" style={{ border: 0, cursor: 'pointer' }} onClick={() => onDate(perDay.find((d) => d.hasIssues)!.date)}>
+              {perDay.filter((d) => d.hasIssues).length} day{perDay.filter((d) => d.hasIssues).length === 1 ? ' has' : 's have'} changes that no longer apply
+            </button>
+          )}
+          <button
+            className="btn small"
+            onClick={() => {
+              if (confirm('Revert lineup changes?')) dispatch({ type: 'clearManual', dates: manualDates });
+            }}
+          >
+            Reset {w.name} to Optimal
+          </button>
+        </div>
+      )}
     </section>
   );
 }

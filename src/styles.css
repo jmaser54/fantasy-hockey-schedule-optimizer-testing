@@ -349,7 +349,6 @@ button.lu-fill:hover .lu-empty { color: var(--accent); }
 .lu > .plan-views { grid-column: 1 / -1; }
 .sg { --sg-name: 150px; --sg-col: 48px; }
 .sg-panel-body { padding-top: 10px; }
-.sg-key { margin: 0 0 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
 .sg-table { table-layout: fixed; border-collapse: separate; border-spacing: 0; width: calc(var(--sg-name) + var(--sg-cols) * var(--sg-col)); }
 .sg-col-name { width: var(--sg-name); }
 .sg-col-date { width: var(--sg-col); }
@@ -358,14 +357,23 @@ button.lu-fill:hover .lu-empty { color: var(--accent); }
 .sg-table thead th { background: var(--surface); border-bottom: 1px solid var(--border); }
 .sg-table thead th.sg-corner { z-index: 2; }
 .sg-name { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; padding: 4px 6px 4px 0; border-right: 1px solid var(--border); }
-.sg-corner { font-size: 11px; font-weight: 700; color: var(--muted); vertical-align: bottom; padding-bottom: 6px; }
-.sg-date { padding: 4px 0 6px; text-align: center; font-weight: 400; line-height: 1.15; }
+.sg-corner { vertical-align: bottom; padding: 4px 6px 6px 0; }
+/* Grid key in the corner cell (2026-11-28): stays in view with the sticky date header. */
+.sg-legend { display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 600; color: var(--muted); line-height: 1.15; }
+.sg-legend-item { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.sg-swatch { flex: none; width: 14px; height: 12px; border-radius: 3px; box-sizing: border-box; }
+.sg-swatch.on { background: var(--accent); }
+.sg-swatch.off { background: var(--surface); border: 1.5px solid #be123c; }
+.sg-date { padding: 4px 0 5px; text-align: center; font-weight: 400; line-height: 1.12; }
 .sg-date span { display: block; }
-.sg-month { font-size: 10px; font-weight: 700; color: var(--accent); }
-.sg-wd { font-size: 10px; color: var(--muted); }
-.sg-dn { font-size: 13px; font-weight: 700; }
-.sg-fit { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
-.sg-fit.man { color: var(--accent); font-weight: 700; }
+.sg-month { font-size: 11px; font-weight: 700; color: var(--accent); }
+.sg-wd { font-size: 11px; font-weight: 600; color: var(--muted); }
+.sg-dn { font-size: 15px; font-weight: 700; }
+/* The day's fit count (2026-11-28: 13px bold, was 10px muted). Days where some games don't fit are crimson
+   and underlined (the same crimson as a game that isn't in the lineup); days you changed stay blue. */
+.sg-fit { font-size: 13px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; margin-top: 3px; letter-spacing: -0.01em; }
+.sg-fit.short { color: #be123c; text-decoration: underline 2px #be123c; text-underline-offset: 3px; }
+.sg-fit.man { color: var(--accent); }
 /* Date headers open that day in Set Lineup; the selected day is highlighted (2026-11-26). */
 .sg-date-btn { display: block; width: 100%; padding: 0; border: 0; border-radius: 6px; background: none; font: inherit; color: inherit; line-height: inherit; cursor: pointer; }
 .sg-date-btn:hover .sg-dn { color: var(--accent); }
@@ -380,11 +388,11 @@ tbody.sg-group + tbody.sg-group .sg-group-row > * { border-top: 6px solid var(--
 .sg-name-in { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .sg-name-in .star { flex: none; width: 26px; height: 36px; }
 .sg-player { display: flex; flex-direction: column; min-width: 0; }
-.sg-pname { white-space: normal; overflow-wrap: anywhere; font-size: 13px; font-weight: 600; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.sg-pname { white-space: normal; overflow-wrap: anywhere; font-size: 13px; font-weight: 600; line-height: 1.15; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .sg-meta { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 1px; }
-.sg-meta .pos, .sg-meta .badge { font-size: 9px; padding: 0 4px; }
+.sg-meta .pos, .sg-meta .badge { font-size: 10px; line-height: 13px; padding: 0 4px; }
 .sg-ir .sg-pname { color: var(--muted); }
-.sg-td { padding: 3px 2px; text-align: center; height: 44px; }
+.sg-td { padding: 2px; text-align: center; height: 42px; }
 .sg-cell { display: inline-flex; align-items: center; justify-content: center; width: 100%; min-height: 34px; padding: 0 1px; border-radius: 7px; font: inherit; font-size: 11px; font-weight: 700; letter-spacing: -0.02em; cursor: pointer; }
 .sg-cell.on { background: var(--accent); border: 1px solid var(--accent); color: #fff; }
 /* Not in lineup (2026-11-26): white with a crimson rounded border (was grey). */
@@ -392,9 +400,8 @@ tbody.sg-group + tbody.sg-group .sg-group-row > * { border-top: 6px solid var(--
 .sg-cell:hover { filter: brightness(0.95); }
 .sg-cell.here { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px; }
 .sg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.sg-sample { width: auto; min-height: 22px; padding: 0 6px; cursor: default; }
 @media (max-width: 600px) {
-  .sg { --sg-name: 112px; --sg-col: 44px; }
+  .sg { --sg-name: 118px; --sg-col: 44px; }
 }
 /* Contextual sheet: a bottom sheet on phones, a side panel on wider screens. */
 .sheet-layer { position: fixed; inset: 0; z-index: 50; }
@@ -804,3 +811,65 @@ input[aria-invalid='true'] { border-color: var(--bad); }
 @media (max-width: 420px) {
   .insight-cards { grid-template-columns: 1fr; }
 }
+
+/* Team Schedule redesign (2026-11-28): the schedule starts near the top of the screen. */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* Period summary: one compact strip with the headline, the facts and the Team Schedule / Set Lineup switcher. */
+.lu-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; padding: 10px 14px; }
+.lu-summary-text { min-width: 0; }
+.lu-summary .panel-head.lu-summary-head { padding: 0; border-bottom: 0; }
+.lu-summary-head h2 { font-size: 14px; font-weight: 600; line-height: 1.3; }
+.lu-big { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.lu-summary .lu-facts { margin-top: 2px; }
+.lu-summary .plan-views { justify-self: end; }
+.lu-summary .lu-manual-bar { grid-column: 1 / -1; }
+/* Period choices (e.g. playoff rounds) as one row of compact tiles. */
+.cards-compact { grid-template-columns: repeat(auto-fit, minmax(120px, 170px)); gap: 8px; }
+.cards-compact .card { padding: 6px 10px 8px; }
+.cards-compact .label { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cards-compact .big { font-size: 17px; line-height: 1.2; white-space: nowrap; }
+.cards-compact .big small { font-size: 12px; }
+.cards-compact .meter { margin-top: 4px; }
+.wr-short { display: none; }
+@media (min-width: 601px) {
+  /* The tagline sits beside the brand instead of on its own line. */
+  .topbar > .topbar-inner { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 12px; padding-bottom: 6px; }
+  .topbar .brand { margin-right: 0; }
+  .topbar .tagline { padding: 0; }
+}
+@media (min-width: 900px) {
+  /* Desktop: wider, larger grid that hugs its content instead of an empty full-width panel. */
+  .sg { --sg-name: 220px; --sg-col: 64px; }
+  .sg.sg-many { --sg-col: 54px; }
+  .sg-panel { width: fit-content; max-width: 100%; }
+  .sg-cell { font-size: 13px; min-height: 36px; }
+  .sg-pname { font-size: 14px; }
+  .sg-dn { font-size: 16px; }
+  .sg-fit { font-size: 14px; }
+}
+@media (max-width: 600px) {
+  .tagline.has-roster { display: none; }
+  /* Period bar on one line. */
+  .periodbar { margin-bottom: 10px; }
+  .period-modes { gap: 6px 10px; }
+  .mode-toggle { flex-wrap: nowrap; }
+  .mode-toggle button { padding: 6px 10px; }
+  .lu-summary { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px 12px; }
+  .lu-summary .plan-views { justify-self: stretch; display: grid; grid-template-columns: 1fr 1fr; }
+  .lu-summary .plan-views button { min-width: 0; }
+  .cards-compact { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 6px; }
+  .cards-compact .card { padding: 6px 8px 7px; }
+  .cards-compact .big { font-size: 16px; }
+  /* The grid runs edge to edge. */
+  .sg-panel { margin-inline: -12px; border-radius: 0; border-left: 0; border-right: 0; box-shadow: none; }
+  .sg-panel-body { padding: 0; }
+  .sg-panel-body .sg-name { padding-left: 8px; }
+}
+@media (max-width: 420px) {
+  .wr-full { display: none; }
+  .wr-short { display: inline; }
+  .mode-toggle button { padding: 6px 8px; font-size: 13px; }
+}
+/* On the Lineup tab the period tiles (with each round's totals) already select the round, so the period
+   bar's round selector isn't repeated there; the date range stays. Other tabs keep the selector. */
+.periodbar:has(~ .stack > .cards-compact) .period-controls > [aria-label='Date range'] { display: none; }

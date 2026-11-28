@@ -51,11 +51,7 @@ export function ScheduleGrid({
   // already scrolled), so the page never gets "stuck" behind a half-visible grid; then the grid scrolls
   // its rows under its sticky header, and at its ends the page continues.
   return (
-    <div className="sg" style={style}>
-      <p className="sg-key small">
-        <span className="sg-cell on sg-sample">TEAM</span> In lineup <span className="sg-cell off sg-sample">TEAM</span> Not in lineup
-        <span className="muted">@ = away game. Tap a game for options.</span>
-      </p>
+    <div className={`sg ${w.dates.length > 14 ? 'sg-many' : ''}`} style={style}>
       <StickyHeadTable
         tableClass="sg-table"
         scrollClass="sg-scroll"
@@ -70,7 +66,20 @@ export function ScheduleGrid({
         }
         head={
           <tr>
-              <th className="sg-name sg-corner">Player</th>
+              {/* The key sits in the otherwise empty corner (2026-11-28 redesign), so it stays in view with the
+                  sticky date header instead of taking a line above the grid. */}
+              <th className="sg-name sg-corner">
+                <span className="sr-only">Player</span>
+                <span className="sg-legend" aria-hidden="true">
+                  <span className="sg-legend-item">
+                    <span className="sg-swatch on" /> In lineup
+                  </span>
+                  <span className="sg-legend-item">
+                    <span className="sg-swatch off" /> Not in lineup
+                  </span>
+                  <span className="sg-legend-item sg-legend-away">@ away game</span>
+                </span>
+              </th>
               {list.map((d, i) => {
                 const showMonth = i === 0 || d.date.slice(8) === '01';
                 const sel = d.date === selectedDate;
@@ -84,10 +93,11 @@ export function ScheduleGrid({
                       aria-label={`${weekday(d.date)} ${formatShort(d.date)}, ${d.usable} of ${d.scheduled} games fit: open in Set Lineup`}
                       onClick={() => onDate(d.date)}
                     >
-                      <span className="sg-month">{showMonth ? MONTHS[Number(d.date.slice(5, 7)) - 1] : ' '}</span>
-                      <span className="sg-wd">{weekday(d.date).slice(0, 2)}</span>
+                      {/* Three lines (2026-11-28): the month on the first column and each 1st, the weekday
+                          otherwise (both stay in the button's label), the day, and the larger fit count. */}
+                      {showMonth ? <span className="sg-month">{MONTHS[Number(d.date.slice(5, 7)) - 1]}</span> : <span className="sg-wd">{weekday(d.date).slice(0, 2)}</span>}
                       <span className="sg-dn">{Number(d.date.slice(8))}</span>
-                      <span className={`sg-fit ${d.manual ? 'man' : ''}`}>{d.scheduled ? `${d.usable}/${d.scheduled}` : '–'}</span>
+                      <span className={`sg-fit ${d.manual ? 'man' : ''} ${d.usable < d.scheduled ? 'short' : ''}`}>{d.scheduled ? `${d.usable}/${d.scheduled}` : '–'}</span>
                     </button>
                   </th>
                 );

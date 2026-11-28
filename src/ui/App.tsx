@@ -158,7 +158,8 @@ export function App() {
           <div className="brand">
             Playoff <span>Planner</span>
           </div>
-          <p className="tagline">Plan your next week — and your playoff run. Add your roster to see the best moves for your team.</p>
+          {/* On phones the tagline shows only until a roster exists (2026-11-28), so the page content starts higher. */}
+          <p className={`tagline ${state.roster.length ? 'has-roster' : ''}`}>Plan your next week — and your playoff run. Add your roster to see the best moves for your team.</p>
         </div>
       </header>
       <div className="tabbar">
@@ -457,7 +458,13 @@ function PeriodBar(props: PeriodControls & { hasWindow: boolean }) {
             </button>
           ))}
         </div>
-        {mode === 'week' && <span className="small muted">{formatRange(selected.start, selected.end)}</span>}
+        {mode === 'week' && (
+          <span className="small muted week-range">
+            {/* Narrow phones show the range without the year so it stays on the period selector's line. */}
+            <span className="wr-full">{formatRange(selected.start, selected.end)}</span>
+            <span className="wr-short">{formatRange(selected.start, selected.end).replace(/, \d{4}$/, '')}</span>
+          </span>
+        )}
       </div>
       {mode !== 'week' && (
         <div className="period-controls">
