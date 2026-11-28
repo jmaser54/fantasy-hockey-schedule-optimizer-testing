@@ -41,22 +41,21 @@ export function teamPpSeconds(file: InsightsInputsFile, team: string): number {
   return file.teams[team]?.season?.ppToiPg ?? file.league.ppToiPg ?? 240;
 }
 
-/** Per selected category: the spread of expected per-game amounts across regular skaters, and a floor. */
+/** Per selected category: the spread of expected per-game amounts across regular skaters. */
 export interface CategoryScale {
   cats: SkaterCategory[];
   sd: Partial<Record<SkaterCategory, number>>;
-  lo: Partial<Record<SkaterCategory, number>>;
 }
 
 /**
  * "How far from a typical player, in that category's usual spread": each category is divided by the
  * spread across skaters with at least 10 games this season, so 1 hit and 1 goal become comparable and
- * selected categories count equally. Categories are measured from a floor (0, or the pool minimum for
- * plus/minus) so every player's value is non-negative, which the add/drop search relies on.
+ * selected categories count equally. Every category is measured from zero, which is also the neutral
+ * point for plus/minus (2026-11-28: the earlier floor at the pool minimum gave every player about 3 value
+ * points a game just for playing).
  */
 export function buildScale(pool: readonly Record<SkaterCategory, number | null>[], cats: readonly SkaterCategory[]): CategoryScale {
   const sd: CategoryScale['sd'] = {};
-  const lo: CategoryScale['lo'] = {};
   for (const c of cats) {
     const v = pool.map((p) => p[c]).filter((x): x is number => x !== null);
     if (v.length < 2) continue;
@@ -64,20 +63,24 @@ export function buildScale(pool: readonly Record<SkaterCategory, number | null>[
     const s = Math.sqrt(v.reduce((a, b) => a + (b - mean) ** 2, 0) / (v.length - 1));
     if (!(s > 0)) continue;
     sd[c] = s;
-    lo[c] = Math.min(0, ...v);
   }
-  return { cats: cats.filter((c) => sd[c] !== undefined), sd, lo };
+  return { cats: cats.filter((c) => sd[c] !== undefined), sd };
 }
 
-/** Value per game on the common scale (≥ 0). A category with an unknown amount makes the value unknown. */
+/**
+ * Value per game on the common scale. Plus/minus counts with its sign (a negative expectation lowers the
+ * value); the other categories can't be negative. A player whose expected contribution is negative
+ * overall is worth 0, as you would bench him rather than start him; this also keeps values non-negative,
+ * which the add/drop search relies on. A category with an unknown amount makes the value unknown.
+ */
 export function valuePerGame(pg: Record<SkaterCategory, number | null>, scale: CategoryScale): number | null {
   let v = 0;
   for (const c of scale.cats) {
     const x = pg[c];
     if (x === null) return null;
-    v += Math.max(0, x - scale.lo[c]!) / scale.sd[c]!;
+    v += (c === 'pm' ? x : Math.max(0, x)) / scale.sd[c]!;
   }
-  return v;
+  return Math.max(0, v);
 }
 
 /** Measured typical error of one player's per-game value on the same scale (categories combined as independent). */

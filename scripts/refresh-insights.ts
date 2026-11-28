@@ -163,6 +163,21 @@ async function main() {
     }
   }
   const previousSkaterStats = await readJson<SkaterStatsFile>(`public/data/skater-stats-${PREV}.json`);
+  // The season before that (baseline when last season is too short), also fetched once.
+  const PREV2 = `${Number(SEASON.slice(0, 4)) - 2}${Number(SEASON.slice(0, 4)) - 1}`;
+  let previousSeason2 = await readJson<SeasonData & { season?: string }>(`${STATE_DIR}/past-season-2.json`);
+  if (!previousSeason2 || previousSeason2.season !== PREV2) {
+    try {
+      previousSeason2 = { ...(await fetchSeasonData(getJson, PREV2, nowIso)), season: PREV2 };
+      await writeFile(`${STATE_DIR}/past-season-2.json`, JSON.stringify(previousSeason2));
+      changed = true;
+      log(`Insights: season before last ${PREV2}: ${Object.keys(previousSeason2.skaters).length} skaters`);
+    } catch (err) {
+      previousSeason2 = undefined;
+      warn(`season-before-last reports failed; that baseline is unavailable: ${(err as Error).message}`);
+    }
+  }
+  const previousSkaterStats2 = await readJson<SkaterStatsFile>(`public/data/skater-stats-${PREV2}.json`);
 
   const previous = await readJson<InsightsInputsFile>(OUT);
   if (changed) {
@@ -173,7 +188,7 @@ async function main() {
     log(`Insights: nothing new; ${requests} requests`);
     return;
   }
-  const next = buildInsightsInputs({ state, season, players, skaterStats, previousSeason, previousSkaterStats: previousSkaterStats?.season === PREV ? previousSkaterStats : undefined, target: plan.target, cfg: CFG, nowIso });
+  const next = buildInsightsInputs({ state, season, players, skaterStats, previousSeason, previousSkaterStats: previousSkaterStats?.season === PREV ? previousSkaterStats : undefined, previousSeason2, previousSkaterStats2: previousSkaterStats2?.season === PREV2 ? previousSkaterStats2 : undefined, target: plan.target, cfg: CFG, nowIso });
   const problems = insightsUpdateProblems(next, previous, players, skaterStats, !!season);
   if (problems.length) {
     warn(`insights-inputs.json NOT updated; kept the previous file: ${problems.join('; ')}`);

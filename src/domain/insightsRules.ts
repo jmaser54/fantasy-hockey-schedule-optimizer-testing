@@ -79,7 +79,7 @@ function talentLine(pg: Record<SkaterCategory, number | null>, scale: CategorySc
   // Plus/minus is mostly luck (measured), so it never headlines the Talent line, though it still counts in value.
   const parts = scale.cats
     .filter((c) => c !== 'pm')
-    .map((c) => ({ c, v: pg[c] ?? 0, z: (Math.max(0, (pg[c] ?? 0) - scale.lo[c]!)) / scale.sd[c]! }))
+    .map((c) => ({ c, v: pg[c] ?? 0, z: Math.max(0, pg[c] ?? 0) / scale.sd[c]! }))
     .sort((a, b) => b.z - a.z)
     .slice(0, 2)
     .map(({ c, v }) => `${v.toFixed(c === 'g' || c === 'a' || c === 'pts' || c === 'ppp' || c === 'shp' ? 2 : 1)} ${CAT_UNITS[c]}`);

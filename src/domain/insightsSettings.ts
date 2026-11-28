@@ -81,8 +81,36 @@ export const TALENT_HALF_TRUST: Record<'evPts' | 'ppPts' | 'shPts' | 'goals' | '
 export const MINUTES_HALF_TRUST = { evToi: 2, ppShare: 1, shToi: 3, toi: 5 } as const;
 /** Recent games used for Next Week expected minutes. */
 export const RECENT_MINUTES_GAMES = 10;
-/** Previous-season baseline needs at least this many games; otherwise players at his position. */
+/**
+ * Talent baseline (prior) chain, 2026-11-28: his previous season if it has at least PRIOR_MIN_GAMES,
+ * otherwise the season before that if it does; otherwise the larger of those two samples counts only
+ * as partial evidence, shrunk toward players at his position; with neither, players at his position.
+ * Seasons are never pooled.
+ */
 export const PRIOR_MIN_GAMES = 20;
+
+/**
+ * Situational rate reliability (2026-11-28). Even-strength, PP and short-handed points and goals are
+ * weighted by the minutes behind them, not by games: weight on a season's own rate = minutes ÷
+ * (minutes + half-trust minutes), where half-trust minutes = the measured half-trust in games
+ * (TALENT_HALF_TRUST, measured against the position average in the 2025-26 study) × the typical minutes
+ * per game below. For a player with typical minutes this reproduces the measured game weights; a
+ * player with negligible minutes in a situation is shrunk almost entirely to the baseline.
+ *
+ * Typical minutes per game: median among regulars (10+ games) who play that situation at least 0.5 min
+ * a game, measured on the 2026-27 Testing data on 2026-11-28 (forwards 407, defencemen 212).
+ */
+export const SITUATION_MINUTES_PER_GAME: Record<'ev' | 'pp' | 'sh', Record<PosGroup, number>> = {
+  ev: { F: 12.82, D: 16.74 },
+  pp: { F: 2.31, D: 1.68 },
+  sh: { F: 1.71, D: 1.94 },
+};
+/**
+ * A season with fewer minutes in a situation than this share of the half-trust minutes isn't used for
+ * that situation at all (its weight would be under about 9%); the baseline stands. Assumption chosen
+ * with the minutes above (e.g. forwards: about 4.3 short-handed or 14 PP minutes for points).
+ */
+export const MIN_MINUTES_SHARE = 0.1;
 
 /**
  * Typical error of a blended per-game rate over the next 30 games (2025-26, mean absolute error of the

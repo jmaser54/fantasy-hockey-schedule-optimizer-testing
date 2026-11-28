@@ -180,8 +180,8 @@ export interface SkaterFeatures {
   rates: TalentRates;
   /** Current-season games behind the rates. */
   rateGames: number;
-  /** Baseline used: his previous season, or players at his position. */
-  prior: 'player' | 'position';
+  /** Baseline: previous season, the season before (player2), a short season shrunk to the position (partial), or players at his position. */
+  prior: 'player' | 'player2' | 'partial' | 'position';
   minutes: { nextWeek: ExpectedMinutes; playoffs: ExpectedMinutes };
   pp: PpStatus;
   /** Even-strength minutes per game (supporting evidence only). */

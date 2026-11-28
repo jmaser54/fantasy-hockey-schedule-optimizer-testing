@@ -131,6 +131,9 @@ export function buildInsightsInputs(input: {
   /** The previous season's reports and skater-stats snapshot: the Talent baseline. */
   previousSeason?: SeasonData;
   previousSkaterStats?: SkaterStatsFile;
+  /** The season before that: the baseline when the previous season is too short (2026-11-28). */
+  previousSeason2?: SeasonData;
+  previousSkaterStats2?: SkaterStatsFile;
   target: readonly string[];
   cfg: InsightsConfig;
   nowIso: string;
@@ -166,6 +169,7 @@ export function buildInsightsInputs(input: {
   };
   const cur = totals(season, statsById);
   const prev = totals(input.previousSeason, prevStatsById);
+  const prev2 = totals(input.previousSeason2, new Map((input.previousSkaterStats2?.skaters ?? []).map((s) => [String(s.nhlId), s])));
   const groupOfStat = (s: SkaterStatsFile['skaters'][number] | undefined) => (s ? (s.position === 'D' ? 'D' : 'F') : undefined);
   const pool = (m: Map<string, SeasonTotals>, stats: Map<string, SkaterStatsFile['skaters'][number]>) =>
     [...m.entries()].flatMap(([id, t]) => {
@@ -246,7 +250,7 @@ export function buildInsightsInputs(input: {
     }
     const group = posGroup(p.positions);
     entry.features = skaterFeatures({
-      apps: apps as WindowAppearance[], group, current: cur.get(id), previous: prev.get(id), posAvg: posAvg[group], posMinutes: posMinutes[group === 'F' ? 0 : 1]!, teamDates: teamDates(p.team),
+      apps: apps as WindowAppearance[], group, current: cur.get(id), previous: prev.get(id), previous2: prev2.get(id), posAvg: posAvg[group], posMinutes: posMinutes[group === 'F' ? 0 : 1]!, teamDates: teamDates(p.team),
     });
     if (s) {
       const st = statsById.get(id);

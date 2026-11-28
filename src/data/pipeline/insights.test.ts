@@ -195,6 +195,16 @@ describe('insights inputs', () => {
     expect(f.goalies['nhl-8470050']!.starts).toMatchObject({ teamGames: 6, starts: 6, consecutiveStarts: 6 });
   });
 
+  it('uses the season before last as the baseline when last season is too short', () => {
+    const s8470000 = season.skaters['8470000']!;
+    const short = { ...season, skaters: { '8470000': { ...s8470000, gp: 4 } } };
+    const full = { ...season, skaters: { '8470000': { ...s8470000, gp: 70, toi: 70 * 900, evToi: 70 * 750, ppToi: 70 * 120, shToi: 70 * 30 } } };
+    const f = buildInsightsInputs({ state, season, players, skaterStats: stats, previousSeason: short, previousSeason2: full, target, cfg: { ...DEFAULT_CONFIG, windowNights: 6 }, nowIso: '2026-11-27T12:00:00Z' });
+    expect(f.players['nhl-8470000']!.features!.prior).toBe('player2');
+    const g = buildInsightsInputs({ state, season, players, skaterStats: stats, previousSeason: short, target, cfg: { ...DEFAULT_CONFIG, windowNights: 6 }, nowIso: '2026-11-27T12:00:00Z' });
+    expect(g.players['nhl-8470000']!.features!.prior).toBe('partial');
+  });
+
   it('does not let an older-format file block the first file of a new format', () => {
     const f = build();
     const old = { ...f, version: 1, windowNights: 30, players: { ...f.players, ...Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`nhl-${9000 + i}`, { team: 'BOS' }])) } };

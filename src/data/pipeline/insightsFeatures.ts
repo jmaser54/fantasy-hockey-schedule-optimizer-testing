@@ -4,7 +4,7 @@
  * status, appearance facts and goalie start facts. Settings: src/domain/insightsSettings.ts.
  */
 import type { PosGroup } from '../../domain/insightsSettings.ts';
-import { MINUTES_HALF_TRUST, PP_PERSISTENCE, PP_RULE, PRIOR_MIN_GAMES, RECENT_MINUTES_GAMES, TALENT_HALF_TRUST } from '../../domain/insightsSettings.ts';
+import { MIN_MINUTES_SHARE, MINUTES_HALF_TRUST, PP_PERSISTENCE, PP_RULE, PRIOR_MIN_GAMES, RECENT_MINUTES_GAMES, SITUATION_MINUTES_PER_GAME, TALENT_HALF_TRUST } from '../../domain/insightsSettings.ts';
 import { ppStatus, type PpGame } from '../../domain/ppStatus.ts';
 import type { ExpectedMinutes, SkaterFeatures, TalentRates } from '../format.ts';
 import type { SkaterLine } from './gamelog.ts';
@@ -71,22 +71,72 @@ export function positionRates(totals: Iterable<[SeasonTotals, PosGroup]>, minGp:
   return out;
 }
 
+export type PriorSource = 'player' | 'player2' | 'partial' | 'position';
+
+const SITUATION_OF: Partial<Record<RateKey, 'ev' | 'pp' | 'sh'>> = { evPts: 'ev', evG: 'ev', ppPts: 'pp', ppG: 'pp', shPts: 'sh', shG: 'sh' };
+
+/** Half-trust in minutes for a situational rate (measured half-trust games × typical minutes per game). */
+export function halfTrustMinutes(k: RateKey, group: PosGroup): number | null {
+  const sit = SITUATION_OF[k];
+  return sit ? TALENT_HALF_TRUST[HALF_TRUST_KEY[k]][group] * SITUATION_MINUTES_PER_GAME[sit][group] : null;
+}
+
 /**
- * Talent: weight on the current season = gp ÷ (gp + halfTrust); the baseline is his previous season
- * when he played at least PRIOR_MIN_GAMES, otherwise players at his position.
+ * A season's own situational rate shrunk toward `base` by its minutes: (count + M × base) ÷ (minutes + M),
+ * per 60. Below MIN_MINUTES_SHARE × M minutes the season isn't used and `base` stands.
  */
-export function talentRates(current: SeasonTotals | undefined, previous: SeasonTotals | undefined, posAvg: Partial<Record<RateKey, number>>, group: PosGroup): { rates: TalentRates; gp: number; prior: 'player' | 'position' } {
+export function shrinkByMinutes(count: number | null, secs: number | null, M: number, base: number | null): number | null {
+  if (typeof count !== 'number' || typeof secs !== 'number') return base;
+  const mins = secs / 60;
+  if (mins < MIN_MINUTES_SHARE * M) return base;
+  if (base === null) return (count * 60) / mins;
+  return ((count + (M * base) / 60) / (mins + M)) * 60;
+}
+
+/** Which earlier season is his baseline (see PRIOR_MIN_GAMES). */
+export function choosePrior(previous: SeasonTotals | undefined, previous2: SeasonTotals | undefined): { season: SeasonTotals | undefined; source: PriorSource } {
+  if (previous && previous.gp >= PRIOR_MIN_GAMES) return { season: previous, source: 'player' };
+  if (previous2 && previous2.gp >= PRIOR_MIN_GAMES) return { season: previous2, source: 'player2' };
+  const best = [previous, previous2].filter((s): s is SeasonTotals => !!s && s.gp > 0).sort((a, b) => b.gp - a.gp)[0];
+  return best ? { season: best, source: 'partial' } : { season: undefined, source: 'position' };
+}
+
+/**
+ * Talent rates.
+ * - Situational points and goals (even strength, PP, short-handed), by minutes: the baseline season's
+ *   rate shrunk toward players at his position, then the current season's rate shrunk toward that,
+ *   each weighted by its own minutes in that situation (shrinkByMinutes).
+ * - Shots, hits, blocks, PIM, plus/minus, faceoff wins (per 60 of all ice time), by games as measured:
+ *   current weight = gp ÷ (gp + half-trust games); a partial baseline season is itself shrunk toward the
+ *   position by its games.
+ */
+export function talentRates(
+  current: SeasonTotals | undefined,
+  previous: SeasonTotals | undefined,
+  posAvg: Partial<Record<RateKey, number>>,
+  group: PosGroup,
+  previous2?: SeasonTotals,
+): { rates: TalentRates; gp: number; prior: PriorSource } {
   const gp = current?.gp ?? 0;
-  const usePrev = !!previous && previous.gp >= PRIOR_MIN_GAMES;
+  const { season: base, source } = choosePrior(previous, previous2);
   const rates = {} as TalentRates;
   for (const k of RATE_KEYS) {
-    const rc = current ? per60(current[k], current[RATE_MINUTES[k]]) : null;
-    const rp = (usePrev ? per60(previous![k], previous![RATE_MINUTES[k]]) : null) ?? posAvg[k] ?? null;
-    const K = TALENT_HALF_TRUST[HALF_TRUST_KEY[k]][group];
-    const v = rc === null ? rp : rp === null ? rc : (gp * rc + K * rp) / (gp + K);
+    const r0 = posAvg[k] ?? null;
+    const M = halfTrustMinutes(k, group);
+    let v: number | null;
+    if (M !== null) {
+      const prior = base ? shrinkByMinutes(base[k], base[RATE_MINUTES[k]], M, r0) : r0;
+      v = current ? shrinkByMinutes(current[k], current[RATE_MINUTES[k]], M, prior) : prior;
+    } else {
+      const K = TALENT_HALF_TRUST[HALF_TRUST_KEY[k]][group];
+      const own = base ? per60(base[k], base[RATE_MINUTES[k]]) : null;
+      const rp = own === null ? r0 : source === 'partial' && r0 !== null ? (base!.gp * own + K * r0) / (base!.gp + K) : own;
+      const rc = current ? per60(current[k], current[RATE_MINUTES[k]]) : null;
+      v = rc === null ? rp : rp === null ? rc : (gp * rc + K * rp) / (gp + K);
+    }
     rates[k] = v === null ? null : r4(v);
   }
-  return { rates, gp, prior: usePrev ? 'player' : 'position' };
+  return { rates, gp, prior: source };
 }
 
 /** One appearance in the window (newest first in the caller's arrays). */
@@ -145,6 +195,8 @@ export function skaterFeatures(input: {
   group: PosGroup;
   current: SeasonTotals | undefined;
   previous: SeasonTotals | undefined;
+  /** The season before the previous one (baseline when the previous season is too short). */
+  previous2?: SeasonTotals;
   posAvg: Partial<Record<RateKey, number>>;
   posMinutes: { toi: number; evToi: number; shToi: number; ppShare: number };
   /** His current team's game dates in the window, newest first. */
@@ -156,7 +208,7 @@ export function skaterFeatures(input: {
     .filter((a) => typeof a.line[15] === 'number' && a.teamPpToi !== null)
     .map((a) => ({ ppToi: a.line[15] as number, teamPpToi: a.teamPpToi! }));
   const pp = ppStatus(ppGames, group);
-  const t = talentRates(input.current, input.previous, input.posAvg, group);
+  const t = talentRates(input.current, input.previous, input.posAvg, group, input.previous2);
   const ev = (list: readonly WindowAppearance[]) => {
     const v = list.map((a) => a.line[14]).filter((x): x is number => typeof x === 'number');
     return v.length ? r1(v.reduce((s, x) => s + x, 0) / v.length / 60) : null;

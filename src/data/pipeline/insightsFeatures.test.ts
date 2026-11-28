@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { PP_PERSISTENCE, TALENT_HALF_TRUST } from '../../domain/insightsSettings.ts';
+import { PP_PERSISTENCE, SITUATION_MINUTES_PER_GAME, TALENT_HALF_TRUST } from '../../domain/insightsSettings.ts';
 import type { SkaterLine } from './gamelog.ts';
-import { goalieStartFacts, skaterFeatures, talentRates, type SeasonTotals, type WindowAppearance } from './insightsFeatures.ts';
+import { choosePrior, goalieStartFacts, halfTrustMinutes, shrinkByMinutes, skaterFeatures, talentRates, type SeasonTotals, type WindowAppearance } from './insightsFeatures.ts';
 
 const TEAM_PP = 300;
 /** One appearance: ice time in minutes, PP share of a 300-second team PP. */
@@ -76,21 +76,70 @@ describe('expected minutes and the power-play status', () => {
 });
 
 describe('talent rates', () => {
-  it('weights the current season by games ÷ (games + half-trust), each situation against its own minutes', () => {
-    const prev: SeasonTotals = { ...season, gp: 80, evPts: 40, evToi: 80 * 13 * 60 };
-    const t = talentRates(season, prev, {}, 'F');
-    const rc = (14 * 3600) / (30 * 13 * 60);
-    const rp = (40 * 3600) / (80 * 13 * 60);
-    const K = TALENT_HALF_TRUST.evPts.F;
-    expect(t.rates.evPts).toBeCloseTo((30 * rc + K * rp) / (30 + K), 3);
-    expect(t.prior).toBe('player');
-    // PP points per 60 PP minutes, not per 60 total minutes.
-    expect(talentRates(season, undefined, {}, 'F').rates.ppPts).toBeCloseTo((6 * 3600) / (30 * 60), 3);
+  // Position averages per 60 of the matching minutes (forwards), used as the baseline in these tests.
+  const pos = { evPts: 1.9, ppPts: 4.4, shPts: 0.6, evG: 0.8, ppG: 1.5, shG: 0.3, hit: 3, sog: 7 };
+  const typicalPp = SITUATION_MINUTES_PER_GAME.pp.F;
+
+  it('keeps the measured game weights for a player with typical minutes in the situation', () => {
+    // 30 games at exactly the typical PP minutes: weight on the current season = 30 ÷ (30 + half-trust games).
+    const cur: SeasonTotals = { ...season, ppToi: 30 * typicalPp * 60, ppPts: 9 };
+    const t = talentRates(cur, undefined, pos, 'F');
+    const K = TALENT_HALF_TRUST.ppPts.F;
+    const own = (9 * 60) / (30 * typicalPp);
+    expect(t.rates.ppPts!).toBeCloseTo((30 * own + K * pos.ppPts) / (30 + K), 3);
+    expect(halfTrustMinutes('ppPts', 'F')).toBeCloseTo(K * typicalPp, 6);
+    // PP points per 60 PP minutes, not per 60 total minutes; shots stay per 60 of all ice time, weighted by games.
+    expect(halfTrustMinutes('sog', 'F')).toBeNull();
   });
 
-  it('uses players at his position when last season had too few games, and keeps unknowns unknown', () => {
-    const t = talentRates({ ...season, hit: null }, { ...season, gp: 10 }, { hit: 3 }, 'F');
-    expect(t.prior).toBe('position');
+  it('Matthew Wood case: negligible short-handed minutes never produce a short-handed scoring rate', () => {
+    // Last season: 71 games, 1 short-handed goal in 30 seconds of short-handed time; this season none in 10.5 minutes.
+    const prev: SeasonTotals = { ...season, gp: 71, shG: 1, shPts: 1, shToi: 30 };
+    const cur: SeasonTotals = { ...season, gp: 22, shG: 0, shPts: 0, shToi: 633 };
+    const t = talentRates(cur, prev, pos, 'F');
+    expect(t.prior).toBe('player');
+    expect(t.rates.shG!).toBeLessThanOrEqual(pos.shG); // was 121 per 60 before the fix
+    expect(t.rates.shPts!).toBeLessThanOrEqual(pos.shPts);
+    // Even a full 0.5 short-handed minutes a game projects well under 0.01 short-handed goals a game.
+    expect((t.rates.shG! * 0.5) / 60).toBeLessThan(0.01);
+    // Seconds of time are below the reliability floor: that season isn't used for the situation at all.
+    expect(shrinkByMinutes(1, 30, halfTrustMinutes('shG', 'F')!, pos.shG)).toBe(pos.shG);
+  });
+
+  it('shrinks a small PP sample toward the baseline by its minutes, the same way as short-handed', () => {
+    // 1 PP point in 3 PP minutes (20 per 60 raw) is below the reliability floor: the baseline stands.
+    expect(talentRates({ ...season, gp: 25, ppPts: 1, ppToi: 180 }, undefined, pos, 'F').rates.ppPts).toBe(pos.ppPts);
+    // 2 PP points in 20 PP minutes (6 per 60 raw) counts, but only by its minutes.
+    const r = talentRates({ ...season, gp: 25, ppPts: 2, ppToi: 1200 }, undefined, pos, 'F').rates.ppPts!;
+    const M = halfTrustMinutes('ppPts', 'F')!;
+    expect(r).toBeCloseTo(((2 + (M * pos.ppPts) / 60) / (20 + M)) * 60, 4);
+    expect(r).toBeLessThan(pos.ppPts + 0.3);
+    // A large sample keeps most of its own rate.
+    const big: SeasonTotals = { ...season, gp: 80, ppPts: 30, ppToi: 80 * 3.5 * 60 };
+    const own = (30 * 60) / (80 * 3.5);
+    expect(talentRates(big, undefined, pos, 'F').rates.ppPts!).toBeGreaterThan(pos.ppPts + 0.6 * (own - pos.ppPts));
+  });
+
+  it('falls back to the season before last when last season is too short (Barkov case), never pooling seasons', () => {
+    const cur: SeasonTotals = { ...season, gp: 3, evPts: 3, evToi: 3 * 12 * 60 };
+    const short: SeasonTotals = { ...season, gp: 4, evPts: 1, evToi: 4 * 12 * 60 };
+    const full: SeasonTotals = { ...season, gp: 75, evPts: 60, evToi: 75 * 15 * 60, sog: 220, toi: 75 * 19 * 60 };
+    const t = talentRates(cur, short, pos, 'F', full);
+    expect(t.prior).toBe('player2');
+    expect(choosePrior(short, full).season).toBe(full);
+    // His older full season, not the position average, drives the rate.
+    const own2 = (60 * 60) / (75 * 15);
+    expect(t.rates.evPts!).toBeGreaterThan(pos.evPts + 0.5 * (own2 - pos.evPts));
+    expect(t.rates.sog!).toBeGreaterThan(pos.sog);
+    // Without an older season, a short season is partial evidence shrunk toward the position.
+    const p = talentRates(cur, short, pos, 'F');
+    expect(p.prior).toBe('partial');
+    expect(choosePrior(undefined, undefined).source).toBe('position');
+    expect(choosePrior({ ...season, gp: 50 }, full).source).toBe('player');
+  });
+
+  it('keeps unknowns unknown', () => {
+    const t = talentRates({ ...season, hit: null }, { ...season, gp: 10, hit: null }, { hit: 3 }, 'F');
     expect(t.rates.hit).toBe(3); // current value unknown → baseline only, never 0
     expect(talentRates(undefined, undefined, {}, 'F').rates.hit).toBeNull();
   });
