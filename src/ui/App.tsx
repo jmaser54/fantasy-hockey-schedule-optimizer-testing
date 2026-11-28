@@ -459,11 +459,8 @@ function PeriodBar(props: PeriodControls & { hasWindow: boolean }) {
           ))}
         </div>
         {mode === 'week' && (
-          <span className="small muted week-range">
-            {/* Narrow phones show the range without the year so it stays on the period selector's line. */}
-            <span className="wr-full">{formatRange(selected.start, selected.end)}</span>
-            <span className="wr-short">{formatRange(selected.start, selected.end).replace(/, \d{4}$/, '')}</span>
-          </span>
+          // Its own line directly under the period selector (2026-11-28), where Playoffs and Custom show their range.
+          <span className="small muted week-range">{formatRange(selected.start, selected.end)}</span>
         )}
       </div>
       {mode !== 'week' && (

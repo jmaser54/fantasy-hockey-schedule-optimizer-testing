@@ -1,7 +1,7 @@
-import type { CSSProperties } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import { formatShort, weekday } from '../domain/dates.ts';
-import { playerSchedule } from '../domain/lineupActions.ts';
-import type { LineupPlayer } from '../domain/optimizer.ts';
+import { playerSchedule, summarizeDays } from '../domain/lineupActions.ts';
+import { expandSeats, type LineupPlayer } from '../domain/optimizer.ts';
 import { opponent } from '../domain/schedule.ts';
 import type { ISODate } from '../domain/types.ts';
 import { useApp, type Window } from './context.ts';
@@ -37,8 +37,12 @@ export function ScheduleGrid({
   onDate: (date: ISODate) => void;
   onCell: (playerId: string, date: ISODate, el: HTMLElement) => void;
 }) {
-  const { days, lineupPlayers } = useApp();
-  const list = w.dates.map((d) => days.get(d)!).filter(Boolean);
+  const { days, lineupPlayers, state } = useApp();
+  const list = useMemo(() => w.dates.map((d) => days.get(d)!).filter(Boolean), [w.dates, days]);
+  // Each day's existing indicator (the same classification as Set Lineup's calendar, from the same day results):
+  // red = an avoidable benching (a game fits an open eligible slot), yellow = games with no room in the lineup.
+  const seats = useMemo(() => expandSeats(state.league.slots), [state.league.slots]);
+  const attention = useMemo(() => new Map(summarizeDays(list, lineupPlayers, seats).map((s) => [s.date, s.attention])), [list, lineupPlayers, seats]);
   const groups = [
     { label: 'Skaters', rows: lineupPlayers.filter((p) => !p.onIr && !isGoalie(p)) },
     { label: 'Goalies', rows: lineupPlayers.filter((p) => !p.onIr && isGoalie(p)) },
@@ -97,7 +101,7 @@ export function ScheduleGrid({
                           otherwise (both stay in the button's label), the day, and the larger fit count. */}
                       {showMonth ? <span className="sg-month">{MONTHS[Number(d.date.slice(5, 7)) - 1]}</span> : <span className="sg-wd">{weekday(d.date).slice(0, 2)}</span>}
                       <span className="sg-dn">{Number(d.date.slice(8))}</span>
-                      <span className={`sg-fit ${d.manual ? 'man' : ''} ${d.usable < d.scheduled ? 'short' : ''}`}>{d.scheduled ? `${d.usable}/${d.scheduled}` : '–'}</span>
+                      <span className={`sg-fit ${d.manual ? 'man' : ''} ${attention.get(d.date) ? `att-${attention.get(d.date)}` : ''}`}>{d.scheduled ? `${d.usable}/${d.scheduled}` : '–'}</span>
                     </button>
                   </th>
                 );

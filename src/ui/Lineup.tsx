@@ -266,7 +266,10 @@ function PeriodOverview({ window: w, date, onDate, part, switcher }: { window: W
         <div className="panel-head lu-summary-head">
           {/* The period's name is in the period selector above, so the headline leads with the numbers. */}
           <h2>
-            <span className="lu-big">{summary.usable}</span> of {summary.scheduled} scheduled games fit your lineup
+            <span className="lu-big">
+              {summary.usable} of {summary.scheduled}
+            </span>{' '}
+            scheduled games fit your lineup
           </h2>
         </div>
         <p className="lu-facts small">

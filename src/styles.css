@@ -117,6 +117,9 @@ main { max-width: 1200px; margin: 0 auto; padding: 16px; }
 }
 .roster-pill.has { cursor: default; border-color: var(--border); background: var(--surface); color: var(--text); font-weight: 500; }
 .period-modes, .period-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+/* Next Week's date range sits on its own line directly under the period selector, close to it (2026-11-28). */
+.period-modes { row-gap: 4px; }
+.period-modes .week-range { flex-basis: 100%; }
 .mode-toggle button { padding: 6px 16px; font-size: 14px; }
 .custom-periods { display: grid; gap: 6px; }
 .custom-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
@@ -284,7 +287,7 @@ th.col-selected { box-shadow: inset 0 -2px 0 var(--accent); }
 /* Lineup (rebuild 2026-11-23): period overview calendar, then the daily lineup. */
 .lu-overview-body, .lu-daily-body { display: flex; flex-direction: column; gap: 10px; }
 .lu-facts { margin: 0; color: var(--muted); }
-.lu-open-text { color: var(--bad); font-weight: 600; }
+.lu-open-text { color: #be123c; font-weight: 600; }
 .lu-manual-bar { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
 .lu-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .lu-cal-head { text-align: center; font-size: 11px; font-weight: 700; color: var(--muted); }
@@ -313,8 +316,8 @@ th.col-selected { box-shadow: inset 0 -2px 0 var(--accent); }
 .lu-day-count-text { font-weight: 400; color: var(--muted); }
 .lu-manual-note { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .lu-manual-note .section-hint { margin: 0; }
-.lu-open { border: 1px solid color-mix(in srgb, var(--bad) 35%, var(--border)); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
-.lu-open h3 { margin: 0; font-size: 13px; color: var(--bad); }
+.lu-open { border: 1px solid color-mix(in srgb, #be123c 35%, var(--border)); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.lu-open h3 { margin: 0; font-size: 13px; color: #be123c; }
 .lu-open-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .lu-sub { margin: 4px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .lu-list { display: flex; flex-direction: column; }
@@ -369,11 +372,14 @@ button.lu-fill:hover .lu-empty { color: var(--accent); }
 .sg-month { font-size: 11px; font-weight: 700; color: var(--accent); }
 .sg-wd { font-size: 11px; font-weight: 600; color: var(--muted); }
 .sg-dn { font-size: 15px; font-weight: 700; }
-/* The day's fit count (2026-11-28: 13px bold, was 10px muted). Days where some games don't fit are crimson
-   and underlined (the same crimson as a game that isn't in the lineup); days you changed stay blue. */
+/* The day's fit count (2026-11-28: 13px bold, was 10px muted). */
 .sg-fit { font-size: 13px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; margin-top: 3px; letter-spacing: -0.01em; }
-.sg-fit.short { color: #be123c; text-decoration: underline 2px #be123c; text-underline-offset: 3px; }
+/* Opportunity colors (2026-11-28, site-wide): red = an avoidable benching (a game fits an open eligible slot),
+   yellow = games with no room in the lineup; the same two as Set Lineup's day tiles and bench rows. Edited days
+   are blue unless red applies (red is listed last so it wins). */
 .sg-fit.man { color: var(--accent); }
+.sg-fit.att-avoidable { color: #be123c; text-decoration: underline 2px #be123c; text-underline-offset: 3px; }
+.sg-fit.att-capacity { background: #fdf6d3; box-shadow: inset 0 0 0 1px #ecd88a; border-radius: 4px; padding: 0 3px; }
 /* Date headers open that day in Set Lineup; the selected day is highlighted (2026-11-26). */
 .sg-date-btn { display: block; width: 100%; padding: 0; border: 0; border-radius: 6px; background: none; font: inherit; color: inherit; line-height: inherit; cursor: pointer; }
 .sg-date-btn:hover .sg-dn { color: var(--accent); }
@@ -818,8 +824,9 @@ input[aria-invalid='true'] { border-color: var(--bad); }
 .lu-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; padding: 10px 14px; }
 .lu-summary-text { min-width: 0; }
 .lu-summary .panel-head.lu-summary-head { padding: 0; border-bottom: 0; }
-.lu-summary-head h2 { font-size: 14px; font-weight: 600; line-height: 1.3; }
-.lu-big { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+/* Only the numbers ("49 of 56") are large and bold; the rest of the headline is regular weight. */
+.lu-summary-head h2 { font-size: 14px; font-weight: 400; line-height: 1.3; }
+.lu-big { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .lu-summary .lu-facts { margin-top: 2px; }
 .lu-summary .plan-views { justify-self: end; }
 .lu-summary .lu-manual-bar { grid-column: 1 / -1; }
@@ -830,7 +837,6 @@ input[aria-invalid='true'] { border-color: var(--bad); }
 .cards-compact .big { font-size: 17px; line-height: 1.2; white-space: nowrap; }
 .cards-compact .big small { font-size: 12px; }
 .cards-compact .meter { margin-top: 4px; }
-.wr-short { display: none; }
 @media (min-width: 601px) {
   /* The tagline sits beside the brand instead of on its own line. */
   .topbar > .topbar-inner { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 12px; padding-bottom: 6px; }
@@ -866,9 +872,10 @@ input[aria-invalid='true'] { border-color: var(--bad); }
   .sg-panel-body .sg-name { padding-left: 8px; }
 }
 @media (max-width: 420px) {
-  .wr-full { display: none; }
-  .wr-short { display: inline; }
   .mode-toggle button { padding: 6px 8px; font-size: 13px; }
+  /* Keeps the headline on one row with three-digit playoff totals ("310 of 350"). */
+  .lu-summary-head h2 { font-size: 13px; }
+  .lu-big { font-size: 18px; }
 }
 /* On the Lineup tab the period tiles (with each round's totals) already select the round, so the period
    bar's round selector isn't repeated there; the date range stays. Other tabs keep the selector. */
