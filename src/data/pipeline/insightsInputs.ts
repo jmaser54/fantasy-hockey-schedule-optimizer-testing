@@ -128,7 +128,7 @@ function skaterWindow(apps: Appearance[], cfg: InsightsConfig): SkaterWindow {
  * Revision of the derived-feature model. Bump it whenever feature calculations change: the refresh
  * rebuilds the published file when the previous one came from another revision, even with no new games.
  */
-export const FEATURES_REVISION = '2026-11-28.participation-cohorts-2';
+export const FEATURES_REVISION = '2026-11-28.participation-simplified';
 
 /** Build the published file from the window, season data and the current directory. */
 export function buildInsightsInputs(input: {

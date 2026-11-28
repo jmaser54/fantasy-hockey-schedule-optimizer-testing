@@ -156,31 +156,22 @@ export const CUSTOM_SHOWN = 3;
 export const CUSTOM_MAX = 5;
 
 /**
- * Participation model (2026-11-28; src/data/pipeline/participation.ts). The probabilities themselves are
- * measured from all skaters' game histories on every build and published as aggregates
- * (`participationModel`); these are the structural choices:
- * - longAbsenceGames: missed runs at least this long count as an absence spell (unavailable), shorter
- *   misses as part of his role (scratches, rest). Assumption: depth players' scratch runs are usually
- *   1–4 games; the published spell counts let this be checked.
- * - priorGames: a player's role rate is shrunk toward the population rate as if he had this many extra
- *   games at it (assumption).
- * - minHistory / nextWeekGames / returnHorizon / minSamples: measurement settings (a state needs 5 games
- *   of his history; Next Week looks at the next 4 team games; returns are measured over 10; a streak
- *   bucket needs 30 samples or it borrows from the next shorter streak).
+ * Participation (simplified 2026-11-28; src/data/pipeline/participation.ts): a supporting availability
+ * consideration, not a value model.
+ * - longAbsenceGames: a CURRENT run of at least this many missed team games is a prolonged absence; only then
+ *   is Next Week value discounted (by the measured share published in `participationModel`). 1–4 missed
+ *   games never lower value; playoff value is never discounted. Assumption, not yet re-measured.
+ * - nextWeekGames / minSamples: the share is measured over the next 4 team games; the 10+ bucket needs 30
+ *   states or it borrows the 5–9 states.
+ * - dressedNoteBelow: cards show "dressed for X of his team's last Y games" (every missed game counted) only
+ *   when his record before the current missed run (X ÷ (Y − run)) is below this; the current run has its
+ *   own line. Descriptive context only; assumption.
  */
 export const PARTICIPATION = {
   longAbsenceGames: 5,
-  priorGames: 10,
-  minHistory: 5,
   nextWeekGames: 4,
-  returnHorizon: 10,
   minSamples: 30,
-  /**
-   * Candidate role-rate cutoffs between regulars and intermittent players for the Next Week factors
-   * (2026-11-28). The cutoff used is the one whose predictions best match the observed next-4 shares on
-   * each build; the grid itself is an assumption.
-   */
-  cohortCutoffs: [0.8, 0.85, 0.9, 0.95],
+  dressedNoteBelow: 0.8,
 } as const;
 
 /**

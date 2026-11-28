@@ -142,20 +142,49 @@ describe('Custom Insights', () => {
     expect(JSON.stringify(withOwn)).not.toMatch(/available/i);
   });
 
-  it('values expected contribution: participation scales both candidates and the user\'s players, by period', () => {
+  it('participation: only a current prolonged absence lowers Next Week value; playoff value is never discounted', () => {
+    const playoffs = (s: ReturnType<typeof setup>) => customInsights(base(s, { ctx: 'playoffs', dates: rounds.flatMap((r) => r.dates) }));
     const s = setup();
-    // The best candidate isn't dressing now but should be back long before the playoffs.
-    s.insights.players['nhl-10']!.features = feat(1.6, { participation: { teamGames: 26, played: 9, streak: 17, roleRate: 1, nextWeek: 0.1, playoffs: 0.9 } });
+    // The best candidate has missed his team's last 17 games: not a Next Week add, still a playoff one.
+    s.insights.players['nhl-10']!.features = feat(1.6, { participation: { teamGames: 26, played: 9, streak: 17, nextWeek: 0.1 } });
     expect(customInsights(base(s)).cards.map((c) => c.addId)).not.toContain('nhl-10');
-    expect(customInsights(base(s, { ctx: 'playoffs', dates: rounds.flatMap((r) => r.dates) })).cards.map((c) => c.addId)).toContain('nhl-10');
-    // A rostered player who isn't dressing becomes the natural drop even though his per-game value is high.
+    const po = playoffs(s).cards.find((c) => c.addId === 'nhl-10')!;
+    expect(po).toBeDefined();
+    expect(po.lines.map((l) => l.text)).toContain("P10 hasn't played in his team's last 17 games (reason unknown). Check his status before acting.");
+    // A rostered player in a prolonged absence becomes the natural Next Week drop even though his per-game value is high.
     const t = setup();
-    t.insights.players['nhl-3']!.features = feat(1.2, { participation: { teamGames: 26, played: 5, streak: 21, roleRate: 1, nextWeek: 0.05, playoffs: 0.4 } });
+    t.insights.players['nhl-3']!.features = feat(1.2, { participation: { teamGames: 26, played: 5, streak: 21, nextWeek: 0.05 } });
     expect(customInsights(base(t)).cards[0]!.dropId).toBe('nhl-3');
   });
 
+  it('participation: 1–4 missed games never lower value (only a factual line), even from an older file\'s share', () => {
+    const plain = customInsights(base(setup())).cards;
+    const s = setup();
+    s.insights.players['nhl-10']!.features = feat(1.6, { participation: { teamGames: 26, played: 24, streak: 2, nextWeek: 0.4 } });
+    const cards = customInsights(base(s)).cards;
+    expect(cards.map((c) => [c.addId, c.dropId, Math.round(c.gain * 1e6)])).toEqual(plain.map((c) => [c.addId, c.dropId, Math.round(c.gain * 1e6)]));
+    const lines = cards.find((c) => c.addId === 'nhl-10')!.lines.map((l) => l.text);
+    expect(lines).toContain("P10 hasn't played in his team's last 2 games (reason unknown). Check his status before acting.");
+    expect(lines.join(' ')).not.toMatch(/dressed for/i); // 24 of 26 isn't notable
+  });
+
+  it('participation: a returned player is valued in full; his dressing record is a fact, shown only when notable', () => {
+    const plain = customInsights(base(setup())).cards;
+    const s = setup();
+    s.insights.players['nhl-10']!.features = feat(1.6, { participation: { teamGames: 25, played: 3, streak: 0, nextWeek: 1 } });
+    const cards = customInsights(base(s)).cards;
+    expect(cards.map((c) => Math.round(c.gain * 1e6))).toEqual(plain.map((c) => Math.round(c.gain * 1e6)));
+    const lines = cards.find((c) => c.addId === 'nhl-10')!.lines;
+    expect(lines.filter((l) => /dressed for/i.test(l.text))).toEqual([{ kind: 'context', basis: 'fact', text: 'P10 dressed for 3 of his team\'s last 25 games' }]);
+    expect(lines.map((l) => l.text).join(' ')).not.toMatch(/hasn't played/);
+    // When every miss is the current run, the run's own line says it; no dressing line too.
+    const t = setup();
+    t.insights.players['nhl-10']!.features = feat(1.6, { participation: { teamGames: 26, played: 23, streak: 3, nextWeek: 1 } });
+    expect(customInsights(base(t)).cards.find((c) => c.addId === 'nhl-10')!.lines.map((l) => l.text).join(' ')).not.toMatch(/dressed for/i);
+  });
+
   it('IR alternative: keeps a prolonged absentee on IR instead of dropping him, only when that is better and a slot is free', () => {
-    const absent = (q: number) => feat(q, { participation: { teamGames: 26, played: 14, streak: 10, roleRate: 0.97, nextWeek: 0.05, playoffs: 0.9 } });
+    const absent = (q: number) => feat(q, { participation: { teamGames: 26, played: 14, streak: 10, nextWeek: 0.05 } });
     const playoffDates = rounds.flatMap((r) => r.dates);
     const s = setup();
     s.insights.players['nhl-3']!.features = absent(1.5); // valuable, out now, back for the playoffs
@@ -173,11 +202,11 @@ describe('Custom Insights', () => {
     expect(full.irId).toBeUndefined();
     // Not a prolonged absence: the drop stays.
     const t = setup();
-    t.insights.players['nhl-3']!.features = feat(1.2, { participation: { teamGames: 26, played: 24, streak: 2, roleRate: 0.97, nextWeek: 0.05, playoffs: 0.9 } });
+    t.insights.players['nhl-3']!.features = feat(0.1, { participation: { teamGames: 26, played: 24, streak: 2, nextWeek: 1 } });
     expect(customInsights(base(t, { futureDates: playoffDates })).cards.every((c) => !c.irId)).toBe(true);
-    // Keeping him isn't better (no playoff value): the drop stays.
+    // Keeping him isn't better (his playoff value is below everyone else's): the drop stays.
     const u = setup();
-    u.insights.players['nhl-3']!.features = feat(1.2, { participation: { teamGames: 26, played: 14, streak: 10, roleRate: 0.97, nextWeek: 0.05, playoffs: 0 } });
+    u.insights.players['nhl-3']!.features = absent(0.1);
     const c3 = customInsights(base(u, { futureDates: playoffDates })).cards[0]!;
     expect(c3.irId).toBeUndefined();
     expect(c3.dropId).toBe('nhl-3');

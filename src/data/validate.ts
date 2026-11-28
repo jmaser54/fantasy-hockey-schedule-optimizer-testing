@@ -254,7 +254,7 @@ export function validateInsightsInputs(data: unknown, opts: { season?: string; p
     if (f.participation !== undefined) {
       const q = f.participation;
       const unit = (v: unknown) => typeof v === 'number' && v >= 0 && v <= 1;
-      if (!isObj(q) || !unit(q.roleRate) || !unit(q.nextWeek) || !unit(q.playoffs) || !Number.isInteger(q.streak) || !Number.isInteger(q.played) || (q.played as number) > (q.teamGames as number)) errors.push(`${id} features.participation is invalid.`);
+      if (!isObj(q) || !unit(q.nextWeek) || !Number.isInteger(q.teamGames) || !Number.isInteger(q.streak) || (q.streak as number) > (q.teamGames as number) || !Number.isInteger(q.played) || (q.played as number) > (q.teamGames as number)) errors.push(`${id} features.participation is invalid.`);
     }
     // Rules that must hold in the data itself: only forwards are confirmed, and only with enough history.
     if (f.pp.state === 'confirmed' && f.group !== 'F') errors.push(`${id}: a defenceman has a confirmed PP promotion.`);

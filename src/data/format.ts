@@ -192,11 +192,12 @@ export interface SkaterFeatures {
   lastGame: string | null;
   teamGamesSinceLast: number | null;
   /**
-   * How likely he is to dress (2026-11-28; src/data/pipeline/participation.ts): team games since his first
-   * appearance, games played, current missed streak (a fact; cause unknown), role rate, and the expected
-   * share of games he dresses for Next Week and in the playoffs. Absent when he has no window games.
+   * Availability facts and the Next Week multiplier (simplified 2026-11-28; src/data/pipeline/participation.ts):
+   * his team's games since his first appearance, games played (every miss counts), his current run of
+   * missed team games (a fact; cause unknown), and the Next Week value multiplier (1 unless he is currently
+   * in a prolonged absence). Never used for playoff value. Absent when he has no window games.
    */
-  participation?: { teamGames: number; played: number; streak: number; roleRate: number; nextWeek: number; playoffs: number };
+  participation?: { teamGames: number; played: number; streak: number; nextWeek: number };
   /** Points per game this season and last season (for production changes judged on full samples). */
   production: { gp: number; ptsPg: number | null; prevGp: number; prevPtsPg: number | null };
 }

@@ -121,6 +121,30 @@ export function opportunityLines(f: SkaterFeatures, ctx: InsightContext): Insigh
   return out;
 }
 
+/**
+ * Next Week value multiplier (simplified 2026-11-28): 1 unless he is currently in a prolonged absence
+ * (PARTICIPATION.longAbsenceGames+ team games missed in a row), then the measured share from the data file.
+ * The streak check also neutralises older files whose shares discounted shorter misses.
+ */
+export function nextWeekAvailability(f: SkaterFeatures): number {
+  const q = f.participation;
+  return q && q.streak >= PARTICIPATION.longAbsenceGames ? q.nextWeek : 1;
+}
+
+/**
+ * Factual availability context for a card's player (never a prediction or a talent measure): his current run
+ * of missed team games (reason unknown), and his dressing record (every missed game counted) when it is notably
+ * low even leaving that run aside, so the two lines never say the same thing.
+ */
+export function availabilityLines(name: string, f: SkaterFeatures): InsightLine[] {
+  const q = f.participation;
+  if (!q) return [];
+  const out: InsightLine[] = [];
+  if (q.streak > 0) out.push({ kind: 'context', basis: 'fact', text: `${name} hasn't played in his team's last ${q.streak} game${q.streak === 1 ? '' : 's'} (reason unknown). Check his status before acting.` });
+  if (q.teamGames > q.streak && q.played / (q.teamGames - q.streak) < PARTICIPATION.dressedNoteBelow) out.push({ kind: 'context', basis: 'fact', text: `${name} dressed for ${q.played} of his team's last ${q.teamGames} games` });
+  return out;
+}
+
 export interface CustomInput {
   ctx: InsightContext;
   dates: readonly ISODate[];
@@ -149,10 +173,9 @@ export function customInsights(input: CustomInput): CustomResult {
     if (!e?.features) return undefined;
     const pg = perGame(e.features, teamPpSeconds(insights, e.team), ctx);
     const perGameValue = valuePerGame(pg, scale);
-    // Expected contribution per team game = value when he plays × how likely he is to dress in this
-    // period (Next Week: current participation; playoffs: longer-term availability). Same for the
-    // user's players and candidates. Players without participation data count as dressing.
-    const dress = e.features.participation?.[ctx] ?? 1;
+    // Participation is a supporting availability consideration only (simplified 2026-11-28): Next Week
+    // value is discounted solely for a player currently in a prolonged absence; playoff value never is.
+    const dress = ctx === 'nextWeek' ? nextWeekAvailability(e.features) : 1;
     return perGameValue === null ? undefined : { value: perGameValue * dress, f: e.features, pg };
   };
 
@@ -225,7 +248,7 @@ export function customInsights(input: CustomInput): CustomResult {
     const e = p?.nhlId !== undefined ? insights.players[`nhl-${p.nhlId}`] : undefined;
     if (!e?.features) return fallbackValue;
     const v = valuePerGame(perGame(e.features, teamPpSeconds(insights, e.team), 'playoffs'), scale);
-    return v === null ? fallbackValue : v * (e.features.participation?.playoffs ?? 1);
+    return v === null ? fallbackValue : v;
   };
   const irAlternative = (add: string, drop: string): { laterDrop: string; gainOverDrop: number } | undefined => {
     const q = info.get(drop)?.f.participation;
@@ -262,7 +285,9 @@ export function customInsights(input: CustomInput): CustomResult {
     if (filled.length) lines.push({ kind: 'fit', basis: 'expectation', text: `Fills an empty lineup spot on ${dateList(filled)}` });
     const own = ownPct(m.add);
     if (own !== undefined) lines.push({ kind: 'ownership', basis: 'fact', text: `Owned in ${Math.round(own)}% of ESPN leagues` });
+    lines.push(...availabilityLines(names.get(m.add)!, ai.f));
     const ir = m.drop ? irAlternative(m.add, m.drop) : undefined;
+    if (m.drop && !ir) lines.push(...availabilityLines(names.get(m.drop)!, info.get(m.drop)!.f));
     if (ir && m.drop) {
       const y = names.get(m.drop)!;
       const streak = info.get(m.drop)!.f.participation!.streak;
